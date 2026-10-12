@@ -15,6 +15,7 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 - Browser-based Payday Planner that forecasts active income and bills, allocates buffers, bill payments, debt minimums, savings contributions, and extra debt payoff, then saves plan history.
 - Live dashboard for upcoming paydays, bills, debt minimums, savings progress, and recent plans.
 - Payday checklist for marking actions complete, skipped, or needing attention and recording actual amounts/dates.
+- Manual transaction ledger for recorded income and expenses, with monthly totals on the dashboard.
 - Persistent household-member and income-source APIs.
 - Initial schema for recurring bills, credit cards, savings accounts and goals, transactions, payday plans, and checklist items.
 - Unit tests for allocation behavior, setup APIs, and invalid input.
@@ -45,7 +46,7 @@ python -m pytest -q
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open <http://127.0.0.1:8000> for the dashboard, <http://127.0.0.1:8000/setup> for household and income setup, <http://127.0.0.1:8000/bills> to manage bills and debts, and <http://127.0.0.1:8000/savings> to manage savings goals, and <http://127.0.0.1:8000/planner> to generate and review payday plans, and <http://127.0.0.1:8000/checklist> to track actual actions. Explore the API at <http://127.0.0.1:8000/docs>.
+Open <http://127.0.0.1:8000> for the dashboard, <http://127.0.0.1:8000/setup> for household and income setup, <http://127.0.0.1:8000/bills> to manage bills and debts, and <http://127.0.0.1:8000/savings> to manage savings goals, and <http://127.0.0.1:8000/planner> to generate and review payday plans, and <http://127.0.0.1:8000/checklist> to track actual actions, and <http://127.0.0.1:8000/transactions> to record account activity. Explore the API at <http://127.0.0.1:8000/docs>.
 
 ## Database
 
@@ -69,6 +70,7 @@ The database file is excluded from Git by `.gitignore`. Back it up regularly and
 - `GET /api/plans` and `GET /api/plans/{id}` — review saved plan history and details.
 - `GET /api/dashboard` — retrieve upcoming paydays, bills, debts, savings progress, and pending checklist counts.
 - `GET /api/checklist` and `PATCH /api/plan-items/{id}` — review and update planned actions with actual amounts and dates.
+- `GET/POST /api/transactions` and `PATCH /api/transactions/{id}` — record and edit actual income/expense transactions (positive amounts are inflows; negative amounts are outflows).
 
 Money values use integer cents: `$1,234.56` is `123456`. Income frequency options are `weekly`, `biweekly`, `semimonthly`, `monthly`, and `irregular`.
 
@@ -84,4 +86,4 @@ Unfunded amounts are explicitly shown. This is a planning tool, not a bank conne
 
 ## Current limitations and security
 
-Household members and income sources can be added, edited, and deactivated/reactivated through the API; the browser setup page currently supports adding and viewing them. Transactions and reconciliation against actual bank activity are not yet implemented. The planner forecasts saved income and recurring bills, protects active household buffers, includes active debt minimums, and applies configured savings contributions before extra debt payoff. Irregular income is only forecast for its explicitly saved date. The app still lacks actual transaction reconciliation, authentication, backups, and deployment hardening. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
+Household members and income sources can be added, edited, and deactivated/reactivated through the API; the browser setup page currently supports adding and viewing them. Transactions can be entered manually, but automatic imports and reconciliation against bank activity are not yet implemented. The planner forecasts saved income and recurring bills, protects active household buffers, includes active debt minimums, and applies configured savings contributions before extra debt payoff. Irregular income is only forecast for its explicitly saved date. The app still lacks actual transaction reconciliation, authentication, backups, and deployment hardening. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
