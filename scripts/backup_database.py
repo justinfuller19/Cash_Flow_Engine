@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -36,8 +37,8 @@ def create_backup(source_path: Path | None = None, backup_dir: Path | None = Non
         counter += 1
 
     try:
-        with sqlite3.connect(f"file:{source_path.as_posix()}?mode=ro", uri=True) as source:
-            with sqlite3.connect(destination) as target:
+        with closing(sqlite3.connect(str(source_path))) as source:
+            with closing(sqlite3.connect(destination)) as target:
                 source.backup(target)
                 result = target.execute("PRAGMA integrity_check").fetchone()[0]
                 if result != "ok":
