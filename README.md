@@ -11,6 +11,7 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 - SQLite database initialized automatically at app startup.
 - Browser-based Household Setup page for household members, protected cash buffers, and income sources.
 - Browser-based Bills & Debt page for recurring bills, credit-card balances, APRs, minimum payments, and due dates.
+- Browser-based Savings Goals page for targets, current balances, priorities, and target dates.
 - Persistent household-member and income-source APIs.
 - Initial schema for recurring bills, credit cards, savings accounts and goals, transactions, payday plans, and checklist items.
 - Unit tests for allocation behavior, setup APIs, and invalid input.
@@ -41,7 +42,7 @@ python -m pytest -q
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open <http://127.0.0.1:8000> for the dashboard, <http://127.0.0.1:8000/setup> for household and income setup, and <http://127.0.0.1:8000/bills> to manage bills and debts. Explore the API at <http://127.0.0.1:8000/docs>.
+Open <http://127.0.0.1:8000> for the dashboard, <http://127.0.0.1:8000/setup> for household and income setup, <http://127.0.0.1:8000/bills> to manage bills and debts, and <http://127.0.0.1:8000/savings> to manage savings goals. Explore the API at <http://127.0.0.1:8000/docs>.
 
 ## Database
 
@@ -58,6 +59,7 @@ The database file is excluded from Git by `.gitignore`. Back it up regularly and
 - `POST /api/income-sources` — create an income source linked to a household member.
 - `GET/POST /api/bills` and `PATCH /api/bills/{id}` — manage recurring bills and deactivate/reactivate them.
 - `GET/POST /api/debts` and `PATCH /api/debts/{id}` — manage debt balances, APRs, minimums, due dates, and active status.
+- `GET/POST /api/savings-goals` and `PATCH /api/savings-goals/{id}` — manage savings targets, balances, priority, target dates, and active status.
 - `PATCH /api/income-sources/{id}` — edit an income source or toggle its `active` flag.
 - `POST /api/plan/preview` — preview an allocation from explicitly supplied data.
 
@@ -75,4 +77,4 @@ Unfunded amounts are explicitly shown. This is a planning tool, not a bank conne
 
 ## Current limitations and security
 
-Household members and income sources can be added, edited, and deactivated/reactivated through the API; the browser setup page currently supports adding and viewing them. Savings goals, transactions, saved payday plans, and checklist completion do not yet have management endpoints or UI. Bills and debt records are persisted and manageable, but are not yet automatically loaded into the payday planner. Income recurrence and payday calendar generation are not yet connected to the planner. Authentication, backups, and deployment hardening are not included. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
+Household members and income sources can be added, edited, and deactivated/reactivated through the API; the browser setup page currently supports adding and viewing them. Transactions, saved payday plans, and checklist completion do not yet have management endpoints or UI. Savings goals are persisted and manageable, but are not yet automatically included in payday-plan generation. Bills and debt records are persisted and manageable, but are not yet automatically loaded into the payday planner. Income recurrence and payday calendar generation are not yet connected to the planner. Authentication, backups, and deployment hardening are not included. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
