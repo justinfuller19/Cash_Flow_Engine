@@ -1,5 +1,3 @@
-from datetime import date
-
 from fastapi.testclient import TestClient
 
 from app import database
@@ -72,3 +70,70 @@ def test_income_source_requires_existing_person(tmp_path, monkeypatch):
         },
     )
     assert response.status_code == 404
+
+
+def test_household_setup_page_is_available():
+    response = TestClient(app).get("/setup")
+
+    assert response.status_code == 200
+    assert "Household Setup" in response.text
+    assert 'id="person-form"' in response.text
+    assert 'id="income-form"' in response.text
+    assert "/api/people" in response.text
+    assert "/api/income-sources" in response.text
+
+
+def test_person_rejects_blank_name(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "blank-person.db"))
+    database.initialize_database()
+    response = TestClient(app).post(
+        "/api/people",
+        json={"name": "   ", "default_buffer_cents": 0},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "name cannot be blank"
+
+
+def test_income_source_rejects_blank_name(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "blank-income.db"))
+    database.initialize_database()
+    client = TestClient(app)
+    person = client.post("/api/people", json={"name": "Member"}).json()
+
+    response = client.post(
+        "/api/income-sources",
+        json={
+            "person_id": person["id"],
+            "name": "   ",
+            "net_amount_cents": 100000,
+            "frequency": "weekly",
+            "next_payday": "2026-11-13",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "name cannot be blank"
+
+
+def test_income_source_rejects_invalid_frequency_date_and_negative_amount(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "invalid-income.db"))
+    database.initialize_database()
+    client = TestClient(app)
+    person = client.post("/api/people", json={"name": "Member"}).json()
+    valid_payload = {
+        "person_id": person["id"],
+        "name": "Paycheck",
+        "net_amount_cents": 100000,
+        "frequency": "weekly",
+        "next_payday": "2026-11-13",
+    }
+
+    invalid_payloads = [
+        {**valid_payload, "frequency": "every-other-Friday"},
+        {**valid_payload, "next_payday": "not-a-date"},
+        {**valid_payload, "net_amount_cents": -1},
+    ]
+    for payload in invalid_payloads:
+        response = client.post("/api/income-sources", json=payload)
+        assert response.status_code == 422
