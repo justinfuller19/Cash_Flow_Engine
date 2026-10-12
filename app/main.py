@@ -16,6 +16,7 @@ from .household_schemas import (
 )
 from .schemas import PaydayPlanOut, PaydayPreviewRequest
 from .obligations import router as obligations_router
+from .savings import router as savings_router
 
 
 @asynccontextmanager
@@ -32,6 +33,7 @@ app = FastAPI(
 )
 
 app.include_router(obligations_router)
+app.include_router(savings_router)
 
 
 @app.get("/health")
@@ -55,7 +57,7 @@ li{margin:8px 0}.muted{color:#5b6678}a{color:#0e7490;font-weight:650}</style></h
 <li>Buffers first, then bills, card minimums, savings goals, and extra debt payoff.</li>
 <li>Explicit shortfalls plus avalanche and snowball strategies.</li>
 <li>SQLite persistence for household members and income sources.</li></ul>
-<p><a href="/setup">Open Household Setup →</a> · <a href="/bills">Manage Bills & Debt →</a></p>
+<p><a href="/setup">Open Household Setup →</a> · <a href="/bills">Manage Bills & Debt →</a> · <a href="/savings">Savings Goals →</a></p>
 <p>Use <code>/docs</code> to explore the API and <code>/health</code> to check service status.</p>
 <p class="muted">This app is an early planning tool, not a bank connection. Keep it on a trusted network; authentication and deployment hardening are not included.</p>
 </main></body></html>"""
