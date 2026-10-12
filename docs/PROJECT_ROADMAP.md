@@ -98,8 +98,10 @@ A first end-to-end `/planner` workflow now loads saved active income, buffers, b
 - Explain every allocation and any shortfall in plain language.
 - Recalculate safely when the underlying household setup changes, without silently rewriting historical plans.
 
-### Milestone 8 — Payday action checklist
+### Milestone 8 — Payday action checklist (in progress)
 **Goal:** Turn a plan into an actionable, trackable checklist.
+
+The initial checklist page supports pending, completed, skipped, and attention-needed statuses and records actual amounts/dates. Historical comparison and plan-level completion controls remain.
 
 - Show the planned action, amount, intended date, and priority for each item.
 - Allow users to mark an item complete, skipped, or needing attention.
@@ -108,8 +110,10 @@ A first end-to-end `/planner` workflow now loads saved active income, buffers, b
 - Support replanning after an income amount or payment differs from expectations.
 - Never imply that checking an item off triggers a bank transaction.
 
-### Milestone 9 — Dashboard and financial history
+### Milestone 9 — Dashboard and financial history (in progress)
 **Goal:** Make the household's current position and next actions easy to understand.
+
+The home page now summarizes upcoming paydays, bills, debt minimums, savings progress, recent plans, and checklist counts. Reporting and reconciliation remain incomplete.
 
 - Show available cash and protected buffers.
 - Show the next paydays, upcoming bills, and minimum debt payments.
