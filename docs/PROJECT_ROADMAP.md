@@ -63,8 +63,10 @@ The initial management increment adds SQLite-backed bill and debt endpoints plus
 - Validate APR, balances, due dates, and payment amounts.
 - Add tests for inactive records, due-date boundaries, and missing or malformed values.
 
-### Milestone 5 — Savings goals and buffers
+### Milestone 5 — Savings goals and buffers (in progress)
 **Goal:** Model cash reserves and savings targets without double-counting money.
+
+Savings-goal creation, editing, target-date management, priority ordering, and deactivation are now available. The allocation engine is not yet connected to these persisted goals, and contribution history is still outstanding.
 
 - Configure a target amount, current saved amount, priority, and optional target date for each goal.
 - Track contributions and balances clearly.
