@@ -165,10 +165,6 @@ def generate_saved_plan(body: PlanGenerateRequest):
 
 
 def _plan_output(db, row) -> dict:
-    return _plan_output_impl(db, row)
-
-
-def _plan_output_impl(db, row) -> dict:
     plan = dict(row)
     items = db.execute(
         """SELECT id, category, name, requested_cents, funded_cents, unfunded_cents,
