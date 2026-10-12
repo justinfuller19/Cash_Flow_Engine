@@ -82,7 +82,7 @@ The backup script uses SQLite's online backup API, validates the copy with `PRAG
 You can also run it manually:
 
 ```bash
-sudo -u cashflow /opt/cashflow-engine/.venv/bin/python /opt/cashflow-engine/scripts/backup_database.py
+sudo -u cashflow env CASHFLOW_DB_PATH=/var/lib/cashflow-engine/cashflow.db CASHFLOW_BACKUP_DIR=/var/backups/cashflow-engine CASHFLOW_BACKUP_RETENTION_DAYS=30 /opt/cashflow-engine/.venv/bin/python /opt/cashflow-engine/scripts/backup_database.py
 ```
 
 ## 6. Restore a backup
@@ -91,7 +91,7 @@ sudo -u cashflow /opt/cashflow-engine/.venv/bin/python /opt/cashflow-engine/scri
 
 ```bash
 sudo systemctl stop cashflow-engine
-sudo -u cashflow /opt/cashflow-engine/.venv/bin/python /opt/cashflow-engine/scripts/restore_database.py /var/backups/cashflow-engine/cashflow-YYYYMMDDTHHMMSSZ.db
+sudo -u cashflow env CASHFLOW_DB_PATH=/var/lib/cashflow-engine/cashflow.db CASHFLOW_BACKUP_DIR=/var/backups/cashflow-engine /opt/cashflow-engine/.venv/bin/python /opt/cashflow-engine/scripts/restore_database.py /var/backups/cashflow-engine/cashflow-YYYYMMDDTHHMMSSZ.db
 sudo systemctl start cashflow-engine
 sudo systemctl status cashflow-engine
 ```
