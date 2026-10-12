@@ -55,8 +55,7 @@ def test_management_pages_show_delete_controls(tmp_path, monkeypatch):
     client = client_for(tmp_path, monkeypatch)
     assert "Delete member" in client.get("/setup").text
     assert "Delete income" in client.get("/setup").text
-    assert "Delete bill" in client.get("/bills").text
-    assert "Delete debt" in client.get("/bills").text
+    assert 'Delete "+(kind==="bills"?"bill":"debt")' in client.get("/bills").text
     assert "Delete goal" in client.get("/savings").text
-    assert ">Delete<" in client.get("/transactions").text
+    assert 'el("button","edit","Delete")' in client.get("/transactions").text
     assert "Remove plan" in client.get("/planner").text
