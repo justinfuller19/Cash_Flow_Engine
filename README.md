@@ -1,5 +1,7 @@
 # CashFlow Engine
 
+> **Project roadmap:** See [docs/PROJECT_ROADMAP.md](docs/PROJECT_ROADMAP.md) for the planned milestones and [AGENTS.md](AGENTS.md) for instructions to coding agents. New work should follow that roadmap unless the project owner directs otherwise.
+
 A lightweight, self-hosted household cash-flow planner designed to run on Raspberry Pi OS. The project separates its payday allocation rules from the web application and stores household setup in SQLite.
 
 ## Current milestone
@@ -70,4 +72,4 @@ Unfunded amounts are explicitly shown. This is a planning tool, not a bank conne
 
 ## Current limitations and security
 
-Household members and income sources can be added and viewed in the browser, but editing/deleting them is not implemented yet. Bills, cards, savings goals, transactions, saved payday plans, and checklist completion do not yet have management endpoints or UI. Income recurrence and payday calendar generation are not yet connected to the planner. Authentication, backups, and deployment hardening are not included. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
+Household members and income sources can be added, edited, and deactivated/reactivated through the API; the browser setup page currently supports adding and viewing them. Bills, cards, savings goals, transactions, saved payday plans, and checklist completion do not yet have management endpoints or UI. Income recurrence and payday calendar generation are not yet connected to the planner. Authentication, backups, and deployment hardening are not included. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
