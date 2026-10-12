@@ -168,7 +168,7 @@ def _plan_output(db, row) -> dict:
     plan = dict(row)
     items = db.execute(
         """SELECT id, category, name, requested_cents, funded_cents, unfunded_cents,
-                  due_date, note, is_completed
+                  due_date, note, status, actual_amount_cents, actual_date, is_completed
            FROM plan_items WHERE plan_id = ? ORDER BY id""",
         (plan["id"],),
     ).fetchall()
@@ -238,7 +238,7 @@ function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=
 function renderPlan(p){const section=document.getElementById("current-plan");section.hidden=false;const summary=document.getElementById("summary");summary.replaceChildren();
 for(const [label,value] of [["Income forecast",dollars(p.income_cents)],["Total available",dollars(p.total_available_cents)],["Allocated",dollars(p.allocated_cents)],["Remaining cash",dollars(p.unallocated_cents)],["Unfunded needs",dollars(p.unfunded_cents)]]){const card=el("div","metric","");card.appendChild(el("span","detail",label));card.appendChild(el("strong","",value));summary.appendChild(card);}
 const items=document.getElementById("items");items.replaceChildren();if(!p.items.length)items.appendChild(el("li","muted","No allocations were required in this window."));
-for(const item of p.items){const li=el("li");li.appendChild(el("div","title",item.name+" · "+dollars(item.funded_cents)+" / "+dollars(item.requested_cents)));li.appendChild(el("div","detail",item.category+(item.due_date?" · due "+item.due_date:"")+(item.note?" · "+item.note:"")));if(item.unfunded_cents)li.appendChild(el("div","detail shortfall","Short by "+dollars(item.unfunded_cents)));items.appendChild(li);}
+for(const item of p.items){const li=el("li");li.appendChild(el("div","title",item.name+" · "+dollars(item.funded_cents)+" / "+dollars(item.requested_cents)));li.appendChild(el("div","detail",item.category+" · status "+item.status+(item.due_date?" · due "+item.due_date:"")+(item.actual_amount_cents!==null?" · actual "+dollars(item.actual_amount_cents):"")+(item.actual_date?" on "+item.actual_date:"")+(item.note?" · "+item.note:"")));if(item.unfunded_cents)li.appendChild(el("div","detail shortfall","Short by "+dollars(item.unfunded_cents)));items.appendChild(li);}
 }
 async function refreshHistory(){const plans=await api("/api/plans");const list=document.getElementById("history");list.replaceChildren();if(!plans.length){list.appendChild(el("li","muted","No saved plans yet."));return;}
 for(const p of plans){const li=el("li");li.appendChild(el("div","title","Plan "+p.id+" · "+p.period_start+" to "+p.period_end));li.appendChild(el("div","detail","Available "+dollars(p.total_available_cents)+" · allocated "+dollars(p.allocated_cents)+(p.unfunded_cents?" · short "+dollars(p.unfunded_cents):" · fully funded")));const b=el("button","","View plan");b.type="button";b.addEventListener("click",async()=>{try{renderPlan(await api("/api/plans/"+p.id));}catch(e){message(e.message,true);}});li.appendChild(b);list.appendChild(li);}}

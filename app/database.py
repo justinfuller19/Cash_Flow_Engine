@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def database_path() -> Path:
@@ -217,3 +217,17 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
         for column, declaration in plan_additions.items():
             if column not in plan_columns:
                 db.execute(f"ALTER TABLE payday_plans ADD COLUMN {column} {declaration}")
+
+    if version < 5:
+        # Version 5 adds actual-action tracking to payday checklist items.
+        item_columns = {row["name"] for row in db.execute("PRAGMA table_info(plan_items)")}
+        item_additions = {
+            "status": "TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'skipped', 'attention'))",
+            "actual_amount_cents": "INTEGER CHECK(actual_amount_cents >= 0)",
+            "actual_date": "TEXT",
+        }
+        for column, declaration in item_additions.items():
+            if column not in item_columns:
+                db.execute(f"ALTER TABLE plan_items ADD COLUMN {column} {declaration}")
+        db.execute("UPDATE plan_items SET status = 'completed' WHERE is_completed = 1")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_plan_items_status ON plan_items(status, plan_id)")
