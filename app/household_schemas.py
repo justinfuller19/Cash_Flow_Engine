@@ -17,7 +17,16 @@ class PersonOut(BaseModel):
     id: int
     name: str
     default_buffer_cents: int
+    active: bool
     created_at: str
+
+
+class PersonUpdate(BaseModel):
+    """Partial update for a household member; only provided fields change."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    default_buffer_cents: int | None = Field(default=None, ge=0)
+    active: bool | None = None
 
 
 class IncomeSourceCreate(BaseModel):
@@ -38,3 +47,14 @@ class IncomeSourceOut(BaseModel):
     next_payday: date
     active: bool
     created_at: str
+
+
+class IncomeSourceUpdate(BaseModel):
+    """Partial update for an income source; only provided fields change."""
+
+    person_id: int | None = Field(default=None, gt=0)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    net_amount_cents: int | None = Field(default=None, ge=0)
+    frequency: IncomeFrequency | None = None
+    next_payday: date | None = None
+    active: bool | None = None

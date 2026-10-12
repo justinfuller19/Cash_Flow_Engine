@@ -52,8 +52,10 @@ The database file is excluded from Git by `.gitignore`. Back it up regularly and
 
 - `GET /api/people` — list household members.
 - `POST /api/people` — create a household member, optionally specifying `default_buffer_cents`.
+- `PATCH /api/people/{id}` — edit a household member's name, buffer, or `active` flag (deactivate instead of deleting).
 - `GET /api/income-sources` — list saved income sources.
 - `POST /api/income-sources` — create an income source linked to a household member.
+- `PATCH /api/income-sources/{id}` — edit an income source or toggle its `active` flag.
 - `POST /api/plan/preview` — preview an allocation from explicitly supplied data.
 
 Money values use integer cents: `$1,234.56` is `123456`. Income frequency options are `weekly`, `biweekly`, `semimonthly`, `monthly`, and `irregular`.

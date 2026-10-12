@@ -11,7 +11,8 @@ from .engine import (
     generate_payday_plan,
 )
 from .household_schemas import (
-    IncomeSourceCreate, IncomeSourceOut, PersonCreate, PersonOut,
+    IncomeSourceCreate, IncomeSourceOut, IncomeSourceUpdate,
+    PersonCreate, PersonOut, PersonUpdate,
 )
 from .schemas import PaydayPlanOut, PaydayPreviewRequest
 
@@ -61,9 +62,10 @@ li{margin:8px 0}.muted{color:#5b6678}</style></head><body><main>
 def list_people():
     with database.connect() as db:
         rows = db.execute(
-            "SELECT id, name, default_buffer_cents, created_at FROM persons ORDER BY id"
+            "SELECT id, name, default_buffer_cents, active, created_at "
+            "FROM persons ORDER BY id"
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [_person_out(row) for row in rows]
 
 
 @app.post("/api/people", response_model=PersonOut, status_code=status.HTTP_201_CREATED)
@@ -77,10 +79,51 @@ def create_person(body: PersonCreate):
             (name, body.default_buffer_cents),
         )
         row = db.execute(
-            "SELECT id, name, default_buffer_cents, created_at FROM persons WHERE id = ?",
+            "SELECT id, name, default_buffer_cents, active, created_at "
+            "FROM persons WHERE id = ?",
             (cursor.lastrowid,),
         ).fetchone()
-    return dict(row)
+    return _person_out(row)
+
+
+def _person_out(row) -> dict:
+    return dict(row) | {"active": bool(row["active"])}
+
+
+@app.patch("/api/people/{person_id}", response_model=PersonOut)
+def update_person(person_id: int, body: PersonUpdate):
+    updates = body.model_dump(exclude_unset=True)
+    if "name" in updates:
+        name = updates["name"].strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="name cannot be blank")
+        updates["name"] = name
+    if "active" in updates:
+        updates["active"] = int(updates["active"])
+    if not updates:
+        raise HTTPException(status_code=422, detail="no fields to update")
+    try:
+        with database.connect() as db:
+            existing = db.execute(
+                "SELECT id FROM persons WHERE id = ?", (person_id,)
+            ).fetchone()
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Household member not found")
+            set_clause = ", ".join(f"{column} = ?" for column in updates)
+            db.execute(
+                f"UPDATE persons SET {set_clause} WHERE id = ?",
+                (*updates.values(), person_id),
+            )
+            row = db.execute(
+                "SELECT id, name, default_buffer_cents, active, created_at "
+                "FROM persons WHERE id = ?",
+                (person_id,),
+            ).fetchone()
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(
+            status_code=422, detail="Update violates a database constraint"
+        ) from exc
+    return _person_out(row)
 
 
 @app.get("/api/income-sources", response_model=list[IncomeSourceOut])
@@ -127,6 +170,53 @@ def create_income_source(body: IncomeSourceCreate):
             ).fetchone()
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=422, detail="Income source violates a database constraint") from exc
+    return dict(row) | {"active": bool(row["active"])}
+
+
+@app.patch("/api/income-sources/{income_id}", response_model=IncomeSourceOut)
+def update_income_source(income_id: int, body: IncomeSourceUpdate):
+    updates = body.model_dump(exclude_unset=True)
+    if "name" in updates:
+        name = updates["name"].strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="name cannot be blank")
+        updates["name"] = name
+    if "next_payday" in updates:
+        updates["next_payday"] = updates["next_payday"].isoformat()
+    if "active" in updates:
+        updates["active"] = int(updates["active"])
+    if not updates:
+        raise HTTPException(status_code=422, detail="no fields to update")
+    try:
+        with database.connect() as db:
+            existing = db.execute(
+                "SELECT id FROM income_sources WHERE id = ?", (income_id,)
+            ).fetchone()
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Income source not found")
+            if "person_id" in updates:
+                person = db.execute(
+                    "SELECT id FROM persons WHERE id = ?", (updates["person_id"],)
+                ).fetchone()
+                if person is None:
+                    raise HTTPException(
+                        status_code=404, detail="Household member not found"
+                    )
+            set_clause = ", ".join(f"{column} = ?" for column in updates)
+            db.execute(
+                f"UPDATE income_sources SET {set_clause} WHERE id = ?",
+                (*updates.values(), income_id),
+            )
+            row = db.execute(
+                """SELECT id, person_id, name, net_amount_cents, frequency,
+                          next_payday, active, created_at
+                   FROM income_sources WHERE id = ?""",
+                (income_id,),
+            ).fetchone()
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(
+            status_code=422, detail="Update violates a database constraint"
+        ) from exc
     return dict(row) | {"active": bool(row["active"])}
 
 
