@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def database_path() -> Path:
@@ -177,3 +177,21 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
                 "ALTER TABLE persons ADD COLUMN active INTEGER NOT NULL "
                 "DEFAULT 1 CHECK(active IN (0, 1))"
             )
+
+    if version < 3:
+        # Version 3 adds the fields required to manage recurring bills and debts.
+        bill_columns = {row["name"] for row in db.execute("PRAGMA table_info(bills)")}
+        bill_additions = {
+            "category": "TEXT NOT NULL DEFAULT 'other'",
+            "frequency": "TEXT NOT NULL DEFAULT 'monthly'",
+            "autopay": "INTEGER NOT NULL DEFAULT 0 CHECK(autopay IN (0, 1))",
+        }
+        for column, declaration in bill_additions.items():
+            if column not in bill_columns:
+                db.execute(f"ALTER TABLE bills ADD COLUMN {column} {declaration}")
+
+        debt_columns = {row["name"] for row in db.execute("PRAGMA table_info(credit_cards)")}
+        if "next_due_date" not in debt_columns:
+            db.execute("ALTER TABLE credit_cards ADD COLUMN next_due_date TEXT")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_bills_active_due ON bills(active, next_due_date)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_debts_active_due ON credit_cards(active, due_day_of_month)")
