@@ -1,6 +1,6 @@
 # Raspberry Pi deployment and backups
 
-This guide installs CashFlow Engine as a private systemd service. The service binds to `127.0.0.1` by default so the unauthenticated app is not exposed to the LAN or public internet. Remote/LAN access should wait until authentication and a secure access method are configured.
+This guide installs CashFlow Engine as a private systemd service. The service binds to `127.0.0.1` by default. Without credentials, requests from non-loopback clients are blocked. Optional Basic authentication can be enabled with `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`; use it only behind HTTPS or a trusted VPN because Basic authentication does not encrypt traffic.
 
 ## 1. Install prerequisites
 
@@ -44,9 +44,13 @@ Set:
 CASHFLOW_DB_PATH=/var/lib/cashflow-engine/cashflow.db
 CASHFLOW_BACKUP_DIR=/var/backups/cashflow-engine
 CASHFLOW_BACKUP_RETENTION_DAYS=30
+# Optional: set BOTH to require Basic authentication for all requests.
+# Use long random values; do not commit real credentials.
+# CASHFLOW_USERNAME=household
+# CASHFLOW_PASSWORD=replace-with-a-long-random-secret
 ```
 
-The environment file contains paths only; do not store real household data or database files in Git.
+The environment file contains local configuration and may contain credentials; keep it root-owned with mode `600` and never commit it or share its contents.
 
 ## 4. Install the systemd service
 
@@ -67,7 +71,7 @@ sudo journalctl -u cashflow-engine -n 100 --no-pager
 curl http://127.0.0.1:8000/health
 ```
 
-Open `http://127.0.0.1:8000` in a browser running on the Pi itself. Keep the service on localhost until the app has authentication and a secure remote-access plan.
+Open `http://127.0.0.1:8000` in a browser running on the Pi itself. Keep the service on localhost. If accessing it through a reverse proxy, configure both credentials and TLS; the middleware treats requests carrying `X-Forwarded-For` as remote and requires authentication.
 
 ## 5. Create and verify a backup
 
@@ -119,7 +123,8 @@ For rollback, stop the service, check out the previous known-good commit, reinst
 ## Security and privacy notes
 
 - Do not port-forward this service or expose it to the public internet.
-- The current service binds to localhost and has no authentication. Do not change it to `0.0.0.0` without first adding authentication and a secure remote-access layer.
+- Without `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`, non-loopback and forwarded requests are blocked. If credentials are configured, Basic authentication is required for every request.
+- Basic authentication is not encryption. Use HTTPS or a trusted VPN for remote access; do not expose the service directly to the public internet.
 - Protect backups like the live database; they contain the same financial information.
 - Test a restore periodically. A backup that has never been restored is not a verified recovery plan.
 - SQLite files and backups should remain outside the Git repository.
