@@ -46,19 +46,6 @@ def _debt_due_date(row, period_start: date, period_end: date) -> date:
     return period_end + timedelta(days=1)
 
 
-def _plan_output(db, plan_row) -> dict:
-    plan = dict(plan_row)
-    items = db.execute(
-        """SELECT id, category, name, requested_cents, funded_cents, unfunded_cents,
-                  due_date, note, is_completed
-           FROM plan_items WHERE plan_id = ? ORDER BY id""",
-        (plan["id"],),
-    ).fetchall()
-    plan["items"] = [dict(item) | {"is_completed": bool(item["is_completed"])} for item in items]
-    plan["is_fully_funded"] = plan["unfunded_cents"] == 0
-    return plan
-
-
 def _load_request(db, body: PlanGenerateRequest) -> PaydayRequest:
     incomes: list[Income] = []
     rows = db.execute(
