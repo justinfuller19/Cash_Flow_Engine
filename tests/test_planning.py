@@ -146,4 +146,4 @@ def test_schema_v4_adds_contributions_and_plan_totals(tmp_path, monkeypatch):
     assert "contribution_per_period_cents" in goal_columns
     assert {"income_cents", "total_available_cents", "allocated_cents",
             "unallocated_cents", "unfunded_cents", "target_card"} <= plan_columns
-    assert version == database.SCHEMA_VERSION == 4
+    assert version == database.SCHEMA_VERSION == 5
