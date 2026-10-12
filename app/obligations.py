@@ -235,6 +235,30 @@ for(const r of records){const li=el("li");li.appendChild(el("div","title",r.name
 const detail=kind==="bills"?r.category+" · "+r.frequency+" · due "+(r.next_due_date||"not set")+(r.autopay?" · autopay":""):
 "Minimum "+dollars(r.minimum_payment_cents)+" · "+r.apr_percent+"% APR · due "+(r.next_due_date||"not set");
 li.appendChild(el("div","detail",detail+(r.active?"":" · inactive")));
+const edit=el("button","toggle",kind==="bills"?"Edit bill":"Edit debt");edit.type="button";
+edit.addEventListener("click",async()=>{
+try{
+if(kind==="bills"){
+const name=prompt("Bill name:",r.name);if(name===null)return;
+const amount=prompt("Amount in dollars:",(r.amount_cents/100).toFixed(2));if(amount===null)return;
+const due=prompt("Next due date YYYY-MM-DD:",r.next_due_date||"");if(due===null)return;
+const frequency=prompt("Frequency (weekly, biweekly, monthly, quarterly, yearly, irregular):",r.frequency);if(frequency===null)return;
+const category=prompt("Category:",r.category);if(category===null)return;
+const window=prompt("Flexible window in days:",String(r.flexible_window_days));if(window===null)return;
+const autopayText=prompt("Autopay true or false:",String(r.autopay));if(autopayText===null)return;
+if(!["true","false"].includes(autopayText.trim().toLowerCase()))throw Error("Autopay must be true or false.");
+await api("/api/bills/"+r.id,{method:"PATCH",body:JSON.stringify({name:name.trim(),amount_cents:cents(amount),next_due_date:due,frequency:frequency.trim(),category:category.trim(),flexible_window_days:Number(window),autopay:autopayText.trim().toLowerCase()==="true"})});
+}else{
+const name=prompt("Debt name:",r.name);if(name===null)return;
+const balance=prompt("Current balance in dollars:",(r.balance_cents/100).toFixed(2));if(balance===null)return;
+const minimum=prompt("Minimum payment in dollars:",(r.minimum_payment_cents/100).toFixed(2));if(minimum===null)return;
+const apr=prompt("APR percent:",String(r.apr_percent));if(apr===null)return;
+const due=prompt("Next due date YYYY-MM-DD:",r.next_due_date||"");if(due===null)return;
+await api("/api/debts/"+r.id,{method:"PATCH",body:JSON.stringify({name:name.trim(),balance_cents:cents(balance),minimum_payment_cents:cents(minimum),apr_percent:Number(apr),next_due_date:due})});
+}
+await refresh();message((kind==="bills"?"Bill":"Debt")+" updated.");
+}catch(e){message(e.message,true);}
+});li.appendChild(edit);
 addToggle(li,"/api/"+(kind==="bills"?"bills":"debts")+"/"+r.id,r.active,kind==="bills"?"Bill":"Debt");list.appendChild(li);}}
 async function refresh(){const [b,d]=await Promise.all([api("/api/bills"),api("/api/debts")]);render(document.getElementById("bills"),b,"bills");render(document.getElementById("debts"),d,"debts");}
 function bindForm(id,url,convert,success){const form=document.getElementById(id);form.addEventListener("submit",async(e)=>{e.preventDefault();const button=form.querySelector("button");button.disabled=true;try{await api(url,{method:"POST",body:JSON.stringify(convert(form))});form.reset();await refresh();message(success);}catch(err){message(err.message,true);}finally{button.disabled=false;}});}
