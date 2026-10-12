@@ -49,6 +49,7 @@ class SavingsGoal:
     current_balance_cents: int
     remaining_periods: int
     priority: int = 100
+    contribution_per_period_cents: int | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +116,7 @@ def _validate_request(request: PaydayRequest) -> None:
         ("credit card minimum", [c.minimum_payment_cents for c in request.credit_cards]),
         ("savings target", [g.target_amount_cents for g in request.savings_goals]),
         ("savings balance", [g.current_balance_cents for g in request.savings_goals]),
+        ("savings contribution", [g.contribution_per_period_cents for g in request.savings_goals if g.contribution_per_period_cents is not None]),
     ):
         for entry in group:
             amount = entry.amount_cents if hasattr(entry, "amount_cents") else entry
@@ -130,6 +132,8 @@ def _validate_request(request: PaydayRequest) -> None:
 def _cents_for_goal(goal: SavingsGoal) -> int:
     """Required contribution per period, rounded up to the next cent."""
     remaining = max(0, goal.target_amount_cents - goal.current_balance_cents)
+    if goal.contribution_per_period_cents is not None:
+        return min(remaining, goal.contribution_per_period_cents)
     return (remaining + goal.remaining_periods - 1) // goal.remaining_periods
 
 
