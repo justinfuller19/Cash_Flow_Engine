@@ -18,14 +18,14 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 
 ## Requirements
 
-Python 3.11 or newer is recommended. Dependencies are in `requirements.txt`.
+Python 3.11, 3.12, and 3.13 are tested in CI. Use one of these versions for the most reliable dependency installation; Python 3.15 may require dependency updates. Dependencies are in `requirements.txt`.
 
 ## Run locally
 
 ### Windows PowerShell
 
 ```powershell
-py -3 -m venv .venv
+py -3.13 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python -m pytest -q
