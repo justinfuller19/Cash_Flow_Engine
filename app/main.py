@@ -19,6 +19,7 @@ from .obligations import router as obligations_router
 from .savings import router as savings_router
 from .planning import router as planning_router
 from .dashboard import router as dashboard_router
+from .transactions import router as transactions_router
 
 
 @asynccontextmanager
@@ -30,7 +31,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="CashFlow Engine",
     description="Self-hosted household cash-flow planning with SQLite-backed household setup.",
-    version="0.6.0",
+    version="0.7.0",
     lifespan=lifespan,
 )
 
@@ -38,6 +39,7 @@ app.include_router(obligations_router)
 app.include_router(savings_router)
 app.include_router(planning_router)
 app.include_router(dashboard_router)
+app.include_router(transactions_router)
 
 
 @app.get("/health")
@@ -67,7 +69,7 @@ nav a{background:white;padding:10px 13px;border-radius:9px;box-shadow:0 3px 14px
 .progress{height:7px;background:#e2e8f0;border-radius:7px;overflow:hidden;margin-top:7px}.fill{height:100%;background:#0e7490}
 </style></head><body><main>
 <h1>CashFlow Engine</h1><p class="muted">Your household cash-flow overview. Forecasts help you plan; they do not send payments or move money.</p>
-<nav><a href="/setup">Household & Income</a><a href="/bills">Bills & Debt</a><a href="/savings">Savings Goals</a><a href="/planner">Payday Planner</a><a href="/checklist">Payday Checklist</a><a href="/docs">API Docs</a></nav>
+<nav><a href="/setup">Household & Income</a><a href="/bills">Bills & Debt</a><a href="/savings">Savings Goals</a><a href="/planner">Payday Planner</a><a href="/checklist">Payday Checklist</a><a href="/transactions">Transactions</a><a href="/docs">API Docs</a></nav>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
 <div class="grid">
@@ -77,6 +79,7 @@ nav a{background:white;padding:10px 13px;border-radius:9px;box-shadow:0 3px 14px
 <section class="card"><h2>Savings progress</h2><ul id="goals" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Recent payday plans</h2><ul id="plans" class="list"><li class="muted">Loading…</li></ul><p><a href="/planner">Generate or review plans →</a></p></section>
 <section class="card"><h2>Checklist</h2><p id="checklist-summary" class="muted">Loading checklist…</p><a href="/checklist">Review payday actions →</a></section>
+<section class="card"><h2>Recent transactions</h2><ul id="transactions" class="list"><li class="muted">Loading…</li></ul><a href="/transactions">Record or review transactions →</a></section>
 </div></main>
 <script>
 const statusBox=document.getElementById("status");
@@ -86,13 +89,14 @@ async function api(url){const r=await fetch(url);const d=await r.json().catch(()
 function renderList(id,items,empty,make){const list=document.getElementById(id);list.replaceChildren();if(!items.length){list.appendChild(el("li","muted",empty));return;}for(const item of items){const li=el("li","");make(li,item);list.appendChild(li);}}
 async function load(){const d=await api("/api/dashboard");
 const metrics=document.getElementById("metrics");metrics.replaceChildren();
-for(const [label,value] of [["Active household members",String(d.active_household_members)],["Protected buffers",dollars(d.protected_buffers_cents)],["Actions needing attention",String(d.pending_checklist_count)]]){const card=el("div","metric","");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));metrics.appendChild(card);}
+for(const [label,value] of [["Active household members",String(d.active_household_members)],["Protected buffers",dollars(d.protected_buffers_cents)],["Actions needing attention",String(d.pending_checklist_count)],["Recorded income this month",dollars(d.month_income_cents)],["Recorded expenses this month",dollars(d.month_expenses_cents)]]){const card=el("div","metric","");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));metrics.appendChild(card);}
 renderList("paydays",d.next_paydays,"No upcoming paydays found.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date));});
 renderList("bills",d.upcoming_bills,"No saved bills due in the next 30 days.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.category+(x.autopay?" · autopay":"")));});
 renderList("debts",d.upcoming_debts,"No debt due dates found in the next 30 days.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · minimum "+dollars(x.minimum_payment_cents)));li.appendChild(el("div","detail",x.date+" · balance "+dollars(x.balance_cents)));});
 renderList("goals",d.savings_goals,"No active savings goals.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.current_balance_cents)+" / "+dollars(x.target_amount_cents)));li.appendChild(el("div","detail",x.progress_percent+"% saved · "+dollars(x.contribution_per_period_cents)+" per payday"));const track=el("div","progress","");const fill=el("div","fill","");fill.style.width=x.progress_percent+"%";track.appendChild(fill);li.appendChild(track);});
 renderList("plans",d.recent_plans,"No saved payday plans yet.",(li,x)=>{li.appendChild(el("div","item-title","Plan "+x.id+" · "+x.period_start+" to "+x.period_end));li.appendChild(el("div","detail",dollars(x.allocated_cents)+" allocated · "+dollars(x.unfunded_cents)+" unfunded"));const a=el("a","","View plan");a.href="/planner";li.appendChild(a);});
 document.getElementById("checklist-summary").textContent=d.pending_checklist_count?d.pending_checklist_count+" pending or attention-needed action(s).":"No pending checklist actions.";
+renderList("transactions",d.recent_transactions,"No transactions recorded yet.",(li,x)=>{const sign=x.amount_cents<0?"−":"";li.appendChild(el("div","item-title",x.description+" · "+sign+dollars(Math.abs(x.amount_cents))));li.appendChild(el("div","detail",x.transaction_date+" · "+x.category+(x.account_name?" · "+x.account_name:"")));});
 }
 load().catch(e=>{statusBox.textContent=e.message;statusBox.classList.add("error");statusBox.hidden=false;});
 </script></body></html>"""
