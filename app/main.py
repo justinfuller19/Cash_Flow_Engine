@@ -29,7 +29,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="CashFlow Engine",
     description="Self-hosted household cash-flow planning with SQLite-backed household setup.",
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -58,7 +58,8 @@ li{margin:8px 0}.muted{color:#5b6678}a{color:#0e7490;font-weight:650}</style></h
 <li>Payday allocation engine using integer cents.</li>
 <li>Buffers first, then bills, card minimums, savings goals, and extra debt payoff.</li>
 <li>Explicit shortfalls plus avalanche and snowball strategies.</li>
-<li>SQLite persistence for household members and income sources.</li></ul>
+<li>SQLite persistence for household members, income, bills, debts, savings goals, and saved payday plans.</li>
+<li>Payday planner forecasts recurring income and bills and saves each allocation plan for review.</li></ul>
 <p><a href="/setup">Open Household Setup →</a> · <a href="/bills">Manage Bills & Debt →</a> · <a href="/savings">Savings Goals →</a> · <a href="/planner">Payday Planner →</a></p>
 <p>Use <code>/docs</code> to explore the API and <code>/health</code> to check service status.</p>
 <p class="muted">This app is an early planning tool, not a bank connection. Keep it on a trusted network; authentication and deployment hardening are not included.</p>
