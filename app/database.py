@@ -15,6 +15,9 @@ from typing import Iterator
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
+#: Current schema version. Bump when adding a migration to _apply_migrations().
+SCHEMA_VERSION = 2
+
 
 def database_path() -> Path:
     configured = os.environ.get("CASHFLOW_DB_PATH")
@@ -41,7 +44,7 @@ def connect() -> Iterator[sqlite3.Connection]:
 
 
 def initialize_database() -> None:
-    """Create the initial household and financial-record schema if needed."""
+    """Create the current schema and apply any pending migrations."""
     with connect() as db:
         db.executescript(
             """
@@ -50,6 +53,7 @@ def initialize_database() -> None:
                 name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 120),
                 default_buffer_cents INTEGER NOT NULL DEFAULT 0
                     CHECK(default_buffer_cents >= 0),
+                active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -152,3 +156,24 @@ def initialize_database() -> None:
             CREATE INDEX IF NOT EXISTS idx_plan_items_plan ON plan_items(plan_id);
             """
         )
+        _apply_migrations(db)
+        db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+
+def _apply_migrations(db: sqlite3.Connection) -> None:
+    """Bring an existing database up to SCHEMA_VERSION.
+
+    Fresh databases already match the current schema because the
+    CREATE TABLE statements above describe the latest version; migrations
+    only adjust databases created by earlier releases.
+    """
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    if version < 2:
+        # Version 2 added the active flag to persons (soft deactivation
+        # instead of hard deletion for records referenced by history).
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(persons)")}
+        if "active" not in columns:
+            db.execute(
+                "ALTER TABLE persons ADD COLUMN active INTEGER NOT NULL "
+                "DEFAULT 1 CHECK(active IN (0, 1))"
+            )

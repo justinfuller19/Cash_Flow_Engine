@@ -9,10 +9,10 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 - Pure Python payday allocation engine using integer cents.
 - FastAPI app with a health check and interactive API docs at `/docs`.
 - SQLite database initialized automatically at app startup.
-- Household-member setup with a default personal buffer.
-- Income-source setup linked to a household member.
+- Browser-based Household Setup page for household members, protected cash buffers, and income sources.
+- Persistent household-member and income-source APIs.
 - Initial schema for recurring bills, credit cards, savings accounts and goals, transactions, payday plans, and checklist items.
-- Unit tests for allocation behavior and the first database/API workflows.
+- Unit tests for allocation behavior, setup APIs, and invalid input.
 
 ## Requirements
 
@@ -40,7 +40,7 @@ python -m pytest -q
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open <http://127.0.0.1:8000>. Explore and test the API at <http://127.0.0.1:8000/docs>.
+Open <http://127.0.0.1:8000> for the dashboard and <http://127.0.0.1:8000/setup> to add household members and income sources. Explore the API at <http://127.0.0.1:8000/docs>.
 
 ## Database
 
@@ -52,8 +52,10 @@ The database file is excluded from Git by `.gitignore`. Back it up regularly and
 
 - `GET /api/people` — list household members.
 - `POST /api/people` — create a household member, optionally specifying `default_buffer_cents`.
+- `PATCH /api/people/{id}` — edit a household member's name, buffer, or `active` flag (deactivate instead of deleting).
 - `GET /api/income-sources` — list saved income sources.
 - `POST /api/income-sources` — create an income source linked to a household member.
+- `PATCH /api/income-sources/{id}` — edit an income source or toggle its `active` flag.
 - `POST /api/plan/preview` — preview an allocation from explicitly supplied data.
 
 Money values use integer cents: `$1,234.56` is `123456`. Income frequency options are `weekly`, `biweekly`, `semimonthly`, `monthly`, and `irregular`.
@@ -70,4 +72,4 @@ Unfunded amounts are explicitly shown. This is a planning tool, not a bank conne
 
 ## Current limitations and security
 
-The household and income APIs are an early foundation, not a finished management interface. Bills, cards, savings goals, transactions, saved payday plans, and checklist completion do not yet have management endpoints or UI. Income recurrence and payday calendar generation are not yet connected to the planner. Authentication, backups, and deployment hardening are not included. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
+Household members and income sources can be added, edited, and deactivated/reactivated through the API; the browser setup page currently supports adding and viewing them. Bills, cards, savings goals, transactions, saved payday plans, and checklist completion do not yet have management endpoints or UI. Income recurrence and payday calendar generation are not yet connected to the planner. Authentication, backups, and deployment hardening are not included. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.

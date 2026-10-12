@@ -1,8 +1,8 @@
 """Pydantic schemas for persistent household setup endpoints."""
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 IncomeFrequency = Literal["weekly", "biweekly", "semimonthly", "monthly", "irregular"]
@@ -17,7 +17,24 @@ class PersonOut(BaseModel):
     id: int
     name: str
     default_buffer_cents: int
+    active: bool
     created_at: str
+
+
+class PersonUpdate(BaseModel):
+    """Partial update for a household member; only provided fields change."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    default_buffer_cents: int | None = Field(default=None, ge=0)
+    active: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_explicit_nulls(cls, value: Any) -> Any:
+        """PATCH fields are optional, but null is not a valid replacement value."""
+        if isinstance(value, dict) and any(item is None for item in value.values()):
+            raise ValueError("PATCH fields cannot be null")
+        return value
 
 
 class IncomeSourceCreate(BaseModel):
@@ -38,3 +55,22 @@ class IncomeSourceOut(BaseModel):
     next_payday: date
     active: bool
     created_at: str
+
+
+class IncomeSourceUpdate(BaseModel):
+    """Partial update for an income source; only provided fields change."""
+
+    person_id: int | None = Field(default=None, gt=0)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    net_amount_cents: int | None = Field(default=None, ge=0)
+    frequency: IncomeFrequency | None = None
+    next_payday: date | None = None
+    active: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_explicit_nulls(cls, value: Any) -> Any:
+        """PATCH fields are optional, but null is not a valid replacement value."""
+        if isinstance(value, dict) and any(item is None for item in value.values()):
+            raise ValueError("PATCH fields cannot be null")
+        return value
