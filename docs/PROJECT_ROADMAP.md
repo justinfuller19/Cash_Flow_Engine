@@ -74,8 +74,10 @@ Savings-goal creation, editing, target-date management, priority ordering, and d
 - Keep emergency/discretionary buffers separate from goal contributions.
 - Make it clear when a goal is underfunded or its target date is unrealistic.
 
-### Milestone 6 — Payday calendar and income forecasting
+### Milestone 6 — Payday calendar and income forecasting (in progress)
 **Goal:** Determine which income is expected and which obligations fall into each planning window.
+
+The initial forecasting implementation generates weekly, biweekly, semimonthly, monthly, quarterly, yearly, and irregular occurrences for saved income/bills, including end-of-month handling. More edge-case review and UI feedback remain.
 
 - Support weekly, biweekly, semimonthly, monthly, and irregular income.
 - Generate upcoming payday dates with correct calendar behavior, including month ends and leap years.
@@ -83,8 +85,10 @@ Savings-goal creation, editing, target-date management, priority ordering, and d
 - Distinguish expected income from income confirmed as received.
 - Test recurrence boundaries, timezone/date handling, and overlapping pay periods.
 
-### Milestone 7 — Saved payday planning
+### Milestone 7 — Saved payday planning (in progress)
 **Goal:** Generate a complete plan from persisted household data rather than only manually supplied preview data.
+
+A first end-to-end `/planner` workflow now loads saved active income, buffers, bills, debts, and configured savings contributions, then saves the generated plan and line items for history. Checklist completion, recalculation/versioning after setup changes, and broader plan-history actions remain.
 
 - Let the user choose a payday/planning window and applicable income sources.
 - Combine forecast income, starting cash, required buffers, bills, debt minimums, savings goals, and payoff strategy.
