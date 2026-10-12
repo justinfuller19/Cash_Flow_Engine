@@ -122,8 +122,10 @@ The home page now summarizes upcoming paydays, bills, debt minimums, savings pro
 - Provide historical plans and completed actions for comparison.
 - Keep the interface usable on a phone as well as a desktop browser.
 
-### Milestone 10 — Reliability, privacy, and data protection
+### Milestone 10 — Reliability, privacy, and data protection (in progress)
 **Goal:** Make the app trustworthy for real household financial data.
+
+A manual signed-amount transaction ledger and monthly dashboard totals are available. Bank imports/reconciliation, authentication, backup/restore validation, and deployment hardening remain.
 
 - Expand tests to cover engine, API, persistence, recurrence, and full planning workflows.
 - Test database persistence across application restarts and transaction rollback on failure.
