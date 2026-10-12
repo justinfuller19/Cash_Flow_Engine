@@ -193,6 +193,15 @@ def get_saved_plan(plan_id: int):
         return _plan_output(db, row)
 
 
+@router.delete("/api/plans/{plan_id}")
+def delete_saved_plan(plan_id: int):
+    with database.connect() as db:
+        cursor = db.execute("DELETE FROM payday_plans WHERE id = ?", (plan_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Saved plan not found")
+    return {"deleted": True, "id": plan_id}
+
+
 @router.get("/planner", response_class=HTMLResponse)
 def planner_page():
     return """<!doctype html>
