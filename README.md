@@ -1,17 +1,20 @@
-# CashFlow Engine — milestone 1
+# CashFlow Engine
 
-A lightweight, self-hosted household cash-flow planner. This first milestone proves the calculation rules before adding permanent data storage and management screens.
+A lightweight, self-hosted household cash-flow planner designed to run on Raspberry Pi OS. The project separates its payday allocation rules from the web application and stores household setup in SQLite.
 
-## What is included
+## Current milestone
 
-- Pure Python allocation engine using integer cents for money.
-- FastAPI app with a health check and a plan-preview endpoint.
-- Interactive API documentation at `/docs`.
-- Unit tests for waterfall order, paycheck date filtering, explicit shortfalls, avalanche/snowball selection, and cent rounding.
+- Pure Python payday allocation engine using integer cents.
+- FastAPI app with a health check and interactive API docs at `/docs`.
+- SQLite database initialized automatically at app startup.
+- Household-member setup with a default personal buffer.
+- Income-source setup linked to a household member.
+- Initial schema for recurring bills, credit cards, savings accounts and goals, transactions, payday plans, and checklist items.
+- Unit tests for allocation behavior and the first database/API workflows.
 
 ## Requirements
 
-Python 3.11 or newer is recommended. The app is lightweight, but actual Raspberry Pi RAM use should be measured on the intended device.
+Python 3.11 or newer is recommended. Dependencies are in `requirements.txt`.
 
 ## Run locally
 
@@ -35,42 +38,34 @@ python -m pytest -q
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Then open <http://127.0.0.1:8000>. Try the calculator at <http://127.0.0.1:8000/docs> using `POST /api/plan/preview`.
+Open <http://127.0.0.1:8000>. Explore and test the API at <http://127.0.0.1:8000/docs>.
 
-## Money format
+## Database
 
-All money inputs and outputs are integer cents: `$1,234.56` is `123456`. APR is a percentage (for example, `24.9` means 24.9%). Dates are ISO format (`YYYY-MM-DD`).
+By default, SQLite data is stored at `data/cashflow.db` in the project directory. The `data/` folder is created automatically. Override the location with `CASHFLOW_DB_PATH` if you want the database somewhere else, such as a persistent data directory on your Raspberry Pi.
 
-## Preview request example
+The database file is excluded from Git by `.gitignore`. Back it up regularly and do not commit real household financial information.
 
-```json
-{
-  "plan_date": "2026-11-13",
-  "period_start": "2026-11-13",
-  "period_end": "2026-11-26",
-  "starting_cash_cents": 0,
-  "incomes": [
-    {"name": "Household paycheck", "amount_cents": 280000, "received_date": "2026-11-13"}
-  ],
-  "buffers": [
-    {"name": "Personal cash buffer", "amount_cents": 50000}
-  ],
-  "bills": [
-    {"name": "Electric", "amount_cents": 14000, "due_date": "2026-11-18"}
-  ],
-  "credit_cards": [
-    {"name": "Chase Sapphire", "balance_cents": 166000, "minimum_payment_cents": 8000, "due_date": "2026-11-20", "apr_percent": 24.9}
-  ],
-  "savings_goals": [
-    {"name": "Emergency HYSA", "target_amount_cents": 100000, "current_balance_cents": 60000, "remaining_periods": 2, "priority": 1}
-  ],
-  "debt_strategy": "avalanche"
-}
-```
+## First setup endpoints
 
-## Current limitations
+- `GET /api/people` — list household members.
+- `POST /api/people` — create a household member, optionally specifying `default_buffer_cents`.
+- `GET /api/income-sources` — list saved income sources.
+- `POST /api/income-sources` — create an income source linked to a household member.
+- `POST /api/plan/preview` — preview an allocation from explicitly supplied data.
 
-- Financial data is not persisted yet; preview requests are stateless.
-- This milestone expects pay-period income dates, bill due dates, and savings goal periods to be supplied explicitly. Recurrence and calendar generation come next.
-- This is a planning tool, not a bank connection; an allocation does not move money or verify that a payment happened.
-- Authentication, backups, and deployment hardening are not included. Do not expose this preview service to the public internet.
+Money values use integer cents: `$1,234.56` is `123456`. Income frequency options are `weekly`, `biweekly`, `semimonthly`, `monthly`, and `irregular`.
+
+## Allocation order
+
+1. Protect discretionary cash buffers.
+2. Fund bills due during the pay-period window.
+3. Fund credit-card minimums due during the window.
+4. Contribute to savings goals by priority.
+5. Apply remaining cash to extra debt payoff using avalanche or snowball order.
+
+Unfunded amounts are explicitly shown. This is a planning tool, not a bank connection; it does not move money or verify that a payment happened.
+
+## Current limitations and security
+
+The household and income APIs are an early foundation, not a finished management interface. Bills, cards, savings goals, transactions, saved payday plans, and checklist completion do not yet have management endpoints or UI. Income recurrence and payday calendar generation are not yet connected to the planner. Authentication, backups, and deployment hardening are not included. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
