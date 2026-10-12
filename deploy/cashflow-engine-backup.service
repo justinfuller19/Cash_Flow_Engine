@@ -1,0 +1,17 @@
+[Unit]
+Description=CashFlow Engine SQLite backup
+After=network.target
+
+[Service]
+Type=oneshot
+User=cashflow
+Group=cashflow
+WorkingDirectory=/opt/cashflow-engine
+EnvironmentFile=-/etc/cashflow-engine.env
+ExecStart=/opt/cashflow-engine/.venv/bin/python /opt/cashflow-engine/scripts/backup_database.py
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cashflow-engine /var/backups/cashflow-engine
