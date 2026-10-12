@@ -228,6 +228,13 @@ function renderPeople() {
         await refresh(); showStatus("Household member status updated.");
       } catch (error) { showStatus(error.message, true); }
     }, true);
+    addSmallButton(item, "Delete member", async () => {
+      if (!confirm("Permanently delete " + person.name + "? This also deletes their income sources. Saved plans and transactions remain.")) return;
+      try {
+        await api("/api/people/" + person.id, {method:"DELETE"});
+        await refresh(); showStatus("Household member deleted.");
+      } catch (error) { showStatus(error.message, true); }
+    }, true);
     peopleList.appendChild(item);
     if (person.active) {
       const option = document.createElement("option");
@@ -267,6 +274,13 @@ function renderIncome(incomes) {
       try {
         await api("/api/income-sources/" + income.id, {method:"PATCH", body:JSON.stringify({active:!income.active})});
         await refresh(); showStatus("Income source status updated.");
+      } catch (error) { showStatus(error.message, true); }
+    }, true);
+    addSmallButton(item, "Delete income", async () => {
+      if (!confirm("Permanently delete income source " + income.name + "?")) return;
+      try {
+        await api("/api/income-sources/" + income.id, {method:"DELETE"});
+        await refresh(); showStatus("Income source deleted.");
       } catch (error) { showStatus(error.message, true); }
     }, true);
     incomeList.appendChild(item);
@@ -394,6 +408,15 @@ def update_person(person_id: int, body: PersonUpdate):
     return _person_out(row)
 
 
+@app.delete("/api/people/{person_id}")
+def delete_person(person_id: int):
+    with database.connect() as db:
+        cursor = db.execute("DELETE FROM persons WHERE id = ?", (person_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Household member not found")
+    return {"deleted": True, "id": person_id}
+
+
 @app.get("/api/income-sources", response_model=list[IncomeSourceOut])
 def list_income_sources():
     with database.connect() as db:
@@ -486,6 +509,15 @@ def update_income_source(income_id: int, body: IncomeSourceUpdate):
             status_code=422, detail="Update violates a database constraint"
         ) from exc
     return dict(row) | {"active": bool(row["active"])}
+
+
+@app.delete("/api/income-sources/{income_id}")
+def delete_income_source(income_id: int):
+    with database.connect() as db:
+        cursor = db.execute("DELETE FROM income_sources WHERE id = ?", (income_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Income source not found")
+    return {"deleted": True, "id": income_id}
 
 
 @app.post("/api/plan/preview", response_model=PaydayPlanOut)
