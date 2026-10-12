@@ -107,6 +107,15 @@ def update_bill(bill_id: int, body: BillUpdate):
     return _bill_out(row)
 
 
+@router.delete("/api/bills/{bill_id}")
+def delete_bill(bill_id: int):
+    with database.connect() as db:
+        cursor = db.execute("DELETE FROM bills WHERE id = ?", (bill_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Bill not found")
+    return {"deleted": True, "id": bill_id}
+
+
 @router.get("/api/debts", response_model=list[DebtOut])
 def list_debts():
     with database.connect() as db:
@@ -175,6 +184,15 @@ def update_debt(debt_id: int, body: DebtUpdate):
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=422, detail="Debt update violates a database constraint") from exc
     return _debt_out(row)
+
+
+@router.delete("/api/debts/{debt_id}")
+def delete_debt(debt_id: int):
+    with database.connect() as db:
+        cursor = db.execute("DELETE FROM credit_cards WHERE id = ?", (debt_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Debt not found")
+    return {"deleted": True, "id": debt_id}
 
 
 @router.get("/bills", response_class=HTMLResponse)
@@ -259,7 +277,8 @@ await api("/api/debts/"+r.id,{method:"PATCH",body:JSON.stringify({name:name.trim
 await refresh();message((kind==="bills"?"Bill":"Debt")+" updated.");
 }catch(e){message(e.message,true);}
 });li.appendChild(edit);
-addToggle(li,"/api/"+(kind==="bills"?"bills":"debts")+"/"+r.id,r.active,kind==="bills"?"Bill":"Debt");list.appendChild(li);}}
+addToggle(li,"/api/"+(kind==="bills"?"bills":"debts")+"/"+r.id,r.active,kind==="bills"?"Bill":"Debt");
+const remove=el("button","toggle","Delete "+(kind==="bills"?"bill":"debt"));remove.type="button";remove.addEventListener("click",async()=>{if(!confirm("Permanently delete "+r.name+"?"))return;remove.disabled=true;try{await api("/api/"+(kind==="bills"?"bills":"debts")+"/"+r.id,{method:"DELETE"});await refresh();message((kind==="bills"?"Bill":"Debt")+" deleted.");}catch(e){message(e.message,true);remove.disabled=false;}});li.appendChild(remove);list.appendChild(li);}}
 async function refresh(){const [b,d]=await Promise.all([api("/api/bills"),api("/api/debts")]);render(document.getElementById("bills"),b,"bills");render(document.getElementById("debts"),d,"debts");}
 function bindForm(id,url,convert,success){const form=document.getElementById(id);form.addEventListener("submit",async(e)=>{e.preventDefault();const button=form.querySelector("button");button.disabled=true;try{await api(url,{method:"POST",body:JSON.stringify(convert(form))});form.reset();await refresh();message(success);}catch(err){message(err.message,true);}finally{button.disabled=false;}});}
 bindForm("bill-form","/api/bills",f=>({name:f.elements.name.value.trim(),amount_cents:cents(f.elements.amount.value),next_due_date:f.elements.next_due_date.value,frequency:f.elements.frequency.value,category:f.elements.category.value,flexible_window_days:Number(f.elements.flexible_window_days.value),autopay:f.elements.autopay.checked}),"Bill saved.");
