@@ -1,8 +1,8 @@
 """Pydantic schemas for persistent household setup endpoints."""
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 IncomeFrequency = Literal["weekly", "biweekly", "semimonthly", "monthly", "irregular"]
@@ -27,6 +27,14 @@ class PersonUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     default_buffer_cents: int | None = Field(default=None, ge=0)
     active: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_explicit_nulls(cls, value: Any) -> Any:
+        """PATCH fields are optional, but null is not a valid replacement value."""
+        if isinstance(value, dict) and any(item is None for item in value.values()):
+            raise ValueError("PATCH fields cannot be null")
+        return value
 
 
 class IncomeSourceCreate(BaseModel):
@@ -58,3 +66,11 @@ class IncomeSourceUpdate(BaseModel):
     frequency: IncomeFrequency | None = None
     next_payday: date | None = None
     active: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_explicit_nulls(cls, value: Any) -> Any:
+        """PATCH fields are optional, but null is not a valid replacement value."""
+        if isinstance(value, dict) and any(item is None for item in value.values()):
+            raise ValueError("PATCH fields cannot be null")
+        return value
