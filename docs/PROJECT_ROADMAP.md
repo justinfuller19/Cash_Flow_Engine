@@ -51,8 +51,10 @@ The current state of the repository and merged code is authoritative. Check open
 - Add edit and deactivate/reactivate workflows; avoid hard deletion when records are referenced by historical plans.
 - Validate required fields, dates, frequency choices, and nonnegative amounts.
 
-### Milestone 4 — Bills and debt management
+### Milestone 4 — Bills and debt management (in progress)
 **Goal:** Maintain obligations that the planning engine can use.
+
+The initial management increment adds SQLite-backed bill and debt endpoints plus a browser page for creating and deactivating records. Persisted records are not yet wired into payday-plan generation; that integration remains part of the saved payday planning milestone.
 
 - Create, view, edit, and deactivate recurring bills.
 - Support bill name, amount, due date or recurrence, category, autopay indicator, and optional household owner.
