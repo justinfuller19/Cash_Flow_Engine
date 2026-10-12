@@ -136,8 +136,10 @@ A manual signed-amount transaction ledger and monthly dashboard totals are avail
 - Keep secrets and the SQLite database out of Git.
 - Document limitations and avoid presenting projections as guarantees.
 
-### Milestone 11 — Raspberry Pi deployment
+### Milestone 11 — Raspberry Pi deployment (in progress)
 **Goal:** Run the application reliably as a private household service.
+
+Initial deployment assets now include a localhost-only systemd service, a daily backup timer, and SQLite backup/restore utilities with integrity checks and pre-restore safety copies. The instructions intentionally keep the unauthenticated app off the LAN/public internet.
 
 - Document installation in a Python virtual environment.
 - Run the app through a systemd service with a dedicated, least-privilege user.

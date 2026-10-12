@@ -1,0 +1,26 @@
+[Unit]
+Description=CashFlow Engine household finance planner
+After=network.target
+
+[Service]
+Type=simple
+User=cashflow
+Group=cashflow
+WorkingDirectory=/opt/cashflow-engine
+EnvironmentFile=-/etc/cashflow-engine.env
+ExecStart=/opt/cashflow-engine/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/cashflow-engine /var/backups/cashflow-engine
+
+[Install]
+WantedBy=multi-user.target
