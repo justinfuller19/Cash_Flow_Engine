@@ -36,6 +36,7 @@ class SavingsGoalIn(BaseModel):
     current_balance_cents: int = Field(ge=0)
     remaining_periods: int = Field(ge=1, le=1200)
     priority: int = 100
+    contribution_per_period_cents: int | None = Field(default=None, ge=0)
 
 
 class PaydayPreviewRequest(BaseModel):
