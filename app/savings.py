@@ -91,6 +91,15 @@ def update_savings_goal(goal_id: int, body: SavingsGoalUpdate):
     return _goal_out(row)
 
 
+@router.delete("/api/savings-goals/{goal_id}")
+def delete_savings_goal(goal_id: int):
+    with database.connect() as db:
+        cursor = db.execute("DELETE FROM savings_goals WHERE id = ?", (goal_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Savings goal not found")
+    return {"deleted": True, "id": goal_id}
+
+
 @router.get("/savings", response_class=HTMLResponse)
 def savings_page():
     return """<!doctype html>
@@ -139,7 +148,8 @@ const pct=g.target_amount_cents===0?100:Math.min(100,Math.round(g.current_balanc
 li.appendChild(el("div","detail",pct+"% saved · priority "+g.priority+" · plan "+dollars(g.contribution_per_period_cents)+" per payday"+(g.target_date?" · target "+g.target_date:"")+(g.active?"":" · inactive")));
 const track=el("div","progress");track.setAttribute("aria-label",pct+" percent saved");const fill=el("div","fill","");fill.style.width=pct+"%";track.appendChild(fill);li.appendChild(track);
 const edit=el("button","toggle","Edit goal");edit.type="button";edit.addEventListener("click",async()=>{const target=prompt("Target amount in dollars:",(g.target_amount_cents/100).toFixed(2));if(target===null)return;const current=prompt("Amount already saved in dollars:",(g.current_balance_cents/100).toFixed(2));if(current===null)return;const priority=prompt("Priority (lower is sooner):",String(g.priority));if(priority===null)return;const contribution=prompt("Planned contribution per payday in dollars:",(g.contribution_per_period_cents/100).toFixed(2));if(contribution===null)return;const targetDate=prompt("Target date YYYY-MM-DD (leave blank to clear):",g.target_date||"");if(targetDate===null)return;try{await api("/api/savings-goals/"+g.id,{method:"PATCH",body:JSON.stringify({target_amount_cents:cents(target),current_balance_cents:cents(current),priority:Number(priority),contribution_per_period_cents:cents(contribution),target_date:targetDate||null})});await refresh();message("Savings goal updated.");}catch(e){message(e.message,true);}});li.appendChild(edit);
-const toggle=el("button","toggle",g.active?"Deactivate":"Reactivate");toggle.type="button";toggle.addEventListener("click",async()=>{toggle.disabled=true;try{await api("/api/savings-goals/"+g.id,{method:"PATCH",body:JSON.stringify({active:!g.active})});await refresh();message("Savings goal status updated.");}catch(e){message(e.message,true);toggle.disabled=false;}});li.appendChild(toggle);list.appendChild(li);}}
+const toggle=el("button","toggle",g.active?"Deactivate":"Reactivate");toggle.type="button";toggle.addEventListener("click",async()=>{toggle.disabled=true;try{await api("/api/savings-goals/"+g.id,{method:"PATCH",body:JSON.stringify({active:!g.active})});await refresh();message("Savings goal status updated.");}catch(e){message(e.message,true);toggle.disabled=false;}});li.appendChild(toggle);
+const remove=el("button","toggle","Delete goal");remove.type="button";remove.addEventListener("click",async()=>{if(!confirm("Permanently delete savings goal "+g.name+"?"))return;remove.disabled=true;try{await api("/api/savings-goals/"+g.id,{method:"DELETE"});await refresh();message("Savings goal deleted.");}catch(e){message(e.message,true);remove.disabled=false;}});li.appendChild(remove);list.appendChild(li);}}
 document.getElementById("goal-form").addEventListener("submit",async(e)=>{e.preventDefault();const f=e.currentTarget;const b=f.querySelector("button");b.disabled=true;try{await api("/api/savings-goals",{method:"POST",body:JSON.stringify({name:f.elements.name.value.trim(),target_amount_cents:cents(f.elements.target.value),current_balance_cents:cents(f.elements.current.value),target_date:f.elements.target_date.value||null,priority:Number(f.elements.priority.value),contribution_per_period_cents:cents(f.elements.contribution.value)})});f.reset();f.elements.current.value="0";f.elements.priority.value="100";f.elements.contribution.value="0";await refresh();message("Savings goal saved.");}catch(err){message(err.message,true);}finally{b.disabled=false;}});
 refresh().catch(e=>message("Could not load savings goals: "+e.message,true));
 </script></body></html>"""

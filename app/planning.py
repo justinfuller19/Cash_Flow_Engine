@@ -193,6 +193,15 @@ def get_saved_plan(plan_id: int):
         return _plan_output(db, row)
 
 
+@router.delete("/api/plans/{plan_id}")
+def delete_saved_plan(plan_id: int):
+    with database.connect() as db:
+        cursor = db.execute("DELETE FROM payday_plans WHERE id = ?", (plan_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Saved plan not found")
+    return {"deleted": True, "id": plan_id}
+
+
 @router.get("/planner", response_class=HTMLResponse)
 def planner_page():
     return """<!doctype html>
@@ -241,7 +250,7 @@ const items=document.getElementById("items");items.replaceChildren();if(!p.items
 for(const item of p.items){const li=el("li");li.appendChild(el("div","title",item.name+" · "+dollars(item.funded_cents)+" / "+dollars(item.requested_cents)));li.appendChild(el("div","detail",item.category+" · status "+item.status+(item.due_date?" · due "+item.due_date:"")+(item.actual_amount_cents!==null?" · actual "+dollars(item.actual_amount_cents):"")+(item.actual_date?" on "+item.actual_date:"")+(item.note?" · "+item.note:"")));if(item.unfunded_cents)li.appendChild(el("div","detail shortfall","Short by "+dollars(item.unfunded_cents)));items.appendChild(li);}
 }
 async function refreshHistory(){const plans=await api("/api/plans");const list=document.getElementById("history");list.replaceChildren();if(!plans.length){list.appendChild(el("li","muted","No saved plans yet."));return;}
-for(const p of plans){const li=el("li");li.appendChild(el("div","title","Plan "+p.id+" · "+p.period_start+" to "+p.period_end));li.appendChild(el("div","detail","Available "+dollars(p.total_available_cents)+" · allocated "+dollars(p.allocated_cents)+(p.unfunded_cents?" · short "+dollars(p.unfunded_cents):" · fully funded")));const b=el("button","","View plan");b.type="button";b.addEventListener("click",async()=>{try{renderPlan(await api("/api/plans/"+p.id));}catch(e){message(e.message,true);}});li.appendChild(b);list.appendChild(li);}}
+for(const p of plans){const li=el("li");li.appendChild(el("div","title","Plan "+p.id+" · "+p.period_start+" to "+p.period_end));li.appendChild(el("div","detail","Available "+dollars(p.total_available_cents)+" · allocated "+dollars(p.allocated_cents)+(p.unfunded_cents?" · short "+dollars(p.unfunded_cents):" · fully funded")));const b=el("button","","View plan");b.type="button";b.addEventListener("click",async()=>{try{renderPlan(await api("/api/plans/"+p.id));}catch(e){message(e.message,true);}});li.appendChild(b);const remove=el("button","","Remove plan");remove.type="button";remove.addEventListener("click",async()=>{if(!confirm("Remove saved plan "+p.id+"? Its checklist items will also be removed."))return;remove.disabled=true;try{await api("/api/plans/"+p.id,{method:"DELETE"});await refreshHistory();message("Saved plan removed.");}catch(e){message(e.message,true);remove.disabled=false;}});li.appendChild(remove);list.appendChild(li);}}
 document.getElementById("plan-form").addEventListener("submit",async(e)=>{e.preventDefault();const f=e.currentTarget;const b=f.querySelector("button");b.disabled=true;try{const p=await api("/api/plans/generate",{method:"POST",body:JSON.stringify({plan_date:f.elements.plan_date.value,period_start:f.elements.period_start.value,period_end:f.elements.period_end.value,starting_cash_cents:cents(f.elements.starting_cash.value),debt_strategy:f.elements.debt_strategy.value})});renderPlan(p);await refreshHistory();message("Payday plan generated and saved.");}catch(err){message(err.message,true);}finally{b.disabled=false;}});
 const today=new Date();const iso=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
 document.getElementById("plan-date").value=iso(today);document.getElementById("period-start").value=iso(today);const end=new Date(today);end.setDate(end.getDate()+13);document.getElementById("period-end").value=iso(end);
