@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def database_path() -> Path:
@@ -195,3 +195,25 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
             db.execute("ALTER TABLE credit_cards ADD COLUMN next_due_date TEXT")
         db.execute("CREATE INDEX IF NOT EXISTS idx_bills_active_due ON bills(active, next_due_date)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_debts_active_due ON credit_cards(active, due_day_of_month)")
+
+    if version < 4:
+        # Version 4 supports explicit per-payday savings contributions and saved plan totals.
+        goal_columns = {row["name"] for row in db.execute("PRAGMA table_info(savings_goals)")}
+        if "contribution_per_period_cents" not in goal_columns:
+            db.execute(
+                "ALTER TABLE savings_goals ADD COLUMN contribution_per_period_cents "
+                "INTEGER NOT NULL DEFAULT 0 CHECK(contribution_per_period_cents >= 0)"
+            )
+
+        plan_columns = {row["name"] for row in db.execute("PRAGMA table_info(payday_plans)")}
+        plan_additions = {
+            "income_cents": "INTEGER NOT NULL DEFAULT 0 CHECK(income_cents >= 0)",
+            "total_available_cents": "INTEGER NOT NULL DEFAULT 0 CHECK(total_available_cents >= 0)",
+            "allocated_cents": "INTEGER NOT NULL DEFAULT 0 CHECK(allocated_cents >= 0)",
+            "unallocated_cents": "INTEGER NOT NULL DEFAULT 0 CHECK(unallocated_cents >= 0)",
+            "unfunded_cents": "INTEGER NOT NULL DEFAULT 0 CHECK(unfunded_cents >= 0)",
+            "target_card": "TEXT",
+        }
+        for column, declaration in plan_additions.items():
+            if column not in plan_columns:
+                db.execute(f"ALTER TABLE payday_plans ADD COLUMN {column} {declaration}")
