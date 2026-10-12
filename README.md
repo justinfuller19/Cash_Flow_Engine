@@ -84,6 +84,10 @@ Money values use integer cents: `$1,234.56` is `123456`. Income frequency option
 
 Unfunded amounts are explicitly shown. This is a planning tool, not a bank connection; it does not move money or verify that a payment happened.
 
+## Raspberry Pi deployment
+
+See [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md) for the systemd service, daily backups, restore procedure, and upgrade notes.
+
 ## Current limitations and security
 
-Household members and income sources can be added, edited, and deactivated/reactivated through the API; the browser setup page currently supports adding and viewing them. Transactions can be entered manually, but automatic imports and reconciliation against bank activity are not yet implemented. The planner forecasts saved income and recurring bills, protects active household buffers, includes active debt minimums, and applies configured savings contributions before extra debt payoff. Irregular income is only forecast for its explicitly saved date. Authentication, backups, and deployment hardening remain future work. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
+Household members and income sources can be added, edited, and deactivated/reactivated through the API; the browser setup page currently supports adding and viewing them. Transactions can be entered manually, but automatic imports and reconciliation against bank activity are not yet implemented. The planner forecasts saved income and recurring bills, protects active household buffers, includes active debt minimums, and applies configured savings contributions before extra debt payoff. Irregular income is only forecast for its explicitly saved date. The Raspberry Pi systemd and backup/restore guide is in [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md). The app remains localhost-only by default and still needs authentication before remote/LAN access. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
