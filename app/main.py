@@ -1,17 +1,32 @@
-"""CashFlow Engine FastAPI entry point (initial MVP)."""
-from fastapi import FastAPI, HTTPException
+"""CashFlow Engine FastAPI entry point."""
+import sqlite3
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import HTMLResponse
 
+from . import database
 from .engine import (
     Bill, BufferReservation, CreditCard, Income, PaydayRequest, SavingsGoal,
     generate_payday_plan,
 )
+from .household_schemas import (
+    IncomeSourceCreate, IncomeSourceOut, PersonCreate, PersonOut,
+)
 from .schemas import PaydayPlanOut, PaydayPreviewRequest
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    database.initialize_database()
+    yield
+
 
 app = FastAPI(
     title="CashFlow Engine",
-    description="Self-hosted household cash-flow planning. Preview endpoint only; persistence is next.",
-    version="0.1.0",
+    description="Self-hosted household cash-flow planning with SQLite-backed household setup.",
+    version="0.2.0",
+    lifespan=lifespan,
 )
 
 
@@ -29,17 +44,90 @@ def home():
 main{background:white;padding:32px;border-radius:18px;box-shadow:0 8px 32px #172b4d12}h1{margin:0 0 8px;color:#155e75}
 code{background:#eef2f7;padding:3px 6px;border-radius:5px}.pill{display:inline-block;background:#d1fae5;color:#065f46;padding:5px 9px;border-radius:999px;font-size:13px}
 li{margin:8px 0}.muted{color:#5b6678}</style></head><body><main>
-<span class="pill">MVP · Calculation engine online</span><h1>CashFlow Engine</h1>
+<span class="pill">Milestone 2 · SQLite foundation</span><h1>CashFlow Engine</h1>
 <p class="muted">A private, self-hosted household cash-flow planner.</p>
-<h2>What's working in this milestone</h2><ul>
-<li>Pure Python payday allocation engine using integer cents.</li>
+<h2>What's working</h2><ul>
+<li>Payday allocation engine using integer cents.</li>
 <li>Buffers first, then bills, card minimums, savings goals, and extra debt payoff.</li>
-<li>Explicit shortfalls when there isn't enough cash to fund an item.</li>
-<li>Avalanche and snowball target selection.</li>
-<li>Automated tests for allocation order and arithmetic.</li></ul>
-<p>Use <code>/docs</code> to try the interactive API, especially <code>POST /api/plan/preview</code>.</p>
-<p class="muted">This initial milestone does not yet save financial data and should not be exposed to the public internet.</p>
+<li>Explicit shortfalls plus avalanche and snowball strategies.</li>
+<li>SQLite schema for household members, income, bills, cards, savings, transactions, and payday plans.</li>
+<li>Persistent household-member and income-source setup APIs.</li></ul>
+<p>Use <code>/docs</code> to explore the API. Add household members at <code>POST /api/people</code> and income sources at <code>POST /api/income-sources</code>.</p>
+<p class="muted">The management APIs are an early foundation, not a finished finance UI. Keep this service on a trusted network; authentication and deployment hardening are not included.</p>
 </main></body></html>"""
+
+
+@app.get("/api/people", response_model=list[PersonOut])
+def list_people():
+    with database.connect() as db:
+        rows = db.execute(
+            "SELECT id, name, default_buffer_cents, created_at FROM persons ORDER BY id"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/people", response_model=PersonOut, status_code=status.HTTP_201_CREATED)
+def create_person(body: PersonCreate):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name cannot be blank")
+    with database.connect() as db:
+        cursor = db.execute(
+            "INSERT INTO persons (name, default_buffer_cents) VALUES (?, ?)",
+            (name, body.default_buffer_cents),
+        )
+        row = db.execute(
+            "SELECT id, name, default_buffer_cents, created_at FROM persons WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+    return dict(row)
+
+
+@app.get("/api/income-sources", response_model=list[IncomeSourceOut])
+def list_income_sources():
+    with database.connect() as db:
+        rows = db.execute(
+            """SELECT id, person_id, name, net_amount_cents, frequency,
+                      next_payday, active, created_at
+               FROM income_sources ORDER BY next_payday, id"""
+        ).fetchall()
+    return [dict(row) | {"active": bool(row["active"])} for row in rows]
+
+
+@app.post(
+    "/api/income-sources",
+    response_model=IncomeSourceOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_income_source(body: IncomeSourceCreate):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name cannot be blank")
+    try:
+        with database.connect() as db:
+            person = db.execute(
+                "SELECT id FROM persons WHERE id = ?", (body.person_id,)
+            ).fetchone()
+            if person is None:
+                raise HTTPException(status_code=404, detail="Household member not found")
+            cursor = db.execute(
+                """INSERT INTO income_sources
+                   (person_id, name, net_amount_cents, frequency, next_payday, active)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    body.person_id, name, body.net_amount_cents, body.frequency,
+                    body.next_payday.isoformat(), int(body.active),
+                ),
+            )
+            row = db.execute(
+                """SELECT id, person_id, name, net_amount_cents, frequency,
+                          next_payday, active, created_at
+                   FROM income_sources WHERE id = ?""",
+                (cursor.lastrowid,),
+            ).fetchone()
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=422, detail="Income source violates a database constraint") from exc
+    return dict(row) | {"active": bool(row["active"])}
 
 
 @app.post("/api/plan/preview", response_model=PaydayPlanOut)
