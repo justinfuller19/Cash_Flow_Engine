@@ -52,4 +52,4 @@ class SavedPlanOut(BaseModel):
     status: str
     created_at: str
     is_fully_funded: bool
-    items: list[SavedPlanItemOut] = []
+    items: list[SavedPlanItemOut] = Field(default_factory=list)
