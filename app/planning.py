@@ -168,7 +168,7 @@ def _plan_output(db, row) -> dict:
     plan = dict(row)
     items = db.execute(
         """SELECT id, category, name, requested_cents, funded_cents, unfunded_cents,
-                  due_date, note, is_completed
+                  due_date, note, status, actual_amount_cents, actual_date, is_completed
            FROM plan_items WHERE plan_id = ? ORDER BY id""",
         (plan["id"],),
     ).fetchall()
