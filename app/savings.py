@@ -21,7 +21,7 @@ def list_savings_goals():
     with database.connect() as db:
         rows = db.execute(
             """SELECT id, name, target_amount_cents, current_balance_cents,
-                      target_date, priority, active, created_at
+                      target_date, priority, contribution_per_period_cents, active, created_at
                FROM savings_goals ORDER BY priority, name COLLATE NOCASE, id"""
         ).fetchall()
     return [_goal_out(row) for row in rows]
@@ -40,15 +40,15 @@ def create_savings_goal(body: SavingsGoalCreate):
         with database.connect() as db:
             cursor = db.execute(
                 """INSERT INTO savings_goals
-                   (name, target_amount_cents, current_balance_cents, target_date, priority, active)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (name, target_amount_cents, current_balance_cents, target_date, priority, contribution_per_period_cents, active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (name, body.target_amount_cents, body.current_balance_cents,
                  body.target_date.isoformat() if body.target_date else None,
-                 body.priority, int(body.active)),
+                 body.priority, body.contribution_per_period_cents, int(body.active)),
             )
             row = db.execute(
                 """SELECT id, name, target_amount_cents, current_balance_cents,
-                          target_date, priority, active, created_at
+                          target_date, priority, contribution_per_period_cents, active, created_at
                    FROM savings_goals WHERE id = ?""", (cursor.lastrowid,)
             ).fetchone()
     except sqlite3.IntegrityError as exc:
@@ -121,6 +121,7 @@ button:disabled{opacity:.55}.toggle{background:#475569;margin-top:10px}
 <div><label for="goal-current">Already saved ($)</label><input id="goal-current" name="current" type="number" min="0" step="0.01" value="0" required></div>
 <div><label for="goal-date">Target date (optional)</label><input id="goal-date" name="target_date" type="date"></div>
 <div><label for="goal-priority">Priority (lower is sooner)</label><input id="goal-priority" name="priority" type="number" min="0" max="10000" step="1" value="100" required></div>
+<div><label for="goal-contribution">Planned contribution per payday ($)</label><input id="goal-contribution" name="contribution" type="number" min="0" step="0.01" value="0" required></div>
 <div><button type="submit">Save goal</button></div>
 </form></section>
 <section class="card"><h2>Your goals</h2><ul id="goals" class="list"><li>Loading goals…</li></ul></section>
@@ -135,10 +136,10 @@ function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=
 async function refresh(){const goals=await api("/api/savings-goals");const list=document.getElementById("goals");list.replaceChildren();if(!goals.length){list.appendChild(el("li","muted","No savings goals saved yet."));return;}
 for(const g of goals){const li=el("li");li.appendChild(el("div","title",g.name+" · "+dollars(g.current_balance_cents)+" of "+dollars(g.target_amount_cents)));
 const pct=g.target_amount_cents===0?100:Math.min(100,Math.round(g.current_balance_cents/g.target_amount_cents*100));
-li.appendChild(el("div","detail",pct+"% saved · priority "+g.priority+(g.target_date?" · target "+g.target_date:"")+(g.active?"":" · inactive")));
+li.appendChild(el("div","detail",pct+"% saved · priority "+g.priority+" · plan "+dollars(g.contribution_per_period_cents)+" per payday"+(g.target_date?" · target "+g.target_date:"")+(g.active?"":" · inactive")));
 const track=el("div","progress");track.setAttribute("aria-label",pct+" percent saved");const fill=el("div","fill","");fill.style.width=pct+"%";track.appendChild(fill);li.appendChild(track);
-const edit=el("button","toggle","Edit goal");edit.type="button";edit.addEventListener("click",async()=>{const target=prompt("Target amount in dollars:",(g.target_amount_cents/100).toFixed(2));if(target===null)return;const current=prompt("Amount already saved in dollars:",(g.current_balance_cents/100).toFixed(2));if(current===null)return;const priority=prompt("Priority (lower is sooner):",String(g.priority));if(priority===null)return;const targetDate=prompt("Target date YYYY-MM-DD (leave blank to clear):",g.target_date||"");if(targetDate===null)return;try{await api("/api/savings-goals/"+g.id,{method:"PATCH",body:JSON.stringify({target_amount_cents:cents(target),current_balance_cents:cents(current),priority:Number(priority),target_date:targetDate||null})});await refresh();message("Savings goal updated.");}catch(e){message(e.message,true);}});li.appendChild(edit);
+const edit=el("button","toggle","Edit goal");edit.type="button";edit.addEventListener("click",async()=>{const target=prompt("Target amount in dollars:",(g.target_amount_cents/100).toFixed(2));if(target===null)return;const current=prompt("Amount already saved in dollars:",(g.current_balance_cents/100).toFixed(2));if(current===null)return;const priority=prompt("Priority (lower is sooner):",String(g.priority));if(priority===null)return;const contribution=prompt("Planned contribution per payday in dollars:",(g.contribution_per_period_cents/100).toFixed(2));if(contribution===null)return;const targetDate=prompt("Target date YYYY-MM-DD (leave blank to clear):",g.target_date||"");if(targetDate===null)return;try{await api("/api/savings-goals/"+g.id,{method:"PATCH",body:JSON.stringify({target_amount_cents:cents(target),current_balance_cents:cents(current),priority:Number(priority),contribution_per_period_cents:cents(contribution),target_date:targetDate||null})});await refresh();message("Savings goal updated.");}catch(e){message(e.message,true);}});li.appendChild(edit);
 const toggle=el("button","toggle",g.active?"Deactivate":"Reactivate");toggle.type="button";toggle.addEventListener("click",async()=>{toggle.disabled=true;try{await api("/api/savings-goals/"+g.id,{method:"PATCH",body:JSON.stringify({active:!g.active})});await refresh();message("Savings goal status updated.");}catch(e){message(e.message,true);toggle.disabled=false;}});li.appendChild(toggle);list.appendChild(li);}}
-document.getElementById("goal-form").addEventListener("submit",async(e)=>{e.preventDefault();const f=e.currentTarget;const b=f.querySelector("button");b.disabled=true;try{await api("/api/savings-goals",{method:"POST",body:JSON.stringify({name:f.elements.name.value.trim(),target_amount_cents:cents(f.elements.target.value),current_balance_cents:cents(f.elements.current.value),target_date:f.elements.target_date.value||null,priority:Number(f.elements.priority.value)})});f.reset();f.elements.current.value="0";f.elements.priority.value="100";await refresh();message("Savings goal saved.");}catch(err){message(err.message,true);}finally{b.disabled=false;}});
+document.getElementById("goal-form").addEventListener("submit",async(e)=>{e.preventDefault();const f=e.currentTarget;const b=f.querySelector("button");b.disabled=true;try{await api("/api/savings-goals",{method:"POST",body:JSON.stringify({name:f.elements.name.value.trim(),target_amount_cents:cents(f.elements.target.value),current_balance_cents:cents(f.elements.current.value),target_date:f.elements.target_date.value||null,priority:Number(f.elements.priority.value),contribution_per_period_cents:cents(f.elements.contribution.value)})});f.reset();f.elements.current.value="0";f.elements.priority.value="100";f.elements.contribution.value="0";await refresh();message("Savings goal saved.");}catch(err){message(err.message,true);}finally{b.disabled=false;}});
 refresh().catch(e=>message("Could not load savings goals: "+e.message,true));
 </script></body></html>"""
