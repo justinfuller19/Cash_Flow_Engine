@@ -30,7 +30,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="CashFlow Engine",
     description="Self-hosted household cash-flow planning with SQLite-backed household setup.",
-    version="0.5.0",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
