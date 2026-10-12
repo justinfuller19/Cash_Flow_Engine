@@ -32,7 +32,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="CashFlow Engine",
     description="Self-hosted household cash-flow planning with SQLite-backed household setup.",
-    version="0.7.0",
+    version="0.8.0",
     lifespan=lifespan,
 )
 
@@ -147,7 +147,7 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <button type="submit">Add income source</button></form>
 <ul id="income-list" class="list" aria-label="Saved income sources"><li class="empty">Loading income sources…</li></ul>
 </section></div>
-<p class="muted">Next up: recurring bills, credit cards, savings goals, and a payday action plan. This screen does not connect to your bank or move money.</p>
+<p class="muted">Continue with Bills & Debt, Savings Goals, Payday Planner, or Checklist from the dashboard. This screen does not connect to your bank or move money.</p>
 </main>
 <script>
 const statusBox = document.getElementById("status");
