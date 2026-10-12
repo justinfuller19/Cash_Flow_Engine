@@ -32,7 +32,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="CashFlow Engine",
     description="Self-hosted household cash-flow planning with SQLite-backed household setup.",
-    version="0.7.0",
+    version="0.8.0",
     lifespan=lifespan,
 )
 
@@ -121,7 +121,7 @@ button{margin-top:16px;border:0;border-radius:9px;background:#0e7490;color:white
 button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid #67e8f9;outline-offset:2px}
 .status{margin:0 0 18px;padding:12px 14px;border-radius:10px;background:#e0f2fe;color:#075985}.status.error{background:#fee2e2;color:#991b1b}.status[hidden]{display:none}
 .list{list-style:none;padding:0;margin:14px 0 0}.list li{border-top:1px solid #e5eaf0;padding:12px 0;overflow-wrap:anywhere}.list li:first-child{border-top:0}
-.item-title{font-weight:700}.item-detail{font-size:.9rem;color:#5c687a;margin-top:3px}.empty{color:#64748b;font-style:italic}
+.item-title{font-weight:700}.item-detail{font-size:.9rem;color:#5c687a;margin-top:3px}.empty{color:#64748b;font-style:italic}.small-button{margin:8px 8px 0 0;padding:7px 10px;font-size:.88rem}
 @media(max-width:480px){body{padding:16px 10px 32px}.card{padding:17px}}
 </style></head><body><main>
 <header><a class="back" href="/">← Dashboard</a><h1>Household Setup</h1>
@@ -147,7 +147,7 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <button type="submit">Add income source</button></form>
 <ul id="income-list" class="list" aria-label="Saved income sources"><li class="empty">Loading income sources…</li></ul>
 </section></div>
-<p class="muted">Next up: recurring bills, credit cards, savings goals, and a payday action plan. This screen does not connect to your bank or move money.</p>
+<p class="muted">Continue with Bills & Debt, Savings Goals, Payday Planner, or Checklist from the dashboard. This screen does not connect to your bank or move money.</p>
 </main>
 <script>
 const statusBox = document.getElementById("status");
@@ -188,22 +188,53 @@ function emptyList(list, message) {
   list.replaceChildren();
   addText(list, "li", "empty", message);
 }
+function addSmallButton(parent, label, onClick, secondary = false) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "small-button";
+  if (secondary) button.style.background = "#475569";
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  parent.appendChild(button);
+  return button;
+}
 function renderPeople() {
   peopleList.replaceChildren();
   personSelect.replaceChildren();
+  const activePeople = people.filter((person) => person.active);
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = people.length ? "Choose a member" : "Add a member first";
+  placeholder.textContent = activePeople.length ? "Choose a member" : "Add an active member first";
   personSelect.appendChild(placeholder);
   for (const person of people) {
     const item = document.createElement("li");
-    addText(item, "div", "item-title", person.name);
+    addText(item, "div", "item-title", person.name + (person.active ? "" : " · inactive"));
     addText(item, "div", "item-detail", "Protected buffer: " + dollars(person.default_buffer_cents));
+    addSmallButton(item, "Edit member", async () => {
+      const name = prompt("Household member name:", person.name);
+      if (name === null) return;
+      const buffer = prompt("Protected buffer in dollars:", (person.default_buffer_cents / 100).toFixed(2));
+      if (buffer === null) return;
+      try {
+        await api("/api/people/" + person.id, {method:"PATCH", body:JSON.stringify({
+          name:name.trim(), default_buffer_cents:centsFromInput(buffer)
+        })});
+        await refresh(); showStatus("Household member updated.");
+      } catch (error) { showStatus(error.message, true); }
+    }, true);
+    addSmallButton(item, person.active ? "Deactivate member" : "Reactivate member", async () => {
+      try {
+        await api("/api/people/" + person.id, {method:"PATCH", body:JSON.stringify({active:!person.active})});
+        await refresh(); showStatus("Household member status updated.");
+      } catch (error) { showStatus(error.message, true); }
+    }, true);
     peopleList.appendChild(item);
-    const option = document.createElement("option");
-    option.value = String(person.id);
-    option.textContent = person.name;
-    personSelect.appendChild(option);
+    if (person.active) {
+      const option = document.createElement("option");
+      option.value = String(person.id);
+      option.textContent = person.name;
+      personSelect.appendChild(option);
+    }
   }
   if (!people.length) emptyList(peopleList, "No household members yet.");
 }
@@ -215,6 +246,29 @@ function renderIncome(incomes) {
     addText(item, "div", "item-title", income.name + " · " + dollars(income.net_amount_cents));
     addText(item, "div", "item-detail", (person ? person.name : "Unknown member") + " · " +
       income.frequency + " · next payday " + income.next_payday + (income.active ? "" : " · inactive"));
+    addSmallButton(item, "Edit income", async () => {
+      const name = prompt("Income source name:", income.name);
+      if (name === null) return;
+      const amount = prompt("Net amount per paycheck in dollars:", (income.net_amount_cents / 100).toFixed(2));
+      if (amount === null) return;
+      const frequency = prompt("Frequency (weekly, biweekly, semimonthly, monthly, irregular):", income.frequency);
+      if (frequency === null) return;
+      const nextPayday = prompt("Next payday YYYY-MM-DD:", income.next_payday);
+      if (nextPayday === null) return;
+      try {
+        await api("/api/income-sources/" + income.id, {method:"PATCH", body:JSON.stringify({
+          name:name.trim(), net_amount_cents:centsFromInput(amount),
+          frequency:frequency.trim(), next_payday:nextPayday
+        })});
+        await refresh(); showStatus("Income source updated.");
+      } catch (error) { showStatus(error.message, true); }
+    }, true);
+    addSmallButton(item, income.active ? "Deactivate income" : "Reactivate income", async () => {
+      try {
+        await api("/api/income-sources/" + income.id, {method:"PATCH", body:JSON.stringify({active:!income.active})});
+        await refresh(); showStatus("Income source status updated.");
+      } catch (error) { showStatus(error.message, true); }
+    }, true);
     incomeList.appendChild(item);
   }
   if (!incomes.length) emptyList(incomeList, "No income sources yet.");
