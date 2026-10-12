@@ -103,6 +103,19 @@ def dashboard_summary():
                       allocated_cents, unfunded_cents, status
                FROM payday_plans ORDER BY plan_date DESC, id DESC LIMIT 3"""
         ).fetchall()
+        month_start = today.replace(day=1).isoformat()
+        month_income = db.execute(
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions WHERE transaction_date >= ? AND amount_cents > 0",
+            (month_start,),
+        ).fetchone()[0]
+        month_expenses = db.execute(
+            "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions WHERE transaction_date >= ? AND amount_cents < 0",
+            (month_start,),
+        ).fetchone()[0]
+        recent_transactions = db.execute(
+            """SELECT id, transaction_date, category, description, amount_cents, account_name
+               FROM transactions ORDER BY transaction_date DESC, id DESC LIMIT 5"""
+        ).fetchall()
         pending_count = db.execute(
             """SELECT COUNT(*) FROM plan_items pi JOIN payday_plans pp ON pp.id = pi.plan_id
                WHERE pi.status IN ('pending', 'attention') AND pp.status NOT IN ('completed', 'cancelled')"""
@@ -117,6 +130,9 @@ def dashboard_summary():
         "upcoming_debts": debts[:8],
         "savings_goals": goals[:6],
         "recent_plans": [dict(row) for row in plans],
+        "month_income_cents": month_income,
+        "month_expenses_cents": month_expenses,
+        "recent_transactions": [dict(row) for row in recent_transactions],
         "pending_checklist_count": pending_count,
     }
 
