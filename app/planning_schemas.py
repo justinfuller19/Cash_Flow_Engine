@@ -30,6 +30,9 @@ class SavedPlanItemOut(BaseModel):
     unfunded_cents: int
     due_date: date | None
     note: str | None
+    status: Literal["pending", "completed", "skipped", "attention"]
+    actual_amount_cents: int | None
+    actual_date: date | None
     is_completed: bool
 
 
