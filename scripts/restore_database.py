@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sqlite3
+from contextlib import closing
 import sys
 from pathlib import Path
 
@@ -20,7 +21,7 @@ REQUIRED_TABLES = {
 def validate_backup(path: Path) -> None:
     if not path.is_file():
         raise FileNotFoundError(f"Backup file does not exist: {path}")
-    with sqlite3.connect(f"file:{path.resolve().as_posix()}?mode=ro", uri=True) as db:
+    with closing(sqlite3.connect(str(path.resolve()))) as db:
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         if integrity != "ok":
             raise sqlite3.DatabaseError(f"Backup integrity check failed: {integrity}")
@@ -52,16 +53,16 @@ def restore_backup(backup_path: Path, database_path: Path | None = None,
     database_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        with sqlite3.connect(f"file:{backup_path.as_posix()}?mode=ro", uri=True) as source:
-            with sqlite3.connect(database_path) as target:
+        with closing(sqlite3.connect(str(backup_path))) as source:
+            with closing(sqlite3.connect(database_path)) as target:
                 source.backup(target)
                 integrity = target.execute("PRAGMA integrity_check").fetchone()[0]
                 if integrity != "ok":
                     raise sqlite3.DatabaseError(f"Restored database integrity check failed: {integrity}")
     except Exception:
         if safety_backup and safety_backup.is_file():
-            with sqlite3.connect(f"file:{safety_backup.as_posix()}?mode=ro", uri=True) as source:
-                with sqlite3.connect(database_path) as target:
+            with closing(sqlite3.connect(str(safety_backup))) as source:
+                with closing(sqlite3.connect(database_path)) as target:
                     source.backup(target)
         raise
     os.chmod(database_path, 0o600)
