@@ -126,7 +126,7 @@ The home page now summarizes upcoming paydays, bills, debt minimums, savings pro
 ### Milestone 10 — Reliability, privacy, and data protection (in progress)
 **Goal:** Make the app trustworthy for real household financial data.
 
-A manual transaction ledger now supports income, expense, and transfer types; user-managed categories; safe renaming and deletion with history reassignment; monthly dashboard totals that exclude transfers; and explicit links to scheduled income, bills, or debts for forecast reconciliation. Schema v7 adds categories and schema v8 adds scheduled-item links. The weekly report UI/dashboard integration, bank imports/reconciliation, authentication, backup/restore validation, and deployment hardening remain.
+A manual transaction ledger now supports income, expense, and transfer types; user-managed categories; safe renaming and deletion with history reassignment; monthly dashboard totals that exclude transfers; and explicit links to scheduled income, bills, or debts for forecast reconciliation. Schema v7 adds categories and schema v8 adds scheduled-item links. The dedicated weekly report page and dashboard summary are available. A Settings & Data page now offers a downloadable verified backup and a typed Clear All Data reset that creates a server-side backup first, clears financial records, and preserves the schema and category definitions. Bank imports/reconciliation, authentication, broader backup/restore validation, and deployment hardening remain.
 
 - Expand tests to cover engine, API, persistence, recurrence, and full planning workflows.
 - Test database persistence across application restarts and transaction rollback on failure.
