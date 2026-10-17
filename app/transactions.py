@@ -51,7 +51,7 @@ def list_transactions(
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     with database.connect() as db:
         rows = db.execute(
-            """SELECT id, transaction_date, category, description, amount_cents,
+            """SELECT id, transaction_date, category, transaction_type, description, amount_cents,
                       account_name, notes, created_at
                FROM transactions""" + where + " ORDER BY transaction_date DESC, id DESC LIMIT 500",
             params,
