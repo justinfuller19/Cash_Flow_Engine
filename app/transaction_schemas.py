@@ -1,6 +1,6 @@
 """Validation schemas for the manual transaction ledger."""
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 class TransactionCreate(BaseModel):
     transaction_date: date
     category: str = Field(min_length=1, max_length=40)
+    transaction_type: Literal['income', 'expense', 'transfer'] | None = None
     description: str = Field(min_length=1, max_length=200)
     amount_cents: int
     account_name: str | None = Field(default=None, max_length=120)
@@ -17,6 +18,7 @@ class TransactionCreate(BaseModel):
 class TransactionUpdate(BaseModel):
     transaction_date: date | None = None
     category: str | None = Field(default=None, min_length=1, max_length=40)
+    transaction_type: Literal['income', 'expense', 'transfer'] | None = None
     description: str | None = Field(default=None, min_length=1, max_length=200)
     amount_cents: int | None = None
     account_name: str | None = Field(default=None, max_length=120)
@@ -37,6 +39,7 @@ class TransactionOut(BaseModel):
     id: int
     transaction_date: date
     category: str
+    transaction_type: Literal['income', 'expense', 'transfer']
     description: str
     amount_cents: int
     account_name: str | None
