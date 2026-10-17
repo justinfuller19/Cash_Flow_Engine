@@ -48,6 +48,15 @@ CASHFLOW_BACKUP_RETENTION_DAYS=30
 # Use long random values; do not commit real credentials.
 # CASHFLOW_USERNAME=household
 # CASHFLOW_PASSWORD=replace-with-a-long-random-secret
+#
+# Optional SMTP email reports/reminders. Set the three required values together.
+# CASHFLOW_SMTP_HOST=smtp.example.com
+# CASHFLOW_SMTP_PORT=587
+# CASHFLOW_SMTP_USERNAME=your-smtp-username
+# CASHFLOW_SMTP_PASSWORD=your-smtp-password
+# CASHFLOW_SMTP_FROM=budget@example.com
+# CASHFLOW_EMAIL_TO=you@example.com,partner@example.com
+# CASHFLOW_REMINDER_DAYS=3
 ```
 
 The environment file contains local configuration and may contain credentials; keep it root-owned with mode `600` and never commit it or share its contents.
@@ -58,9 +67,15 @@ The environment file contains local configuration and may contain credentials; k
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine.service /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-backup.service /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-backup.timer /etc/systemd/system/
+sudo cp /opt/cashflow-engine/deploy/cashflow-engine-email-reminders.service /etc/systemd/system/
+sudo cp /opt/cashflow-engine/deploy/cashflow-engine-email-reminders.timer /etc/systemd/system/
+sudo cp /opt/cashflow-engine/deploy/cashflow-engine-weekly-report.service /etc/systemd/system/
+sudo cp /opt/cashflow-engine/deploy/cashflow-engine-weekly-report.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now cashflow-engine.service
 sudo systemctl enable --now cashflow-engine-backup.timer
+sudo systemctl enable --now cashflow-engine-email-reminders.timer
+sudo systemctl enable --now cashflow-engine-weekly-report.timer
 ```
 
 Check status and logs:
@@ -73,7 +88,24 @@ curl http://127.0.0.1:8000/health
 
 Open `http://127.0.0.1:8000` in a browser running on the Pi itself. Keep the service on localhost. If accessing it through a reverse proxy, configure both credentials and TLS; the middleware treats requests carrying `X-Forwarded-For` as remote and requires authentication.
 
-## 5. Create and verify a backup
+## 5. Configure optional email reports and reminders
+
+Email is disabled unless SMTP settings and at least one recipient are configured in `/etc/cashflow-engine.env`. The application does not store SMTP credentials in the database. Port 587 uses STARTTLS; port 465 uses implicit TLS. Keep the environment file root-owned with mode `600`.
+
+Set `CASHFLOW_SMTP_HOST`, `CASHFLOW_SMTP_FROM`, and `CASHFLOW_EMAIL_TO`; optionally set `CASHFLOW_SMTP_PORT` (default 587), both `CASHFLOW_SMTP_USERNAME` and `CASHFLOW_SMTP_PASSWORD`, and `CASHFLOW_REMINDER_DAYS` (1–6, default 3).
+
+The daily timer runs at 08:00 local server time and sends due-date reminders and shortfall/buffer alerts when needed. A bill/debt reminder is sent once per scheduled item and due date unless its details change. A shortfall alert is sent when the state changes, with a repeat at most once every seven days while the same warning persists. The weekly timer runs Sunday at 19:00 local server time and emails the coming Monday–Sunday forecast once per week.
+
+Check the configured server timezone before enabling the timers. Test the runner without sending mail:
+
+```bash
+sudo -u cashflow env CASHFLOW_DB_PATH=/var/lib/cashflow-engine/cashflow.db CASHFLOW_BACKUP_DIR=/var/backups/cashflow-engine /opt/cashflow-engine/.venv/bin/python /opt/cashflow-engine/scripts/send_email_reports.py --mode daily --dry-run
+sudo systemctl status cashflow-engine-email-reminders.timer cashflow-engine-weekly-report.timer
+sudo journalctl -u cashflow-engine-email-reminders.service -n 50 --no-pager
+```
+
+## 6. Create and verify a backup
+
 
 ```bash
 sudo systemctl start cashflow-engine-backup.service
@@ -89,7 +121,7 @@ You can also run it manually:
 sudo -u cashflow env CASHFLOW_DB_PATH=/var/lib/cashflow-engine/cashflow.db CASHFLOW_BACKUP_DIR=/var/backups/cashflow-engine CASHFLOW_BACKUP_RETENTION_DAYS=30 /opt/cashflow-engine/.venv/bin/python /opt/cashflow-engine/scripts/backup_database.py
 ```
 
-## 6. Restore a backup
+## 7. Restore a backup
 
 **Restoring replaces the active database.** Stop the app first, select a known-good backup, and review the safety backup the restore script creates before replacing data.
 
@@ -102,7 +134,7 @@ sudo systemctl status cashflow-engine
 
 The script validates the backup before asking for the exact word `RESTORE`, creates a pre-restore safety backup when the active database exists, and validates the restored database. Add `--yes` only for a deliberate non-interactive restore.
 
-## 7. Updates and rollback
+## 8. Updates and rollback
 
 Back up before updating. Review changes, install dependencies in the existing virtual environment, run tests, and restart the service:
 
