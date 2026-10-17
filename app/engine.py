@@ -140,10 +140,11 @@ def _cents_for_goal(goal: SavingsGoal) -> int:
 def generate_payday_plan(request: PaydayRequest) -> PaydayPlan:
     """Generate an ordered allocation plan for a single pay period.
 
-    Waterfall: spending buffers, bills due in the window, card minimums due in
-    the window, savings goals in priority order, then extra payment to the
-    avalanche/snowball target. Each item distinguishes its requested amount
-    from the amount actually funded, so shortfalls are explicit.
+    Waterfall: bills due in the window, card minimums due in the window,
+    household buffer reservation, savings goals in priority order, then extra
+    payment to the avalanche/snowball target. Required obligations take
+    priority over rebuilding the buffer. Each item distinguishes its requested
+    amount from the amount actually funded, so shortfalls are explicit.
     """
     _validate_request(request)
 
@@ -174,11 +175,7 @@ def generate_payday_plan(request: PaydayRequest) -> PaydayPlan:
         ))
         return funded
 
-    # 1. Protect household discretionary buffers first.
-    for buffer in request.buffers:
-        allocate("buffer", buffer.name, buffer.amount_cents, note="Reserved before other allocations")
-
-    # 2. Bills due in the pay-period window, in due-date order.
+    # 1. Bills due in the pay-period window, in due-date order.
     bills_due = sorted(
         (b for b in request.bills if request.period_start <= b.due_date <= request.period_end),
         key=lambda b: (b.due_date, b.name.casefold()),
@@ -186,7 +183,7 @@ def generate_payday_plan(request: PaydayRequest) -> PaydayPlan:
     for bill in bills_due:
         allocate("bill", bill.name, bill.amount_cents, due_date=bill.due_date)
 
-    # 3. Minimums due this period; never plan to pay more than the recorded balance.
+    # 2. Minimums due this period; never plan to pay more than the recorded balance.
     cards = [c for c in request.credit_cards if c.active]
     minimum_funded_by_card: dict[str, int] = {}
     minimum_due = sorted(
@@ -198,6 +195,11 @@ def generate_payday_plan(request: PaydayRequest) -> PaydayPlan:
         funded = allocate("debt_minimum", f"{card.name} minimum payment", requested,
                           due_date=card.due_date)
         minimum_funded_by_card[card.name] = funded
+
+    # 3. Protect the household-wide buffer only after required obligations.
+    for buffer in request.buffers:
+        allocate("buffer", buffer.name, buffer.amount_cents,
+                 note="Reserved after bills and minimum debt payments")
 
     # 4. Goal contributions: priority ascending, then name for deterministic results.
     goals = sorted(request.savings_goals, key=lambda g: (g.priority, g.name.casefold()))

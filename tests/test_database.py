@@ -30,12 +30,12 @@ def test_person_and_income_source_endpoints_persist(tmp_path, monkeypatch):
 
     person_response = client.post(
         "/api/people",
-        json={"name": "Household member", "default_buffer_cents": 25000},
+        json={"name": "Household member"},
     )
     assert person_response.status_code == 201
     person = person_response.json()
     assert person["name"] == "Household member"
-    assert person["default_buffer_cents"] == 25000
+    assert "default_buffer_cents" not in person
 
     income_response = client.post(
         "/api/income-sources",
@@ -88,7 +88,7 @@ def test_person_rejects_blank_name(tmp_path, monkeypatch):
     database.initialize_database()
     response = TestClient(app).post(
         "/api/people",
-        json={"name": "   ", "default_buffer_cents": 0},
+        json={"name": "   "},
     )
 
     assert response.status_code == 422
@@ -141,7 +141,7 @@ def test_income_source_rejects_invalid_frequency_date_and_negative_amount(tmp_pa
 
 def _seed_person_and_income(client):
     person = client.post(
-        "/api/people", json={"name": "Member", "default_buffer_cents": 10000}
+        "/api/people", json={"name": "Member"}
     ).json()
     income = client.post(
         "/api/income-sources",
@@ -164,19 +164,17 @@ def test_update_person_edits_fields(tmp_path, monkeypatch):
 
     response = client.patch(
         f"/api/people/{person['id']}",
-        json={"name": "Renamed", "default_buffer_cents": 25000},
+        json={"name": "Renamed"},
     )
     assert response.status_code == 200
     updated = response.json()
     assert updated["name"] == "Renamed"
-    assert updated["default_buffer_cents"] == 25000
     assert updated["active"] is True
 
     # Unchanged fields are preserved on partial updates.
-    response = client.patch(
-        f"/api/people/{person['id']}", json={"default_buffer_cents": 30000}
-    )
+    response = client.patch(f"/api/people/{person['id']}", json={"active": False})
     assert response.json()["name"] == "Renamed"
+    assert response.json()["active"] is False
 
 
 def test_update_person_deactivate_and_reactivate(tmp_path, monkeypatch):
@@ -211,7 +209,7 @@ def test_update_person_validates_input(tmp_path, monkeypatch):
     )
     assert (
         client.patch(
-            f"/api/people/{person['id']}", json={"default_buffer_cents": -1}
+            f"/api/people/{person['id']}", json={"name": "x" * 121}
         ).status_code
         == 422
     )

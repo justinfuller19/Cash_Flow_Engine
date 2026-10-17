@@ -13,9 +13,8 @@ def seed_planned_household(tmp_path, monkeypatch):
     client = TestClient(app)
     today = date.today()
     iso = lambda value: value.isoformat()
-    person = client.post(
-        "/api/people", json={"name": "Member", "default_buffer_cents": 10000}
-    ).json()
+    person = client.post("/api/people", json={"name": "Member"}).json()
+    client.patch("/api/household/settings", json={"buffer_target_cents": 10000})
     client.post(
         "/api/income-sources",
         json={
@@ -122,4 +121,4 @@ def test_schema_v5_adds_checklist_actual_fields(tmp_path, monkeypatch):
         columns = {row["name"] for row in db.execute("PRAGMA table_info(plan_items)")}
         version = db.execute("PRAGMA user_version").fetchone()[0]
     assert {"status", "actual_amount_cents", "actual_date"} <= columns
-    assert version == database.SCHEMA_VERSION == 5
+    assert version == database.SCHEMA_VERSION == 6

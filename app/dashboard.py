@@ -31,8 +31,9 @@ def dashboard_summary():
     next_30 = today + timedelta(days=30)
     with database.connect() as db:
         buffer_total = db.execute(
-            "SELECT COALESCE(SUM(default_buffer_cents), 0) FROM persons WHERE active = 1"
-        ).fetchone()[0]
+            "SELECT COALESCE(buffer_target_cents, 0) FROM household_settings WHERE id = 1"
+        ).fetchone()
+        buffer_total = buffer_total[0] if buffer_total else 0
         people_count = db.execute("SELECT COUNT(*) FROM persons WHERE active = 1").fetchone()[0]
 
         paydays = []

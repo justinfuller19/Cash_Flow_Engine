@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def database_path() -> Path:
@@ -150,6 +150,15 @@ def initialize_database() -> None:
                 is_completed INTEGER NOT NULL DEFAULT 0 CHECK(is_completed IN (0, 1))
             );
 
+            CREATE TABLE IF NOT EXISTS household_settings (
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                buffer_target_cents INTEGER NOT NULL DEFAULT 0
+                    CHECK(buffer_target_cents >= 0),
+                starting_cash_cents INTEGER NOT NULL DEFAULT 0
+                    CHECK(starting_cash_cents >= 0),
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE INDEX IF NOT EXISTS idx_income_person ON income_sources(person_id);
             CREATE INDEX IF NOT EXISTS idx_bills_due_date ON bills(next_due_date);
             CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(transaction_date);
@@ -231,3 +240,29 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
                 db.execute(f"ALTER TABLE plan_items ADD COLUMN {column} {declaration}")
         db.execute("UPDATE plan_items SET status = 'completed' WHERE is_completed = 1")
         db.execute("CREATE INDEX IF NOT EXISTS idx_plan_items_status ON plan_items(status, plan_id)")
+
+    if version < 6:
+        # Version 6 replaces per-person buffer reservations with one shared
+        # household cash buffer target (plus a stored starting cash balance).
+        # Existing databases seed the household target from the sum of active
+        # members' buffers so reserved amounts do not change on upgrade.
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS household_settings (
+                   id INTEGER PRIMARY KEY CHECK(id = 1),
+                   buffer_target_cents INTEGER NOT NULL DEFAULT 0
+                       CHECK(buffer_target_cents >= 0),
+                   starting_cash_cents INTEGER NOT NULL DEFAULT 0
+                       CHECK(starting_cash_cents >= 0),
+                   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+               )"""
+        )
+        row = db.execute("SELECT id FROM household_settings WHERE id = 1").fetchone()
+        if row is None:
+            seed_cents = db.execute(
+                "SELECT COALESCE(SUM(default_buffer_cents), 0) "
+                "FROM persons WHERE active = 1"
+            ).fetchone()[0]
+            db.execute(
+                "INSERT INTO household_settings (id, buffer_target_cents) VALUES (1, ?)",
+                (seed_cents,),
+            )
