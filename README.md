@@ -19,6 +19,7 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 - Weekly cash-flow calculation API plus a dedicated `/weekly` report page and dashboard summary for expected income, due bills and debt minimums, recorded transactions, spending by category, the shared buffer, planned savings, shortfalls, and free-to-spend / extra debt payoff capacity.
 - Settings & Data page with a downloadable database backup and a typed, backup-first Clear All Data workflow that preserves the application schema and category definitions.
 - Optional SMTP email delivery for weekly cash-flow reports, upcoming bill/debt reminders, and projected shortfall or buffer alerts.
+- Shared household login accounts with scrypt password hashes, expiring opaque sessions, and a separate SQLite database file per household.
 - Persistent household-member and income-source APIs.
 - Initial schema for recurring bills, credit cards, savings accounts and goals, transactions, payday plans, and checklist items.
 - Unit tests for allocation behavior, setup APIs, and invalid input.
@@ -50,6 +51,14 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Open <http://127.0.0.1:8000> for the dashboard, <http://127.0.0.1:8000/setup> for household and income setup, <http://127.0.0.1:8000/bills> for bills and debts, <http://127.0.0.1:8000/savings> for savings goals, <http://127.0.0.1:8000/planner> for payday plans, <http://127.0.0.1:8000/checklist> for actual actions, <http://127.0.0.1:8000/transactions> for account activity, and <http://127.0.0.1:8000/categories> to manage transaction categories, and <http://127.0.0.1:8000/weekly> for the weekly cash-flow report, and <http://127.0.0.1:8000/settings-data> for backups and the protected data reset. Explore the API at <http://127.0.0.1:8000/docs>.
+
+## Household accounts and access
+
+On first launch, open the app and create a household account at `/register`. Each household shares one username/email and password; partners do not need separate user accounts. Additional households can register on the same server, and each household's financial records are stored in a separate SQLite database file. Existing records remain in the original `CASHFLOW_DB_PATH` database and are assigned to the first household created.
+
+Passwords are stored as salted scrypt hashes. Session tokens are random, expire after seven days, and are stored as hashes in a separate `<database>.auth.sqlite` account registry. Set `CASHFLOW_COOKIE_SECURE=1` when serving the app over HTTPS so session cookies are marked Secure. The existing remote-access guard remains in place: remote use still requires the documented access configuration and HTTPS or a trusted VPN. Do not expose the app directly to the public internet.
+
+Keep backups of the main database, the `.auth.sqlite` account registry, and any `.household-N.sqlite` databases together. The built-in backup/reset workflow currently operates on the signed-in household's financial database; it is not a complete server-wide multi-household backup.
 
 ## Database
 
