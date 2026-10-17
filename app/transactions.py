@@ -24,6 +24,15 @@ def _clean(values: dict) -> dict:
     return values
 
 
+def _validate_category(db, category: str, transaction_type: str) -> None:
+    exists = db.execute(
+        "SELECT id FROM categories WHERE lower(name) = lower(?) AND transaction_type = ?",
+        (category, transaction_type),
+    ).fetchone()
+    if exists is None:
+        raise HTTPException(status_code=422, detail="Choose a category that belongs to the selected transaction type")
+
+
 @router.get("/api/transactions", response_model=list[TransactionOut])
 def list_transactions(
     start_date: date | None = Query(default=None),
@@ -53,17 +62,23 @@ def list_transactions(
 @router.post("/api/transactions", response_model=TransactionOut, status_code=status.HTTP_201_CREATED)
 def create_transaction(body: TransactionCreate):
     values = _clean(body.model_dump())
+    transaction_type = values["transaction_type"] or (
+        "income" if values["category"] in {
+            "income", "paycheck", "paychecks", "side income", "reimbursements", "other income"
+        } else "expense"
+    )
     try:
         with database.connect() as db:
+            _validate_category(db, values["category"], transaction_type)
             cursor = db.execute(
                 """INSERT INTO transactions
-                   (transaction_date, category, description, amount_cents, account_name, notes)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (values["transaction_date"], values["category"], values["description"],
-                 values["amount_cents"], values["account_name"], values["notes"]),
+                   (transaction_date, category, transaction_type, description, amount_cents, account_name, notes)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (values["transaction_date"], values["category"], transaction_type,
+                 values["description"], values["amount_cents"], values["account_name"], values["notes"]),
             )
             row = db.execute(
-                """SELECT id, transaction_date, category, description, amount_cents,
+                """SELECT id, transaction_date, category, transaction_type, description, amount_cents,
                           account_name, notes, created_at
                    FROM transactions WHERE id = ?""", (cursor.lastrowid,)
             ).fetchone()
@@ -77,17 +92,26 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
     updates = _clean(body.model_dump(exclude_unset=True))
     if not updates:
         raise HTTPException(status_code=422, detail="no fields to update")
-    allowed = {"transaction_date", "category", "description", "amount_cents", "account_name", "notes"}
+    allowed = {"transaction_date", "category", "transaction_type", "description", "amount_cents", "account_name", "notes"}
     if not set(updates) <= allowed:
         raise HTTPException(status_code=422, detail="unsupported field")
     try:
         with database.connect() as db:
-            if db.execute("SELECT id FROM transactions WHERE id = ?", (transaction_id,)).fetchone() is None:
+            current = db.execute(
+                "SELECT id, category, transaction_type FROM transactions WHERE id = ?",
+                (transaction_id,),
+            ).fetchone()
+            if current is None:
                 raise HTTPException(status_code=404, detail="Transaction not found")
+            category = updates.get("category", current["category"])
+            transaction_type = updates.get("transaction_type", current["transaction_type"])
+            _validate_category(db, category, transaction_type)
+            updates["category"] = category
+            updates["transaction_type"] = transaction_type
             assignments = ", ".join(f"{key} = ?" for key in updates)
             db.execute(f"UPDATE transactions SET {assignments} WHERE id = ?", (*updates.values(), transaction_id))
             row = db.execute(
-                """SELECT id, transaction_date, category, description, amount_cents,
+                """SELECT id, transaction_date, category, transaction_type, description, amount_cents,
                           account_name, notes, created_at
                    FROM transactions WHERE id = ?""", (transaction_id,)
             ).fetchone()
