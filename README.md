@@ -15,7 +15,7 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 - Browser-based Payday Planner that forecasts active income and bills, protects the household cash buffer, allocates bill payments, debt minimums, savings contributions, and extra debt payoff, then saves plan history.
 - Live dashboard for upcoming paydays, bills, debt minimums, savings progress, and recent plans.
 - Payday checklist for marking actions complete, skipped, or needing attention and recording actual amounts/dates.
-- Manual transaction ledger with typed income, expense, and transfer entries, user-managed categories, safe category renaming/deletion, and monthly dashboard totals that exclude transfers.
+- Manual transaction ledger with typed income, expense, and transfer entries, user-managed categories, safe category renaming/deletion, and optional links to scheduled income, bills, and debt payments for reconciliation.\n- Weekly cash-flow calculation API for expected income, due bills and debt minimums, recorded transactions, the shared buffer, planned savings, shortfalls, and free-to-spend / extra debt payoff capacity.
 - Persistent household-member and income-source APIs.
 - Initial schema for recurring bills, credit cards, savings accounts and goals, transactions, payday plans, and checklist items.
 - Unit tests for allocation behavior, setup APIs, and invalid input.
@@ -70,7 +70,7 @@ The database file is excluded from Git by `.gitignore`. Back it up regularly and
 - `POST /api/plan/preview` — preview an allocation from explicitly supplied data.
 - `POST /api/plans/generate` — forecast saved household data, generate a payday plan, and persist the plan and its line items.
 - `GET /api/plans` and `GET /api/plans/{id}` — review saved plan history and details.
-- `GET /api/dashboard` — retrieve upcoming paydays, bills, debts, savings progress, and pending checklist counts.
+- `GET /api/dashboard` — retrieve upcoming paydays, bills, debts, savings progress, and pending checklist counts.\n- `GET /api/cash-flow/weekly?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` — calculate a weekly cash-flow forecast; defaults to seven days and accepts up to 31 days.
 - `GET /api/checklist` and `PATCH /api/plan-items/{id}` — review and update planned actions with actual amounts and dates.
 - `GET/POST /api/transactions` and `PATCH /api/transactions/{id}` — record and edit actual income/expense transactions (positive amounts are inflows; negative amounts are outflows).
 
