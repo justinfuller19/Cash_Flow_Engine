@@ -24,7 +24,7 @@ The current state of the repository and merged code is authoritative. Check open
 **Goal:** Keep the financial rules deterministic, testable, and independent of HTTP/UI code.
 
 - Represent all monetary values as integer cents; never use floating-point arithmetic for money.
-- Protect each household member's configured discretionary cash buffer.
+- Protect the single shared household cash buffer target (schema v6 migrated the former per-person buffers into one household target).
 - Allocate funds to bills due within the selected planning window.
 - Fund required debt minimum payments.
 - Allocate to savings goals according to configured priority.

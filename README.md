@@ -9,10 +9,10 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 - Pure Python payday allocation engine using integer cents.
 - FastAPI app with a health check and interactive API docs at `/docs`.
 - SQLite database initialized automatically at app startup.
-- Browser-based Household Setup page for household members, protected cash buffers, and income sources.
+- Browser-based Household Setup page for household members, income sources, and the shared household cash buffer target.
 - Browser-based Bills & Debt page for recurring bills, credit-card balances, APRs, minimum payments, and due dates.
 - Browser-based Savings Goals page for targets, current balances, priorities, per-payday contributions, and target dates.
-- Browser-based Payday Planner that forecasts active income and bills, allocates buffers, bill payments, debt minimums, savings contributions, and extra debt payoff, then saves plan history.
+- Browser-based Payday Planner that forecasts active income and bills, protects the household cash buffer, allocates bill payments, debt minimums, savings contributions, and extra debt payoff, then saves plan history.
 - Live dashboard for upcoming paydays, bills, debt minimums, savings progress, and recent plans.
 - Payday checklist for marking actions complete, skipped, or needing attention and recording actual amounts/dates.
 - Manual transaction ledger for recorded income and expenses, with monthly totals on the dashboard.
@@ -57,8 +57,10 @@ The database file is excluded from Git by `.gitignore`. Back it up regularly and
 ## First setup endpoints
 
 - `GET /api/people` — list household members.
-- `POST /api/people` — create a household member, optionally specifying `default_buffer_cents`.
-- `PATCH /api/people/{id}` — edit a household member's name, buffer, or `active` flag (deactivate instead of deleting).
+- `POST /api/people` — create a household member.
+- `PATCH /api/people/{id}` — edit a household member's name or `active` flag (deactivate instead of deleting).
+- `GET /api/household/settings` — read the shared cash buffer target and starting cash balance.
+- `PATCH /api/household/settings` — update the shared cash buffer target or starting cash balance.
 - `GET /api/income-sources` — list saved income sources.
 - `POST /api/income-sources` — create an income source linked to a household member.
 - `GET/POST /api/bills` and `PATCH /api/bills/{id}` — manage recurring bills and deactivate/reactivate them.
@@ -76,7 +78,7 @@ Money values use integer cents: `$1,234.56` is `123456`. Income frequency option
 
 ## Allocation order
 
-1. Protect discretionary cash buffers.
+1. Protect the shared household cash buffer target.
 2. Fund bills due during the pay-period window.
 3. Fund credit-card minimums due during the window.
 4. Contribute to savings goals by priority.
@@ -90,7 +92,7 @@ See [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md) for the systemd s
 
 ## Current limitations and security
 
-Household members and income sources can be added, edited, and deactivated/reactivated through both the API and the browser setup page. Transactions can be entered manually, but automatic imports and reconciliation against bank activity are not yet implemented. The planner forecasts saved income and recurring bills, protects active household buffers, includes active debt minimums, and applies configured savings contributions before extra debt payoff. Irregular income is only forecast for its explicitly saved date. The Raspberry Pi systemd and backup/restore guide is in [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md). Remote requests are blocked by default. Optional Basic authentication is available via `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`; use it only behind HTTPS or a trusted VPN, and keep the service bound to localhost. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
+Household members and income sources can be added, edited, and deactivated/reactivated through both the API and the browser setup page. Transactions can be entered manually, but automatic imports and reconciliation against bank activity are not yet implemented. The planner forecasts saved income and recurring bills, protects the shared household cash buffer target, includes active debt minimums, and applies configured savings contributions before extra debt payoff. Irregular income is only forecast for its explicitly saved date. The Raspberry Pi systemd and backup/restore guide is in [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md). Remote requests are blocked by default. Optional Basic authentication is available via `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`; use it only behind HTTPS or a trusted VPN, and keep the service bound to localhost. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
 
 
 ### Deleting records
