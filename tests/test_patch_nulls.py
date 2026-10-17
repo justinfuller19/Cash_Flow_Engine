@@ -13,10 +13,22 @@ def test_patch_person_rejects_explicit_null_fields(tmp_path, monkeypatch):
 
     for payload in (
         {"name": None},
-        {"default_buffer_cents": None},
         {"active": None},
     ):
         response = client.patch(f"/api/people/{person['id']}", json=payload)
+        assert response.status_code == 422, (payload, response.text)
+
+
+def test_patch_household_settings_rejects_explicit_null_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "null-settings.db"))
+    database.initialize_database()
+    client = TestClient(app)
+
+    for payload in (
+        {"buffer_target_cents": None},
+        {"starting_cash_cents": None},
+    ):
+        response = client.patch("/api/household/settings", json=payload)
         assert response.status_code == 422, (payload, response.text)
 
 

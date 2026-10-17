@@ -31,7 +31,7 @@ def test_deleting_household_member_also_deletes_income_sources(tmp_path, monkeyp
     client = client_for(tmp_path, monkeypatch)
     person = client.post(
         "/api/people",
-        json={"name": "Delete Test", "default_buffer_cents": 10000},
+        json={"name": "Delete Test"},
     )
     assert person.status_code == 201, person.text
     income = client.post(
