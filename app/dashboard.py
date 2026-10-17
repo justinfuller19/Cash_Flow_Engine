@@ -106,15 +106,15 @@ def dashboard_summary():
         ).fetchall()
         month_start = today.replace(day=1).isoformat()
         month_income = db.execute(
-            "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions WHERE transaction_date >= ? AND amount_cents > 0",
+            "SELECT COALESCE(SUM(amount_cents), 0) FROM transactions WHERE transaction_date >= ? AND transaction_type = 'income' AND amount_cents > 0",
             (month_start,),
         ).fetchone()[0]
         month_expenses = db.execute(
-            "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions WHERE transaction_date >= ? AND amount_cents < 0",
+            "SELECT COALESCE(SUM(-amount_cents), 0) FROM transactions WHERE transaction_date >= ? AND transaction_type = 'expense' AND amount_cents < 0",
             (month_start,),
         ).fetchone()[0]
         recent_transactions = db.execute(
-            """SELECT id, transaction_date, category, description, amount_cents, account_name
+            """SELECT id, transaction_date, category, transaction_type, description, amount_cents, account_name
                FROM transactions ORDER BY transaction_date DESC, id DESC LIMIT 5"""
         ).fetchall()
         pending_count = db.execute(
