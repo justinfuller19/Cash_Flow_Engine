@@ -210,6 +210,18 @@ def weekly_cash_flow(
         for row in in_period if row["transaction_type"] == "transfer"
     ]
 
+    spending_by_category = {}
+    for row in in_period:
+        if row["transaction_type"] == "expense":
+            category = row["category"]
+            spending_by_category[category] = spending_by_category.get(category, 0) + abs(row["amount_cents"])
+    category_spending = [
+        {"category": category, "amount_cents": amount}
+        for category, amount in sorted(
+            spending_by_category.items(), key=lambda pair: (-pair[1], pair[0].casefold())
+        )
+    ]
+
     uncovered_bills = [item for item in bills if item["status"] == "due"]
     uncovered_debts = [item for item in debts if item["status"] == "due"]
     expected_income_cents = sum(item["amount_cents"] for item in expected_income)
@@ -260,6 +272,7 @@ def weekly_cash_flow(
             for row in in_period
         ],
         "transaction_expenses_cents": transaction_expenses,
+        "category_spending": category_spending,
         "transfers": transaction_transfers,
         "planned_savings_cents": planned_savings,
         "funded_savings_cents": funded_savings,
@@ -311,6 +324,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 <section class="card"><h2>Bills due</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Minimum debt payments</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Recorded transactions</h2><ul id="transactions" class="list"><li class="muted">Loading…</li></ul></section>
+<section class="card"><h2>Spending by category</h2><ul id="category-spending" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Planned savings</h2><div id="savings" class="muted">Loading…</div></section>
 <section class="card"><h2>Forecast assumptions</h2><ul id="notes" class="list"></ul></section>
 </div></main>
@@ -344,6 +358,7 @@ const billRows=report.bills.map(x=>({...x,kind:"bill"}));
 renderList("bills",billRows,"No bills due in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.due_date+" · "+x.status+(x.transaction_date?" · recorded "+x.transaction_date:"")));});
 renderList("debts",report.minimum_debt_payments,"No minimum debt payments due in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.due_date+" · "+x.status+(x.transaction_date?" · recorded "+x.transaction_date:"")));});
 renderList("transactions",report.transactions,"No transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.description+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.type+" · "+x.category+(x.linked_obligation_type?" · linked "+x.linked_obligation_type:"")));});
+renderList("category-spending",report.category_spending,"No expense transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(x.amount_cents)));});
 const savings=document.getElementById("savings");savings.replaceChildren();savings.appendChild(el("p","", "Planned: "+dollars(report.planned_savings_cents)));savings.appendChild(el("p","", "Funded after obligations and buffer: "+dollars(report.funded_savings_cents)));savings.appendChild(el("p","", "Not covered by this forecast: "+dollars(report.savings_shortfall_cents)));savings.appendChild(el("p","muted","Contributions are estimated from active savings goals and distinct scheduled payday dates."));
 renderList("notes",report.notes,"No additional assumptions.",(li,note)=>li.appendChild(el("div","detail",note)));
 }
