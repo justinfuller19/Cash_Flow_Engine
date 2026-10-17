@@ -58,7 +58,7 @@ On first launch, open the app and create a household account at `/register`. Eac
 
 Passwords are stored as salted scrypt hashes. Session tokens are random, expire after seven days, and are stored as hashes in a separate `<database>.auth.sqlite` account registry. Set `CASHFLOW_COOKIE_SECURE=1` when serving the app over HTTPS so session cookies are marked Secure. The existing remote-access guard remains in place: remote use still requires the documented access configuration and HTTPS or a trusted VPN. Do not expose the app directly to the public internet.
 
-Keep backups of the main database, the `.auth.sqlite` account registry, and any `.household-N.sqlite` databases together. The built-in backup/reset workflow currently operates on the signed-in household's financial database; it is not a complete server-wide multi-household backup.
+Keep backups of the main database, the `.auth.sqlite` account registry, and any `.household-N` databases (with the same file extension as the configured database) together. The built-in backup/reset workflow currently operates on the signed-in household's financial database; it is not a complete server-wide multi-household backup.
 
 ## Database
 
