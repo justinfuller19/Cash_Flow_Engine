@@ -172,3 +172,18 @@ def test_transaction_link_validation_rejects_mismatched_types(tmp_path, monkeypa
         "/api/transactions",
         json={**payload, "linked_obligation_type": "bill", "linked_obligation_id": None},
     ).status_code == 422
+
+
+def test_weekly_report_page_and_dashboard_summary_are_available(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    report_page = client.get("/weekly")
+    assert report_page.status_code == 200
+    assert "Weekly Cash Flow" in report_page.text
+    assert 'id="start"' in report_page.text
+    assert 'id="end"' in report_page.text
+    assert "/api/cash-flow/weekly" in report_page.text
+
+    dashboard = client.get("/")
+    assert dashboard.status_code == 200
+    assert 'id="weekly-summary"' in dashboard.text
+    assert 'href="/weekly"' in dashboard.text

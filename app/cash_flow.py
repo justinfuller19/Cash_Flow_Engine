@@ -3,6 +3,7 @@ from calendar import monthrange
 from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import HTMLResponse
 
 from . import database
 from .forecast import occurrences_between
@@ -277,3 +278,77 @@ def weekly_cash_flow(
             "All monetary calculations use integer cents; this report never initiates payments or transfers.",
         ],
     }
+
+
+@router.get("/weekly", response_class=HTMLResponse)
+def weekly_report_page():
+    return """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weekly Cash Flow · CashFlow Engine</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#172033;background:#f3f6fa}*{box-sizing:border-box}
+body{margin:0;padding:24px 14px 48px}main{max-width:1150px;margin:auto}a{color:#0e7490;font-weight:650;text-decoration:none}
+h1{color:#155e75;margin:8px 0}h2{font-size:1.1rem;margin:0 0 12px}.muted{color:#5c687a;line-height:1.5}
+.toolbar,.card{background:white;padding:20px;border-radius:15px;box-shadow:0 8px 28px #172b4d0d;margin-top:16px}
+.toolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.field{flex:1;min-width:150px}
+label{display:block;font-size:.9rem;font-weight:650;margin-bottom:5px}input{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:white;font-weight:700;cursor:pointer}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;margin-top:16px}
+.metric{background:white;padding:15px;border-radius:12px;box-shadow:0 5px 18px #172b4d0a;min-width:0}
+.metric span{display:block;color:#5c687a;font-size:.88rem}.metric strong{display:block;font-size:1.25rem;color:#155e75;margin-top:5px;overflow-wrap:anywhere}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:16px}
+.list{padding:0;list-style:none;margin:0}.list li{padding:12px 0;border-top:1px solid #e2e8f0;overflow-wrap:anywhere}
+.list li:first-child{border-top:0}.item-title{font-weight:700}.detail{font-size:.9rem;color:#5c687a;margin-top:4px}
+.status{padding:12px;border-radius:9px;background:#e0f2fe;color:#075985;margin-top:16px}.warning{background:#fff7ed;color:#9a3412}.error{background:#fee2e2;color:#991b1b}.status[hidden]{display:none}
+</style></head><body><main><a href="/">← Dashboard</a><h1>Weekly Cash Flow</h1>
+<p class="muted">Review what is expected, what is already recorded, and what remains after required payments, the household buffer, and planned savings. Forecasts are estimates and never move money.</p>
+<div class="toolbar"><div class="field"><label for="start">Start date</label><input id="start" type="date" required></div>
+<div class="field"><label for="end">End date</label><input id="end" type="date" required></div><button id="refresh" type="button">Update report</button></div>
+<div id="status" class="status" role="status" aria-live="polite" hidden></div>
+<div id="metrics" class="metrics"></div>
+<div class="grid">
+<section class="card"><h2>Expected income</h2><ul id="income" class="list"><li class="muted">Loading…</li></ul></section>
+<section class="card"><h2>Bills due</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
+<section class="card"><h2>Minimum debt payments</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
+<section class="card"><h2>Recorded transactions</h2><ul id="transactions" class="list"><li class="muted">Loading…</li></ul></section>
+<section class="card"><h2>Planned savings</h2><div id="savings" class="muted">Loading…</div></section>
+<section class="card"><h2>Forecast assumptions</h2><ul id="notes" class="list"></ul></section>
+</div></main>
+<script>
+const statusBox=document.getElementById("status");
+function dollars(cents){const sign=cents<0?"−":"";return sign+new Intl.NumberFormat(undefined,{style:"currency",currency:"USD"}).format(Math.abs(cents)/100);}
+function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n;}
+async function api(url){const r=await fetch(url);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"Could not load the weekly forecast.");return d;}
+function message(text,kind=""){statusBox.textContent=text;statusBox.className="status"+(kind?" "+kind:"");statusBox.hidden=false;}
+function renderList(id,items,empty,make){const root=document.getElementById(id);root.replaceChildren();if(!items.length){root.appendChild(el("li","muted",empty));return;}for(const item of items){const li=el("li","");make(li,item);root.appendChild(li);}}
+function metric(root,label,value){const card=el("div","metric");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));root.appendChild(card);}
+async function load(){const start=document.getElementById("start").value;const end=document.getElementById("end").value;
+if(!start||!end)throw Error("Choose both report dates.");
+const report=await api("/api/cash-flow/weekly?start_date="+encodeURIComponent(start)+"&end_date="+encodeURIComponent(end));
+const metrics=document.getElementById("metrics");metrics.replaceChildren();
+for(const [label,value] of [
+["Starting cash",report.starting_cash_cents],["Expected income",report.expected_income_cents],
+["Recorded income",report.recorded_income_cents],["Bills still due",report.bills_due_cents],
+["Minimum debt payments",report.minimum_debt_payments_cents],["Recorded expenses",report.transaction_expenses_cents],
+["Projected cash before buffer",report.projected_cash_before_buffer_cents],["Buffer target",report.buffer_target_cents],
+["Buffer replenishment needed",report.buffer_replenishment_cents],["Planned savings",report.planned_savings_cents],
+["Savings funded",report.funded_savings_cents],["Free to spend",report.free_to_spend_cents],
+["Extra debt payoff capacity",report.extra_debt_payoff_capacity_cents]
+])metric(metrics,label,dollars(value));
+if(report.projected_shortfall_cents>0)message("Projected shortfall: "+dollars(report.projected_shortfall_cents)+". Required obligations exceed projected cash.","warning");
+else if(report.buffer_shortfall_cents>0)message("Projected cash is below the household buffer target by "+dollars(report.buffer_shortfall_cents)+". Extra spending and savings are not available until the buffer is restored.","warning");
+else if(report.savings_shortfall_cents>0)message("Required obligations and the buffer are covered, but planned savings are short by "+dollars(report.savings_shortfall_cents)+".","warning");
+else {statusBox.hidden=true;}
+renderList("income",report.expected_income,"No scheduled income remains expected in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date));});
+const billRows=report.bills.map(x=>({...x,kind:"bill"}));
+renderList("bills",billRows,"No bills due in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.due_date+" · "+x.status+(x.transaction_date?" · recorded "+x.transaction_date:"")));});
+renderList("debts",report.minimum_debt_payments,"No minimum debt payments due in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.due_date+" · "+x.status+(x.transaction_date?" · recorded "+x.transaction_date:"")));});
+renderList("transactions",report.transactions,"No transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.description+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.type+" · "+x.category+(x.linked_obligation_type?" · linked "+x.linked_obligation_type:"")));});
+const savings=document.getElementById("savings");savings.replaceChildren();savings.appendChild(el("p","", "Planned: "+dollars(report.planned_savings_cents)));savings.appendChild(el("p","", "Funded after obligations and buffer: "+dollars(report.funded_savings_cents)));savings.appendChild(el("p","", "Not covered by this forecast: "+dollars(report.savings_shortfall_cents)));savings.appendChild(el("p","muted","Contributions are estimated from active savings goals and distinct scheduled payday dates."));
+renderList("notes",report.notes,"No additional assumptions.",(li,note)=>li.appendChild(el("div","detail",note)));
+}
+function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
+const today=new Date();document.getElementById("start").value=iso(today);const end=new Date(today);end.setDate(end.getDate()+6);document.getElementById("end").value=iso(end);
+document.getElementById("refresh").addEventListener("click",()=>load().catch(e=>message(e.message,"error")));
+load().catch(e=>message(e.message,"error"));
+</script></body></html>"""
