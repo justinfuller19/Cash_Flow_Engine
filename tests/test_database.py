@@ -377,7 +377,7 @@ def test_schema_v8_adds_scheduled_item_links(tmp_path, monkeypatch):
     with database.connect() as db:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(transactions)")}
         assert {"linked_obligation_type", "linked_obligation_id"} <= columns
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 9
         assert db.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'index' "
             "AND name = 'idx_transactions_linked_obligation'"
