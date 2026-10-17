@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def database_path() -> Path:
@@ -127,6 +127,8 @@ def initialize_database() -> None:
                 transaction_date TEXT NOT NULL,
                 category TEXT NOT NULL CHECK(length(trim(category)) BETWEEN 1 AND 40),
                 transaction_type TEXT NOT NULL DEFAULT 'expense' CHECK(transaction_type IN ('income', 'expense', 'transfer')),
+                linked_obligation_type TEXT CHECK(linked_obligation_type IN ('income', 'bill', 'debt')),
+                linked_obligation_id INTEGER,
                 description TEXT NOT NULL CHECK(length(trim(description)) BETWEEN 1 AND 200),
                 amount_cents INTEGER NOT NULL,
                 account_name TEXT,
@@ -318,3 +320,20 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
                 (name, row["transaction_type"]),
             )
         db.execute("CREATE INDEX IF NOT EXISTS idx_categories_type ON categories(transaction_type, name)")
+
+    if version < 8:
+        # Version 8 allows a recorded transaction to be linked explicitly to a
+        # scheduled income source, bill, or debt payment so reports can avoid
+        # counting the same cash movement twice.
+        transaction_columns = {row["name"] for row in db.execute("PRAGMA table_info(transactions)")}
+        if "linked_obligation_type" not in transaction_columns:
+            db.execute(
+                "ALTER TABLE transactions ADD COLUMN linked_obligation_type "
+                "TEXT CHECK(linked_obligation_type IN ('income', 'bill', 'debt'))"
+            )
+        if "linked_obligation_id" not in transaction_columns:
+            db.execute("ALTER TABLE transactions ADD COLUMN linked_obligation_id INTEGER")
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_transactions_linked_obligation "
+            "ON transactions(linked_obligation_type, linked_obligation_id)"
+        )
