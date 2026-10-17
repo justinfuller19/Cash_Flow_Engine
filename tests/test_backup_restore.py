@@ -111,3 +111,26 @@ def test_server_backup_includes_every_household_and_auth_registry(tmp_path, monk
                 assert db.execute("SELECT COUNT(*) FROM households").fetchone()[0] == 2
     assert any(names == ["First private data"] for names in backed_up_people.values())
     assert any(names == ["Second private data"] for names in backed_up_people.values())
+
+
+def test_server_backup_preserves_legacy_database_before_first_account(tmp_path, monkeypatch):
+    from app import auth
+    from scripts.backup_database import create_server_backups
+
+    base = tmp_path / "legacy.db"
+    backup_dir = tmp_path / "backups"
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(base))
+    monkeypatch.setenv("CASHFLOW_BACKUP_DIR", str(backup_dir))
+    database.initialize_database()
+    with database.connect() as db:
+        db.execute(
+            "INSERT INTO transactions (transaction_date, category, description, amount_cents) "
+            "VALUES ('2026-10-17', 'income', 'Legacy record', 10000)"
+        )
+    auth.initialize_auth_database()  # Empty registry, before the first household registers.
+
+    backups = create_server_backups()
+    legacy_backup = next(path for path in backups if "unassigned" in path.name)
+    with sqlite3.connect(legacy_backup) as db:
+        assert db.execute("SELECT description FROM transactions").fetchone()[0] == "Legacy record"
+    assert any("auth-registry" in path.name for path in backups)
