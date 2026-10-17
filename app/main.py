@@ -20,6 +20,7 @@ from .savings import router as savings_router
 from .planning import router as planning_router
 from .dashboard import router as dashboard_router
 from .transactions import router as transactions_router
+from .household import router as household_router
 from .security import remote_access_guard
 
 
@@ -41,6 +42,7 @@ app.include_router(savings_router)
 app.include_router(planning_router)
 app.include_router(dashboard_router)
 app.include_router(transactions_router)
+app.include_router(household_router)
 app.middleware("http")(remote_access_guard)
 
 
@@ -91,7 +93,7 @@ async function api(url){const r=await fetch(url);const d=await r.json().catch(()
 function renderList(id,items,empty,make){const list=document.getElementById(id);list.replaceChildren();if(!items.length){list.appendChild(el("li","muted",empty));return;}for(const item of items){const li=el("li","");make(li,item);list.appendChild(li);}}
 async function load(){const d=await api("/api/dashboard");
 const metrics=document.getElementById("metrics");metrics.replaceChildren();
-for(const [label,value] of [["Active household members",String(d.active_household_members)],["Protected buffers",dollars(d.protected_buffers_cents)],["Actions needing attention",String(d.pending_checklist_count)],["Recorded income this month",dollars(d.month_income_cents)],["Recorded expenses this month",dollars(d.month_expenses_cents)]]){const card=el("div","metric","");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));metrics.appendChild(card);}
+for(const [label,value] of [["Active household members",String(d.active_household_members)],["Household cash buffer",dollars(d.protected_buffers_cents)],["Actions needing attention",String(d.pending_checklist_count)],["Recorded income this month",dollars(d.month_income_cents)],["Recorded expenses this month",dollars(d.month_expenses_cents)]]){const card=el("div","metric","");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));metrics.appendChild(card);}
 renderList("paydays",d.next_paydays,"No upcoming paydays found.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date));});
 renderList("bills",d.upcoming_bills,"No saved bills due in the next 30 days.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.category+(x.autopay?" · autopay":"")));});
 renderList("debts",d.upcoming_debts,"No debt due dates found in the next 30 days.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · minimum "+dollars(x.minimum_payment_cents)));li.appendChild(el("div","detail",x.date+" · balance "+dollars(x.balance_cents)));});
@@ -128,10 +130,15 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <p class="muted">Start by adding the people in your household and their take-home pay. Amounts are saved as cents in your local SQLite database.</p></header>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div class="layout">
-<section class="card"><h2>Household members</h2><p class="muted">Set the personal cash buffer you want protected before other allocations.</p>
+<section class="card"><h2>Household cash settings</h2><p class="muted">One shared cash buffer target for the whole household, protected before other allocations, plus the household's current available cash balance.</p>
+<form id="settings-form">
+<label for="settings-buffer">Cash buffer target ($)</label><input id="settings-buffer" name="buffer_target" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
+<label for="settings-cash">Starting cash balance ($)</label><input id="settings-cash" name="starting_cash" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
+<button type="submit">Save household settings</button></form>
+</section>
+<section class="card"><h2>Household members</h2><p class="muted">Add the people in your household. Income sources are linked to a member below.</p>
 <form id="person-form">
 <label for="person-name">Name</label><input id="person-name" name="name" maxlength="120" autocomplete="name" required>
-<label for="person-buffer">Default cash buffer ($)</label><input id="person-buffer" name="buffer" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
 <button type="submit">Add household member</button></form>
 <ul id="people-list" class="list" aria-label="Saved household members"><li class="empty">Loading members…</li></ul>
 </section>
@@ -209,15 +216,12 @@ function renderPeople() {
   for (const person of people) {
     const item = document.createElement("li");
     addText(item, "div", "item-title", person.name + (person.active ? "" : " · inactive"));
-    addText(item, "div", "item-detail", "Protected buffer: " + dollars(person.default_buffer_cents));
     addSmallButton(item, "Edit member", async () => {
       const name = prompt("Household member name:", person.name);
       if (name === null) return;
-      const buffer = prompt("Protected buffer in dollars:", (person.default_buffer_cents / 100).toFixed(2));
-      if (buffer === null) return;
       try {
         await api("/api/people/" + person.id, {method:"PATCH", body:JSON.stringify({
-          name:name.trim(), default_buffer_cents:centsFromInput(buffer)
+          name:name.trim()
         })});
         await refresh(); showStatus("Household member updated.");
       } catch (error) { showStatus(error.message, true); }
@@ -292,7 +296,27 @@ async function refresh() {
   renderPeople();
   const incomes = await api("/api/income-sources");
   renderIncome(incomes);
+  try {
+    const settings = await api("/api/household/settings");
+    document.getElementById("settings-buffer").value = (settings.buffer_target_cents / 100).toFixed(2);
+    document.getElementById("settings-cash").value = (settings.starting_cash_cents / 100).toFixed(2);
+  } catch (error) { showStatus("Could not load household settings: " + error.message, true); }
 }
+document.getElementById("settings-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    await api("/api/household/settings", {method:"PATCH", body:JSON.stringify({
+      buffer_target_cents:centsFromInput(form.elements.buffer_target.value),
+      starting_cash_cents:centsFromInput(form.elements.starting_cash.value)
+    })});
+    await refresh();
+    showStatus("Household settings saved.");
+  } catch (error) { showStatus(error.message, true); }
+  finally { button.disabled = false; }
+});
 document.getElementById("person-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -300,11 +324,9 @@ document.getElementById("person-form").addEventListener("submit", async (event) 
   button.disabled = true;
   try {
     await api("/api/people", {method:"POST", body:JSON.stringify({
-      name:form.elements.name.value.trim(),
-      default_buffer_cents:centsFromInput(form.elements.buffer.value)
+      name:form.elements.name.value.trim()
     })});
     form.reset();
-    form.elements.buffer.value = "0.00";
     await refresh();
     showStatus("Household member saved.");
   } catch (error) { showStatus(error.message, true); }
@@ -344,7 +366,7 @@ refresh().catch((error) => showStatus("Could not load saved household data: " + 
 def list_people():
     with database.connect() as db:
         rows = db.execute(
-            "SELECT id, name, default_buffer_cents, active, created_at "
+            "SELECT id, name, active, created_at "
             "FROM persons ORDER BY id"
         ).fetchall()
     return [_person_out(row) for row in rows]
@@ -357,11 +379,11 @@ def create_person(body: PersonCreate):
         raise HTTPException(status_code=422, detail="name cannot be blank")
     with database.connect() as db:
         cursor = db.execute(
-            "INSERT INTO persons (name, default_buffer_cents) VALUES (?, ?)",
-            (name, body.default_buffer_cents),
+            "INSERT INTO persons (name) VALUES (?)",
+            (name,)
         )
         row = db.execute(
-            "SELECT id, name, default_buffer_cents, active, created_at "
+            "SELECT id, name, active, created_at "
             "FROM persons WHERE id = ?",
             (cursor.lastrowid,),
         ).fetchone()
@@ -397,7 +419,7 @@ def update_person(person_id: int, body: PersonUpdate):
                 (*updates.values(), person_id),
             )
             row = db.execute(
-                "SELECT id, name, default_buffer_cents, active, created_at "
+                "SELECT id, name, active, created_at "
                 "FROM persons WHERE id = ?",
                 (person_id,),
             ).fetchone()
