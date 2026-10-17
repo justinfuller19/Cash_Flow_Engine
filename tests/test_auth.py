@@ -106,3 +106,43 @@ def test_login_is_rate_limited_after_ten_failures(tmp_path, monkeypatch):
         "password": "correct-horse-battery",
     }, follow_redirects=False)
     assert accepted.status_code == 303
+
+
+def test_account_settings_save_private_recipient_and_rotate_password(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "cashflow.db"))
+    client = TestClient(app)
+    client.post("/register", data={
+        "household_name": "Maple House",
+        "username": "maple@example.test",
+        "password": "correct-horse-battery",
+    })
+    response = client.post("/account", data={
+        "notification_email": "private@example.test",
+        "current_password": "correct-horse-battery",
+        "new_password": "a-new-long-household-password",
+    })
+    assert response.status_code == 200
+    assert "Password updated" in response.text
+    assert client.get("/api/people").status_code == 200
+    account = auth.household_account(1)
+    assert account["notification_email"] == "private@example.test"
+    assert auth.authenticate("maple@example.test", "a-new-long-household-password") == 1
+    assert auth.authenticate("maple@example.test", "correct-horse-battery") is None
+
+
+def test_account_settings_require_current_password(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "cashflow.db"))
+    client = TestClient(app)
+    client.post("/register", data={
+        "household_name": "Maple House",
+        "username": "maple@example.test",
+        "password": "correct-horse-battery",
+    })
+    response = client.post("/account", data={
+        "notification_email": "attacker@example.test",
+        "current_password": "wrong-password",
+        "new_password": "",
+    })
+    assert response.status_code == 200
+    assert "Current password is incorrect" in response.text
+    assert auth.household_account(1)["notification_email"] is None
