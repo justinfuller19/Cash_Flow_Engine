@@ -65,3 +65,49 @@ def test_restore_rejects_non_database_file(tmp_path, monkeypatch):
     assert result.returncode == 1
     with database.connect() as db:
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+
+
+def test_server_backup_includes_every_household_and_auth_registry(tmp_path, monkeypatch):
+    from app import auth
+    from scripts.backup_database import create_server_backups
+
+    base = tmp_path / "cashflow.db"
+    backup_dir = tmp_path / "backups"
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(base))
+    monkeypatch.setenv("CASHFLOW_BACKUP_DIR", str(backup_dir))
+    auth.initialize_auth_database()
+    first_id = auth.create_household("First", "first@example.test", "first-household-password")
+    second_id = auth.create_household("Second", "second@example.test", "second-household-password")
+
+    for household_id, label in ((first_id, "First private data"), (second_id, "Second private data")):
+        token = auth.set_current_household(household_id)
+        try:
+            database.initialize_database()
+            with database.connect() as db:
+                db.execute(
+                    "INSERT INTO persons (name) VALUES (?)",
+                    (label,),
+                )
+        finally:
+            auth.reset_current_household(token)
+
+    backups = create_server_backups()
+    assert len(backups) == 3
+    assert any("household-1" in path.name for path in backups)
+    assert any("household-2" in path.name for path in backups)
+    assert any("auth-registry" in path.name for path in backups)
+
+    backed_up_people = {}
+    for path in backups:
+        with sqlite3.connect(path) as db:
+            tables = {row[0] for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+            if "persons" in tables:
+                rows = db.execute("SELECT name FROM persons").fetchall()
+                if rows:
+                    backed_up_people[path.name] = [row[0] for row in rows]
+            if "households" in tables:
+                assert db.execute("SELECT COUNT(*) FROM households").fetchone()[0] == 2
+    assert any(names == ["First private data"] for names in backed_up_people.values())
+    assert any(names == ["Second private data"] for names in backed_up_people.values())
