@@ -14,7 +14,8 @@ The app is a planning tool. It must not claim that money was transferred or a bi
 - [x] FastAPI application and health endpoint.
 - [x] SQLite schema and startup initialization.
 - [x] Initial household-member and income-source API/UI foundation.
-- [x] Initial tests for engine and database/API behavior.\n- [x] Typed transaction categories with schema migration and history-preserving category management.
+- [x] Initial tests for engine and database/API behavior.
+- [x] Typed transaction categories with schema migration and history-preserving category management.
 
 The current state of the repository and merged code is authoritative. Check open pull requests before assuming unmerged work is part of `main`.
 
