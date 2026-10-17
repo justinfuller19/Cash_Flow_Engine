@@ -2,7 +2,7 @@
 import sqlite3
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 
 from . import database
@@ -60,7 +60,7 @@ def login_page_route():
 
 
 @app.post("/login")
-async def login_post(request):
+async def login_post(request: Request):
     return await login_route(request)
 
 
@@ -70,17 +70,17 @@ def register_page_route():
 
 
 @app.post("/register")
-async def register_post(request):
+async def register_post(request: Request):
     return await register_route(request)
 
 
 @app.get("/logout")
-async def logout_get(request):
+async def logout_get(request: Request):
     return await logout_route(request)
 
 
 @app.post("/logout")
-async def logout_post(request):
+async def logout_post(request: Request):
     return await logout_route(request)
 
 
@@ -111,7 +111,7 @@ nav a{background:white;padding:10px 13px;border-radius:9px;box-shadow:0 3px 14px
 .progress{height:7px;background:#e2e8f0;border-radius:7px;overflow:hidden;margin-top:7px}.fill{height:100%;background:#0e7490}
 </style></head><body><main>
 <h1>CashFlow Engine</h1><p class="muted">Your household cash-flow overview. Forecasts help you plan; they do not send payments or move money.</p>
-<nav><a href="/setup">Household & Income</a><a href="/bills">Bills & Debt</a><a href="/savings">Savings Goals</a><a href="/planner">Payday Planner</a><a href="/weekly">Weekly Report</a><a href="/settings-data">Settings & Data</a><a href="/checklist">Payday Checklist</a><a href="/transactions">Transactions</a><a href="/docs">API Docs</a></nav>
+<nav><a href="/setup">Household & Income</a><a href="/bills">Bills & Debt</a><a href="/savings">Savings Goals</a><a href="/planner">Payday Planner</a><a href="/weekly">Weekly Report</a><a href="/settings-data">Settings & Data</a><a href="/checklist">Payday Checklist</a><a href="/transactions">Transactions</a><a href="/docs">API Docs</a><a href="/logout">Log out</a></nav>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
 <div class="grid">
