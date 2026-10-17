@@ -357,7 +357,7 @@ def test_schema_v7_migration_preserves_transactions_and_adds_categories(tmp_path
         ).fetchone()
         assert transaction["category"] == "income"
         assert transaction["transaction_type"] == "income"
-        assert db.execute("SELECT user_version FROM pragma_user_version").fetchone()[0] == 7
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
         assert db.execute(
             "SELECT 1 FROM categories WHERE name = 'paychecks' AND transaction_type = 'income'"
         ).fetchone() is not None
