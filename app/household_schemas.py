@@ -10,13 +10,11 @@ IncomeFrequency = Literal["weekly", "biweekly", "semimonthly", "monthly", "irreg
 
 class PersonCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    default_buffer_cents: int = Field(default=0, ge=0)
 
 
 class PersonOut(BaseModel):
     id: int
     name: str
-    default_buffer_cents: int
     active: bool
     created_at: str
 
@@ -25,8 +23,30 @@ class PersonUpdate(BaseModel):
     """Partial update for a household member; only provided fields change."""
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
-    default_buffer_cents: int | None = Field(default=None, ge=0)
     active: bool | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_explicit_nulls(cls, value: Any) -> Any:
+        """PATCH fields are optional, but null is not a valid replacement value."""
+        if isinstance(value, dict) and any(item is None for item in value.values()):
+            raise ValueError("PATCH fields cannot be null")
+        return value
+
+
+class HouseholdSettingsOut(BaseModel):
+    """The single shared household cash configuration row."""
+
+    buffer_target_cents: int
+    starting_cash_cents: int
+    updated_at: str
+
+
+class HouseholdSettingsUpdate(BaseModel):
+    """Partial update for household settings; only provided fields change."""
+
+    buffer_target_cents: int | None = Field(default=None, ge=0)
+    starting_cash_cents: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="before")
     @classmethod

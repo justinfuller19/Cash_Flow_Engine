@@ -63,12 +63,15 @@ def _load_request(db, body: PlanGenerateRequest) -> PaydayRequest:
                 received_date=payday,
             ))
 
-    buffers = [
-        BufferReservation(name=f'{row["name"]} cash buffer', amount_cents=row["default_buffer_cents"])
-        for row in db.execute(
-            "SELECT name, default_buffer_cents FROM persons WHERE active = 1 AND default_buffer_cents > 0 ORDER BY id"
-        ).fetchall()
-    ]
+    settings = db.execute(
+        "SELECT buffer_target_cents FROM household_settings WHERE id = 1"
+    ).fetchone()
+    buffer_target = settings["buffer_target_cents"] if settings else 0
+    buffers = (
+        [BufferReservation(name="Household cash buffer", amount_cents=buffer_target)]
+        if buffer_target > 0
+        else []
+    )
 
     bills: list[Bill] = []
     rows = db.execute(
