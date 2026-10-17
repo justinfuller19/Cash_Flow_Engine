@@ -285,14 +285,17 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
                 "ALTER TABLE transactions ADD COLUMN transaction_type TEXT NOT NULL "
                 "DEFAULT 'expense' CHECK(transaction_type IN ('income', 'expense', 'transfer'))"
             )
-        db.execute(
-            """UPDATE transactions
-               SET transaction_type = CASE
-                   WHEN lower(trim(category)) IN ('income', 'paycheck', 'side income',
-                       'reimbursements', 'other income') THEN 'income'
-                   ELSE 'expense'
-               END"""
-        )
+            # Infer legacy types only when the column is first introduced. If an
+            # interrupted/partial migration already created it, do not overwrite
+            # transaction types that may have been saved since then.
+            db.execute(
+                """UPDATE transactions
+                   SET transaction_type = CASE
+                       WHEN lower(trim(category)) IN ('income', 'paycheck', 'side income',
+                           'reimbursements', 'other income') THEN 'income'
+                       ELSE 'expense'
+                   END"""
+            )
         defaults = {
             "expense": ("groceries", "fuel", "restaurants", "household supplies",
                         "shopping", "entertainment", "medical", "housing", "utilities",
