@@ -97,7 +97,6 @@ def weekly_cash_flow(
             row for row in all_transactions
             if start.isoformat() <= row["transaction_date"] <= end.isoformat()
         ]
-        in_period_ids = {row["id"] for row in in_period}
 
         # Scheduled income occurrences. A linked actual paycheck replaces its
         # matching expected occurrence, rather than being counted a second time.
