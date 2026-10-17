@@ -9,6 +9,8 @@ class TransactionCreate(BaseModel):
     transaction_date: date
     category: str = Field(min_length=1, max_length=40)
     transaction_type: Literal['income', 'expense', 'transfer'] | None = None
+    linked_obligation_type: Literal['income', 'bill', 'debt'] | None = None
+    linked_obligation_id: int | None = Field(default=None, gt=0)
     description: str = Field(min_length=1, max_length=200)
     amount_cents: int
     account_name: str | None = Field(default=None, max_length=120)
@@ -19,6 +21,8 @@ class TransactionUpdate(BaseModel):
     transaction_date: date | None = None
     category: str | None = Field(default=None, min_length=1, max_length=40)
     transaction_type: Literal['income', 'expense', 'transfer'] | None = None
+    linked_obligation_type: Literal['income', 'bill', 'debt'] | None = None
+    linked_obligation_id: int | None = Field(default=None, gt=0)
     description: str | None = Field(default=None, min_length=1, max_length=200)
     amount_cents: int | None = None
     account_name: str | None = Field(default=None, max_length=120)
@@ -27,7 +31,7 @@ class TransactionUpdate(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def reject_null_required_fields(cls, value: Any) -> Any:
-        nullable = {"account_name", "notes"}
+        nullable = {"account_name", "notes", "linked_obligation_type", "linked_obligation_id"}
         if isinstance(value, dict) and any(
             item is None for key, item in value.items() if key not in nullable
         ):
@@ -40,6 +44,8 @@ class TransactionOut(BaseModel):
     transaction_date: date
     category: str
     transaction_type: Literal['income', 'expense', 'transfer']
+    linked_obligation_type: Literal['income', 'bill', 'debt'] | None
+    linked_obligation_id: int | None
     description: str
     amount_cents: int
     account_name: str | None
