@@ -83,7 +83,7 @@ nav a{background:white;padding:10px 13px;border-radius:9px;box-shadow:0 3px 14px
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
 <div class="grid">
-<section class="card"><h2>Weekly cash flow</h2><div id="weekly-summary" class="muted">Loading forecast…</div><p><a href="/weekly">Open full weekly report →</a></p></section>
+<section class="card"><h2>Weekly cash flow</h2><div id="weekly-summary" class="muted">Loading forecast…</div><h3>Recorded spending by category</h3><ul id="weekly-category-spending" class="list"><li class="muted">Loading…</li></ul><p><a href="/weekly">Open full weekly report →</a></p></section>
 <section class="card"><h2>Next paydays</h2><ul id="paydays" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Upcoming bills · 30 days</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Debt payments · 30 days</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
@@ -112,6 +112,10 @@ try{const weekly=await api("/api/cash-flow/weekly");const root=document.getEleme
 root.appendChild(el("div","item-title",dollars(weekly.free_to_spend_cents)+" available above buffer and planned savings"));
 root.appendChild(el("div","detail","Starting cash "+dollars(weekly.starting_cash_cents)+" · expected income "+dollars(weekly.expected_income_cents)));
 root.appendChild(el("div","detail","Bills still due "+dollars(weekly.bills_due_cents)+" · minimum debt payments "+dollars(weekly.minimum_debt_payments_cents)));
+const categoryRoot=document.getElementById("weekly-category-spending");categoryRoot.replaceChildren();
+const topCategories=weekly.category_spending.slice(0,3);
+if(!topCategories.length)categoryRoot.appendChild(el("li","muted","No recorded expenses this week."));
+else for(const item of topCategories){const li=el("li","");li.appendChild(el("div","item-title",item.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(item.amount_cents)));categoryRoot.appendChild(li);}
 if(weekly.projected_shortfall_cents>0)root.appendChild(el("div","detail","Warning: projected shortfall "+dollars(weekly.projected_shortfall_cents)));
 else if(weekly.buffer_shortfall_cents>0)root.appendChild(el("div","detail","Warning: buffer short by "+dollars(weekly.buffer_shortfall_cents)));
 }catch(error){document.getElementById("weekly-summary").textContent="Weekly forecast unavailable: "+error.message;}
