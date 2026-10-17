@@ -25,6 +25,7 @@ from .cash_flow import router as cash_flow_router
 from .settings_data import router as settings_data_router
 from .household import router as household_router
 from .security import remote_access_guard
+from .auth import (household_auth_guard, login_page, register_page, login_route, register_route, logout_route)
 
 
 @asynccontextmanager
@@ -49,7 +50,38 @@ app.include_router(categories_router)
 app.include_router(cash_flow_router)
 app.include_router(settings_data_router)
 app.include_router(household_router)
+app.middleware("http")(household_auth_guard)
 app.middleware("http")(remote_access_guard)
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page_route():
+    return login_page()
+
+
+@app.post("/login")
+async def login_post(request):
+    return await login_route(request)
+
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page_route():
+    return register_page()
+
+
+@app.post("/register")
+async def register_post(request):
+    return await register_route(request)
+
+
+@app.get("/logout")
+async def logout_get(request):
+    return await logout_route(request)
+
+
+@app.post("/logout")
+async def logout_post(request):
+    return await logout_route(request)
 
 
 @app.get("/health")
