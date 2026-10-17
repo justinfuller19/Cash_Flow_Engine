@@ -56,9 +56,11 @@ Open <http://127.0.0.1:8000> for the dashboard, <http://127.0.0.1:8000/setup> fo
 
 On first launch, open the app and create a household account at `/register`. Each household shares one username/email and password; partners do not need separate user accounts. Additional households can register on the same server, and each household's financial records are stored in a separate SQLite database file. Existing records remain in the original `CASHFLOW_DB_PATH` database and are assigned to the first household created.
 
-Passwords are stored as salted scrypt hashes. Session tokens are random, expire after seven days, and are stored as hashes in a separate `<database>.auth.sqlite` account registry. Set `CASHFLOW_COOKIE_SECURE=1` when serving the app over HTTPS so session cookies are marked Secure. The existing remote-access guard remains in place: remote use still requires the documented access configuration and HTTPS or a trusted VPN. Do not expose the app directly to the public internet.
+Passwords are stored as salted scrypt hashes. Session tokens are random, expire after seven days, and are stored as hashes in a separate `<database>.auth.sqlite` account registry. Sign in and open `/account` to set this household's notification email or change its shared password. Password changes require the current password and sign out other sessions. Login attempts are rate-limited after 10 failed attempts per client address in a 15-minute window. Password recovery and household deletion are not currently available.
 
-Keep backups of the main database, the `.auth.sqlite` account registry, and any `.household-N` databases (with the same file extension as the configured database) together. The built-in backup/reset workflow currently operates on the signed-in household's financial database; it is not a complete server-wide multi-household backup.
+Set `CASHFLOW_COOKIE_SECURE=1` when serving the app over HTTPS so session cookies are marked Secure. The existing remote-access guard remains in place. When `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD` are configured, Basic authentication is intentionally required **in addition to** the household login; the two layers protect different access boundaries. Remote use still requires HTTPS or a trusted VPN. Do not expose the app directly to the public internet.
+
+The scheduled backup script backs up every registered household database plus the shared `.auth.sqlite` account registry, with integrity checks and restrictive file permissions. The in-app manual download and Clear All Data safety backup cover only the currently signed-in household's financial database; use the scheduled server-wide backup for recovery of all accounts and records. Keep all backups together.
 
 ## Database
 
@@ -84,7 +86,7 @@ The database file is excluded from Git by `.gitignore`. Back it up regularly and
 - `GET /api/plans` and `GET /api/plans/{id}` — review saved plan history and details.
 - `GET /api/dashboard` — retrieve upcoming paydays, bills, debts, savings progress, and pending checklist counts.
 - `GET /api/cash-flow/weekly?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` — calculate a weekly cash-flow forecast; defaults to seven days and accepts up to 31 days.
-- Optional systemd timers send daily due-date/shortfall reminders and a Sunday evening weekly summary when SMTP environment variables are configured.
+- Optional systemd timers send daily due-date/shortfall reminders and a Sunday evening weekly summary when SMTP transport settings are configured. Each household must set its own recipient under `/account`; the legacy `CASHFLOW_EMAIL_TO` setting is used only for household 1.
 - `GET /api/checklist` and `PATCH /api/plan-items/{id}` — review and update planned actions with actual amounts and dates.
 - `GET/POST /api/transactions` and `PATCH /api/transactions/{id}` — record and edit actual income/expense transactions (positive amounts are inflows; negative amounts are outflows).
 
