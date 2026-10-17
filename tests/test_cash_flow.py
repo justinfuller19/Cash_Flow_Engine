@@ -102,6 +102,10 @@ def test_weekly_forecast_reconciles_linked_income_and_bill_transactions(tmp_path
     assert report["bills_covered_by_transactions_cents"] == 30000
     assert report["minimum_debt_payments_cents"] == 10000
     assert report["transaction_expenses_cents"] == 34000
+    assert report["category_spending"] == [
+        {"category": "utilities", "amount_cents": 30000},
+        {"category": "groceries", "amount_cents": 4000},
+    ]
     assert report["planned_savings_cents"] == 5000
     assert report["funded_savings_cents"] == 5000
     assert report["projected_cash_before_buffer_cents"] == 106000
@@ -182,8 +186,10 @@ def test_weekly_report_page_and_dashboard_summary_are_available(tmp_path, monkey
     assert 'id="start"' in report_page.text
     assert 'id="end"' in report_page.text
     assert "/api/cash-flow/weekly" in report_page.text
+    assert 'id="category-spending"' in report_page.text
 
     dashboard = client.get("/")
     assert dashboard.status_code == 200
     assert 'id="weekly-summary"' in dashboard.text
     assert 'href="/weekly"' in dashboard.text
+    assert 'id="weekly-category-spending"' in dashboard.text

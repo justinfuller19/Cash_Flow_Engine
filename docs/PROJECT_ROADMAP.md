@@ -78,7 +78,7 @@ Savings-goal creation, editing, target-date management, priority ordering, and d
 ### Milestone 6 — Payday calendar and income forecasting (in progress)
 **Goal:** Determine which income is expected and which obligations fall into each planning window.
 
-The initial forecasting implementation generates weekly, biweekly, semimonthly, monthly, quarterly, yearly, and irregular occurrences for saved income/bills, including end-of-month handling. The new `/api/cash-flow/weekly` calculation combines starting cash, expected income, bills, debt minimums, recorded transactions, the shared buffer, planned savings, shortfalls, and available extra cash. A dedicated `/weekly` report page and dashboard summary are now available; richer charts and category-spending trends remain.
+The initial forecasting implementation generates weekly, biweekly, semimonthly, monthly, quarterly, yearly, and irregular occurrences for saved income/bills, including end-of-month handling. The new `/api/cash-flow/weekly` calculation combines starting cash, expected income, bills, debt minimums, recorded transactions, the shared buffer, planned savings, shortfalls, and available extra cash. A dedicated `/weekly` report page and dashboard summary are now available; richer charts and longer-term category-spending trends remain.
 
 - Support weekly, biweekly, semimonthly, monthly, and irregular income.
 - Generate upcoming payday dates with correct calendar behavior, including month ends and leap years.
