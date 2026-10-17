@@ -125,7 +125,8 @@ def initialize_database() -> None:
             CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 transaction_date TEXT NOT NULL,
-                category TEXT NOT NULL CHECK(length(trim(category)) BETWEEN 1 AND 40),\n                transaction_type TEXT NOT NULL DEFAULT 'expense' CHECK(transaction_type IN ('income', 'expense', 'transfer')),
+                category TEXT NOT NULL CHECK(length(trim(category)) BETWEEN 1 AND 40),
+                transaction_type TEXT NOT NULL DEFAULT 'expense' CHECK(transaction_type IN ('income', 'expense', 'transfer')),
                 description TEXT NOT NULL CHECK(length(trim(description)) BETWEEN 1 AND 200),
                 amount_cents INTEGER NOT NULL,
                 account_name TEXT,
