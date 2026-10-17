@@ -74,3 +74,35 @@ def test_registration_rejects_short_password(tmp_path, monkeypatch):
     })
     assert response.status_code == 200
     assert "at least 12 characters" in response.text
+
+
+def test_login_is_rate_limited_after_ten_failures(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "cashflow.db"))
+    auth.clear_login_failures("testclient")
+    client = TestClient(app)
+    client.post("/register", data={
+        "household_name": "Maple House",
+        "username": "maple@example.test",
+        "password": "correct-horse-battery",
+    })
+    client.cookies.clear()
+
+    for _ in range(auth.LOGIN_ATTEMPT_LIMIT):
+        response = client.post("/login", data={
+            "username": "maple@example.test",
+            "password": "incorrect-password",
+        }, follow_redirects=False)
+        assert response.status_code == 200
+    limited = client.post("/login", data={
+        "username": "maple@example.test",
+        "password": "correct-horse-battery",
+    }, follow_redirects=False)
+    assert limited.status_code == 429
+    assert "Wait 15 minutes" in limited.text
+
+    auth.clear_login_failures("testclient")
+    accepted = client.post("/login", data={
+        "username": "maple@example.test",
+        "password": "correct-horse-battery",
+    }, follow_redirects=False)
+    assert accepted.status_code == 303
