@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def database_path() -> Path:
@@ -114,10 +114,18 @@ def initialize_database() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            CREATE TABLE IF NOT EXISTS categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 40),
+                transaction_type TEXT NOT NULL CHECK(transaction_type IN ('income', 'expense', 'transfer')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(transaction_type, name COLLATE NOCASE)
+            );
+
             CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 transaction_date TEXT NOT NULL,
-                category TEXT NOT NULL CHECK(length(trim(category)) BETWEEN 1 AND 40),
+                category TEXT NOT NULL CHECK(length(trim(category)) BETWEEN 1 AND 40),\n                transaction_type TEXT NOT NULL DEFAULT 'expense' CHECK(transaction_type IN ('income', 'expense', 'transfer')),
                 description TEXT NOT NULL CHECK(length(trim(description)) BETWEEN 1 AND 200),
                 amount_cents INTEGER NOT NULL,
                 account_name TEXT,
@@ -266,3 +274,43 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
                 "INSERT INTO household_settings (id, buffer_target_cents) VALUES (1, ?)",
                 (seed_cents,),
             )
+
+    if version < 7:
+        # Version 7 adds typed, user-managed transaction categories while preserving
+        # the text labels already stored on historical transactions.
+        transaction_columns = {row["name"] for row in db.execute("PRAGMA table_info(transactions)")}
+        if "transaction_type" not in transaction_columns:
+            db.execute(
+                "ALTER TABLE transactions ADD COLUMN transaction_type TEXT NOT NULL "
+                "DEFAULT 'expense' CHECK(transaction_type IN ('income', 'expense', 'transfer'))"
+            )
+        db.execute(
+            """UPDATE transactions
+               SET transaction_type = CASE
+                   WHEN lower(trim(category)) IN ('income', 'paycheck', 'side income',
+                       'reimbursements', 'other income') THEN 'income'
+                   ELSE 'expense'
+               END"""
+        )
+        defaults = {
+            "expense": ("groceries", "fuel", "restaurants", "household supplies",
+                        "shopping", "entertainment", "medical", "housing", "utilities",
+                        "transportation", "insurance", "debt", "savings", "food", "other"),
+            "income": ("paychecks", "side income", "reimbursements", "other income", "income"),
+            "transfer": ("account transfer",),
+        }
+        for category_type, names in defaults.items():
+            for name in names:
+                db.execute(
+                    "INSERT OR IGNORE INTO categories (name, transaction_type) VALUES (?, ?)",
+                    (name, category_type),
+                )
+        for row in db.execute(
+            "SELECT DISTINCT category, transaction_type FROM transactions"
+        ).fetchall():
+            name = row["category"].strip()[:40] or "other"
+            db.execute(
+                "INSERT OR IGNORE INTO categories (name, transaction_type) VALUES (?, ?)",
+                (name, row["transaction_type"]),
+            )
+        db.execute("CREATE INDEX IF NOT EXISTS idx_categories_type ON categories(transaction_type, name)")
