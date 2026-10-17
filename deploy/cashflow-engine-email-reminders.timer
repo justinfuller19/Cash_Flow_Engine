@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily CashFlow Engine reminders and shortfall check
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+RandomizedDelaySec=5m
+Unit=cashflow-engine-email-reminders.service
+
+[Install]
+WantedBy=timers.target
