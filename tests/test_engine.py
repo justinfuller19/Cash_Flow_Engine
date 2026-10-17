@@ -36,9 +36,10 @@ def sample_request(**overrides):
 def test_waterfall_order_and_balances():
     plan = generate_payday_plan(sample_request())
     categories = [item.category for item in plan.items]
-    assert categories[0] == "buffer"
+    assert categories[0] == "bill"
     assert categories.index("bill") < categories.index("debt_minimum")
-    assert categories.index("debt_minimum") < categories.index("savings")
+    assert categories.index("debt_minimum") < categories.index("buffer")
+    assert categories.index("buffer") < categories.index("savings")
     assert categories[-1] == "debt_extra"
     assert plan.target_card == "Chase Sapphire"
     assert plan.total_available_cents == plan.allocated_cents + plan.unallocated_cents
@@ -66,8 +67,11 @@ def test_shortfalls_are_explicit_and_never_make_cash_negative():
         bills=[Bill("Rent", 8000, date(2026, 11, 18))],
         credit_cards=[], savings_goals=[],
     ))
-    assert plan.items[0].funded_cents == 7000
-    assert plan.items[1].funded_cents == 3000
+    assert plan.items[0].category == "bill"
+    assert plan.items[0].funded_cents == 8000
+    assert plan.items[0].unfunded_cents == 0
+    assert plan.items[1].category == "buffer"
+    assert plan.items[1].funded_cents == 2000
     assert plan.items[1].unfunded_cents == 5000
     assert plan.unallocated_cents == 0
     assert plan.unfunded_cents == 5000
