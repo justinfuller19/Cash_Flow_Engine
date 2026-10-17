@@ -20,7 +20,7 @@ def test_database_initializes_expected_tables(tmp_path, monkeypatch):
 
     assert {"persons", "income_sources", "bills", "credit_cards",
             "savings_accounts", "savings_goals", "transactions", "categories",
-            "payday_plans", "plan_items"} <= names
+            "payday_plans", "plan_items", "email_notification_log"} <= names
 
 
 def test_person_and_income_source_endpoints_persist(tmp_path, monkeypatch):
