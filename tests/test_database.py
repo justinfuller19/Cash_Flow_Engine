@@ -361,3 +361,24 @@ def test_schema_migrations_preserve_transactions_and_add_categories(tmp_path, mo
         assert db.execute(
             "SELECT 1 FROM categories WHERE name = 'paychecks' AND transaction_type = 'income'"
         ).fetchone() is not None
+
+
+def test_schema_v8_adds_scheduled_item_links(tmp_path, monkeypatch):
+    path = tmp_path / "legacy-v7.db"
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(path))
+    database.initialize_database()
+    with database.connect() as db:
+        db.execute("DROP INDEX idx_transactions_linked_obligation")
+        db.execute("ALTER TABLE transactions DROP COLUMN linked_obligation_type")
+        db.execute("ALTER TABLE transactions DROP COLUMN linked_obligation_id")
+        db.execute("PRAGMA user_version = 7")
+
+    database.initialize_database()
+    with database.connect() as db:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(transactions)")}
+        assert {"linked_obligation_type", "linked_obligation_id"} <= columns
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'index' "
+            "AND name = 'idx_transactions_linked_obligation'"
+        ).fetchone() is not None
