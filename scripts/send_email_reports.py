@@ -263,6 +263,15 @@ def run_once(mode: str, today: date, config: EmailConfig | None, dry_run: bool =
     return True
 
 
+def _recipients_for_household(household: dict, config: EmailConfig | None) -> tuple[str, ...]:
+    """Never apply the legacy global recipient list to households beyond household 1."""
+    if household.get("notification_email"):
+        return (household["notification_email"],)
+    if int(household["id"]) == 1 and config is not None:
+        return config.recipients
+    return ()
+
+
 def _registered_households() -> list[dict]:
     auth.initialize_auth_database()
     with auth.auth_connect() as db:
@@ -296,11 +305,7 @@ def main() -> int:
             household_id = int(household["id"])
             # The environment recipient list is a legacy default for household 1 only.
             # Every additional household must explicitly set its own notification address.
-            recipients = (
-                (household["notification_email"],)
-                if household["notification_email"]
-                else (config.recipients if config and household_id == 1 else ())
-            )
+            recipients = _recipients_for_household(household, config)
             if not args.dry_run and (config is None or not recipients):
                 print(f"Skipping household {household_id}: no household-specific email recipient configured.")
                 continue
