@@ -15,7 +15,7 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 - Browser-based Payday Planner that forecasts active income and bills, protects the household cash buffer, allocates bill payments, debt minimums, savings contributions, and extra debt payoff, then saves plan history.
 - Live dashboard for upcoming paydays, bills, debt minimums, savings progress, and recent plans.
 - Payday checklist for marking actions complete, skipped, or needing attention and recording actual amounts/dates.
-- Manual transaction ledger for recorded income and expenses, with monthly totals on the dashboard.
+- Manual transaction ledger with typed income, expense, and transfer entries, user-managed categories, safe category renaming/deletion, and monthly dashboard totals that exclude transfers.
 - Persistent household-member and income-source APIs.
 - Initial schema for recurring bills, credit cards, savings accounts and goals, transactions, payday plans, and checklist items.
 - Unit tests for allocation behavior, setup APIs, and invalid input.
@@ -46,7 +46,7 @@ python -m pytest -q
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open <http://127.0.0.1:8000> for the dashboard, <http://127.0.0.1:8000/setup> for household and income setup, <http://127.0.0.1:8000/bills> to manage bills and debts, and <http://127.0.0.1:8000/savings> to manage savings goals, and <http://127.0.0.1:8000/planner> to generate and review payday plans, and <http://127.0.0.1:8000/checklist> to track actual actions, and <http://127.0.0.1:8000/transactions> to record account activity. Explore the API at <http://127.0.0.1:8000/docs>.
+Open <http://127.0.0.1:8000> for the dashboard, <http://127.0.0.1:8000/setup> for household and income setup, <http://127.0.0.1:8000/bills> for bills and debts, <http://127.0.0.1:8000/savings> for savings goals, <http://127.0.0.1:8000/planner> for payday plans, <http://127.0.0.1:8000/checklist> for actual actions, <http://127.0.0.1:8000/transactions> for account activity, and <http://127.0.0.1:8000/categories> to manage transaction categories. Explore the API at <http://127.0.0.1:8000/docs>.
 
 ## Database
 

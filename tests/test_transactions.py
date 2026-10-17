@@ -108,3 +108,107 @@ def test_transactions_page_and_dashboard_month_totals(tmp_path, monkeypatch):
     assert page.status_code == 200
     assert "Transactions" in page.text
     assert "/api/transactions" in page.text
+
+
+def test_category_management_preserves_and_reassigns_transaction_history(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today().isoformat()
+    created_category = client.post(
+        "/api/categories", json={"name": "Pet Care", "transaction_type": "expense"}
+    )
+    assert created_category.status_code == 201, created_category.text
+    category = created_category.json()
+    transaction = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today,
+            "transaction_type": "expense",
+            "category": "pet care",
+            "description": "Dog food",
+            "amount_cents": -4200,
+        },
+    )
+    assert transaction.status_code == 201, transaction.text
+
+    renamed = client.patch(
+        f"/api/categories/{category['id']}", json={"name": "Pet Supplies"}
+    )
+    assert renamed.status_code == 200, renamed.text
+    listed = client.get("/api/transactions").json()
+    assert listed[0]["category"] == "pet supplies"
+
+    deleted = client.request("DELETE",
+        f"/api/categories/{category['id']}",
+        json={"replacement_category_id": next(
+            row["id"] for row in client.get("/api/categories?transaction_type=expense").json()
+            if row["name"] == "other"
+        )},
+    )
+    assert deleted.status_code == 200, deleted.text
+    listed = client.get("/api/transactions").json()
+    assert listed[0]["category"] == "other"
+    assert listed[0]["description"] == "Dog food"
+    assert client.request("DELETE",
+        f"/api/categories/{deleted.json()['id']}",
+        json={"replacement_category_id": 1},
+    ).status_code == 404
+
+
+def test_category_types_are_validated_and_transfers_do_not_count_as_income_or_expense(
+    tmp_path, monkeypatch
+):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today().isoformat()
+    invalid = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today,
+            "transaction_type": "income",
+            "category": "groceries",
+            "description": "Wrong category type",
+            "amount_cents": 5000,
+        },
+    )
+    assert invalid.status_code == 422
+
+    for payload in (
+        {"transaction_type": "income", "category": "paychecks", "amount_cents": 120000},
+        {"transaction_type": "expense", "category": "groceries", "amount_cents": -2500},
+        {"transaction_type": "transfer", "category": "account transfer", "amount_cents": 5000},
+    ):
+        response = client.post(
+            "/api/transactions",
+            json={
+                "transaction_date": today,
+                "description": payload["transaction_type"],
+                **payload,
+            },
+        )
+        assert response.status_code == 201, response.text
+
+    dashboard = client.get("/api/dashboard").json()
+    assert dashboard["month_income_cents"] == 120000
+    assert dashboard["month_expenses_cents"] == 2500
+
+
+def test_category_deletion_requires_same_type_replacement_and_keeps_other(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    category = client.post(
+        "/api/categories", json={"name": "One-off", "transaction_type": "expense"}
+    ).json()
+    income_category = next(
+        row for row in client.get("/api/categories?transaction_type=income").json()
+        if row["name"] == "paychecks"
+    )
+    assert client.request("DELETE",
+        f"/api/categories/{category['id']}",
+        json={"replacement_category_id": income_category["id"]},
+    ).status_code == 422
+    other = next(
+        row for row in client.get("/api/categories?transaction_type=expense").json()
+        if row["name"] == "other"
+    )
+    assert client.request("DELETE",
+        f"/api/categories/{other['id']}",
+        json={"replacement_category_id": category["id"]},
+    ).status_code == 422

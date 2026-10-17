@@ -19,7 +19,7 @@ def test_database_initializes_expected_tables(tmp_path, monkeypatch):
         }
 
     assert {"persons", "income_sources", "bills", "credit_cards",
-            "savings_accounts", "savings_goals", "transactions",
+            "savings_accounts", "savings_goals", "transactions", "categories",
             "payday_plans", "plan_items"} <= names
 
 
@@ -332,3 +332,32 @@ def test_migration_adds_active_to_legacy_persons_table(tmp_path, monkeypatch):
     # The migrated database serves the new field through the API.
     client = TestClient(app)
     assert client.get("/api/people").json()[0]["active"] is True
+
+
+def test_schema_v7_migration_preserves_transactions_and_adds_categories(tmp_path, monkeypatch):
+    import sqlite3
+
+    path = tmp_path / "legacy-v6.db"
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(path))
+    # Build a v6-style database by initializing the latest schema, then removing
+    # the v7 column/table and marking the database as version 6.
+    database.initialize_database()
+    with database.connect() as db:
+        db.execute("DROP TABLE categories")
+        db.execute("ALTER TABLE transactions DROP COLUMN transaction_type")
+        db.execute("INSERT INTO transactions "
+                   "(transaction_date, category, description, amount_cents) "
+                   "VALUES ('2026-10-17', 'income', 'Legacy paycheck', 120000)")
+        db.execute("PRAGMA user_version = 6")
+
+    database.initialize_database()
+    with database.connect() as db:
+        transaction = db.execute(
+            "SELECT category, transaction_type FROM transactions WHERE description = 'Legacy paycheck'"
+        ).fetchone()
+        assert transaction["category"] == "income"
+        assert transaction["transaction_type"] == "income"
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert db.execute(
+            "SELECT 1 FROM categories WHERE name = 'paychecks' AND transaction_type = 'income'"
+        ).fetchone() is not None
