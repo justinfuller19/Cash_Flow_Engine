@@ -130,7 +130,7 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <p class="muted">Start by adding the people in your household and their take-home pay. Amounts are saved as cents in your local SQLite database.</p></header>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div class="layout">
-<section class="card"><h2>Household cash settings</h2><p class="muted">One shared cash buffer target for the whole household, protected before other allocations, plus the household's current available cash balance.</p>
+<section class="card"><h2>Household cash settings</h2><p class="muted">One shared cash buffer target for the whole household, restored after bills and minimum debt payments, plus the household's current available cash balance.</p>
 <form id="settings-form">
 <label for="settings-buffer">Cash buffer target ($)</label><input id="settings-buffer" name="buffer_target" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
 <label for="settings-cash">Starting cash balance ($)</label><input id="settings-cash" name="starting_cash" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
