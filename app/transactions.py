@@ -93,7 +93,7 @@ def create_transaction(body: TransactionCreate):
                  values["linked_obligation_id"], values["description"], values["amount_cents"], values["account_name"], values["notes"]),
             )
             row = db.execute(
-                """SELECT id, transaction_date, category, transaction_type, description, amount_cents,
+                """SELECT id, transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, description, amount_cents,
                           account_name, notes, created_at
                    FROM transactions WHERE id = ?""", (cursor.lastrowid,)
             ).fetchone()
@@ -132,7 +132,7 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
             assignments = ", ".join(f"{key} = ?" for key in updates)
             db.execute(f"UPDATE transactions SET {assignments} WHERE id = ?", (*updates.values(), transaction_id))
             row = db.execute(
-                """SELECT id, transaction_date, category, transaction_type, description, amount_cents,
+                """SELECT id, transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, description, amount_cents,
                           account_name, notes, created_at
                    FROM transactions WHERE id = ?""", (transaction_id,)
             ).fetchone()
