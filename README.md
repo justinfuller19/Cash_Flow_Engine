@@ -46,7 +46,7 @@ python -m pytest -q
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open <http://127.0.0.1:8000> for the dashboard, <http://127.0.0.1:8000/setup> for household and income setup, <http://127.0.0.1:8000/bills> to manage bills and debts, and <http://127.0.0.1:8000/savings> to manage savings goals, and <http://127.0.0.1:8000/planner> to generate and review payday plans, and <http://127.0.0.1:8000/checklist> to track actual actions, and <http://127.0.0.1:8000/transactions> to record account activity, or <http://127.0.0.1:8000/categories> to manage transaction categories. Explore the API at <http://127.0.0.1:8000/docs>.
+Open <http://127.0.0.1:8000> for the dashboard, <http://127.0.0.1:8000/setup> for household and income setup, <http://127.0.0.1:8000/bills> for bills and debts, <http://127.0.0.1:8000/savings> for savings goals, <http://127.0.0.1:8000/planner> for payday plans, <http://127.0.0.1:8000/checklist> for actual actions, <http://127.0.0.1:8000/transactions> for account activity, and <http://127.0.0.1:8000/categories> to manage transaction categories. Explore the API at <http://127.0.0.1:8000/docs>.
 
 ## Database
 
