@@ -1,0 +1,174 @@
+"""Integration tests for the weekly cash-flow forecast and transaction reconciliation."""
+from datetime import date, timedelta
+
+from fastapi.testclient import TestClient
+
+from app import database
+from app.main import app
+
+
+def setup_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "weekly-cash-flow.db"))
+    database.initialize_database()
+    return TestClient(app)
+
+
+def test_weekly_forecast_reconciles_linked_income_and_bill_transactions(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    start = date(2026, 10, 19)
+    end = start + timedelta(days=6)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 20000 WHERE id = 1"
+        )
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        income_id = db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Paycheck', 50000, 'weekly', ?, 1)""",
+            (person_id, start.isoformat()),
+        ).lastrowid
+        bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date, flexible_window_days,
+                active, category, frequency, autopay)
+               VALUES ('Electric', 30000, 19, ?, 0, 1, 'utilities', 'monthly', 0)""",
+            (start.isoformat(),),
+        ).lastrowid
+        db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                apr_percent, active, next_due_date)
+               VALUES ('Card', 500000, 10000, 21, 19.9, 1, ?)""",
+            ((start + timedelta(days=2)).isoformat(),),
+        )
+        db.execute(
+            """INSERT INTO savings_goals
+               (name, target_amount_cents, current_balance_cents, contribution_per_period_cents)
+               VALUES ('Emergency savings', 100000, 20000, 5000)"""
+        )
+
+    transactions = [
+        {
+            "transaction_date": start.isoformat(),
+            "transaction_type": "income",
+            "linked_obligation_type": "income",
+            "linked_obligation_id": income_id,
+            "category": "paychecks",
+            "description": "Paycheck received",
+            "amount_cents": 50000,
+        },
+        {
+            "transaction_date": start.isoformat(),
+            "transaction_type": "expense",
+            "linked_obligation_type": "bill",
+            "linked_obligation_id": bill_id,
+            "category": "utilities",
+            "description": "Electric paid",
+            "amount_cents": -30000,
+        },
+        {
+            "transaction_date": (start + timedelta(days=1)).isoformat(),
+            "transaction_type": "expense",
+            "category": "groceries",
+            "description": "Groceries",
+            "amount_cents": -4000,
+        },
+        {
+            "transaction_date": (start + timedelta(days=1)).isoformat(),
+            "transaction_type": "transfer",
+            "category": "account transfer",
+            "description": "Checking to savings",
+            "amount_cents": 20000,
+        },
+    ]
+    for transaction in transactions:
+        response = client.post("/api/transactions", json=transaction)
+        assert response.status_code == 201, response.text
+
+    response = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": start.isoformat(), "end_date": end.isoformat()},
+    )
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["starting_cash_cents"] == 100000
+    assert report["expected_income_cents"] == 0
+    assert report["recorded_income_cents"] == 50000
+    assert report["covered_income"][0]["covered_by_transaction_id"]
+    assert report["bills_due_cents"] == 0
+    assert report["bills_covered_by_transactions_cents"] == 30000
+    assert report["minimum_debt_payments_cents"] == 10000
+    assert report["transaction_expenses_cents"] == 34000
+    assert report["planned_savings_cents"] == 5000
+    assert report["funded_savings_cents"] == 5000
+    assert report["projected_cash_before_buffer_cents"] == 106000
+    assert report["buffer_replenishment_cents"] == 0
+    assert report["free_to_spend_cents"] == 81000
+    assert report["extra_debt_payoff_capacity_cents"] == 81000
+    assert len(report["transfers"]) == 1
+
+
+def test_weekly_forecast_flags_shortfalls_and_validates_window(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 1000, buffer_target_cents = 5000 WHERE id = 1"
+        )
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, next_due_date, flexible_window_days, active,
+                category, frequency, autopay)
+               VALUES ('Rent', 20000, '2026-10-19', 0, 1, 'housing', 'monthly', 0)"""
+        )
+
+    response = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": "2026-10-19", "end_date": "2026-10-25"},
+    )
+    assert response.status_code == 200
+    report = response.json()
+    assert report["projected_cash_before_buffer_cents"] == -19000
+    assert report["projected_shortfall_cents"] == 19000
+    assert report["buffer_shortfall_cents"] == 24000
+    assert report["free_to_spend_cents"] == 0
+
+    assert client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": "2026-10-25", "end_date": "2026-10-19"},
+    ).status_code == 422
+    assert client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": "2026-10-01", "end_date": "2026-11-02"},
+    ).status_code == 422
+
+
+def test_transaction_link_validation_rejects_mismatched_types(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    person = client.post("/api/people", json={"name": "Member"}).json()
+    income = client.post(
+        "/api/income-sources",
+        json={
+            "person_id": person["id"],
+            "name": "Paycheck",
+            "net_amount_cents": 100000,
+            "frequency": "weekly",
+            "next_payday": "2026-10-19",
+        },
+    ).json()
+    payload = {
+        "transaction_date": "2026-10-19",
+        "transaction_type": "expense",
+        "category": "groceries",
+        "description": "Bad link",
+        "amount_cents": -1000,
+        "linked_obligation_type": "income",
+        "linked_obligation_id": income["id"],
+    }
+    assert client.post("/api/transactions", json=payload).status_code == 422
+    assert client.post(
+        "/api/transactions",
+        json={**payload, "linked_obligation_type": "bill", "linked_obligation_id": None},
+    ).status_code == 422
