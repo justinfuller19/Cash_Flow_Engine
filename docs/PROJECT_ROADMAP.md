@@ -78,7 +78,7 @@ Savings-goal creation, editing, target-date management, priority ordering, and d
 ### Milestone 6 — Payday calendar and income forecasting (in progress)
 **Goal:** Determine which income is expected and which obligations fall into each planning window.
 
-The initial forecasting implementation generates weekly, biweekly, semimonthly, monthly, quarterly, yearly, and irregular occurrences for saved income/bills, including end-of-month handling. More edge-case review and UI feedback remain.
+The initial forecasting implementation generates weekly, biweekly, semimonthly, monthly, quarterly, yearly, and irregular occurrences for saved income/bills, including end-of-month handling. The new `/api/cash-flow/weekly` calculation combines starting cash, expected income, bills, debt minimums, recorded transactions, the shared buffer, planned savings, shortfalls, and available extra cash. A dedicated report page and dashboard integration remain.
 
 - Support weekly, biweekly, semimonthly, monthly, and irregular income.
 - Generate upcoming payday dates with correct calendar behavior, including month ends and leap years.
@@ -126,7 +126,7 @@ The home page now summarizes upcoming paydays, bills, debt minimums, savings pro
 ### Milestone 10 — Reliability, privacy, and data protection (in progress)
 **Goal:** Make the app trustworthy for real household financial data.
 
-A manual transaction ledger now supports income, expense, and transfer types; user-managed categories; safe renaming and deletion with history reassignment; and monthly dashboard totals that exclude transfers. Schema v7 migrates existing transactions and seeds starter categories. The unified weekly cash-flow report, bank imports/reconciliation, authentication, backup/restore validation, and deployment hardening remain.
+A manual transaction ledger now supports income, expense, and transfer types; user-managed categories; safe renaming and deletion with history reassignment; monthly dashboard totals that exclude transfers; and explicit links to scheduled income, bills, or debts for forecast reconciliation. Schema v7 adds categories and schema v8 adds scheduled-item links. The weekly report UI/dashboard integration, bank imports/reconciliation, authentication, backup/restore validation, and deployment hardening remain.
 
 - Expand tests to cover engine, API, persistence, recurrence, and full planning workflows.
 - Test database persistence across application restarts and transaction rollback on failure.
