@@ -21,6 +21,7 @@ from .planning import router as planning_router
 from .dashboard import router as dashboard_router
 from .transactions import router as transactions_router
 from .categories import router as categories_router
+from .cash_flow import router as cash_flow_router
 from .household import router as household_router
 from .security import remote_access_guard
 
@@ -44,6 +45,7 @@ app.include_router(planning_router)
 app.include_router(dashboard_router)
 app.include_router(transactions_router)
 app.include_router(categories_router)
+app.include_router(cash_flow_router)
 app.include_router(household_router)
 app.middleware("http")(remote_access_guard)
 

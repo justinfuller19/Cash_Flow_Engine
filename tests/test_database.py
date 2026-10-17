@@ -334,7 +334,7 @@ def test_migration_adds_active_to_legacy_persons_table(tmp_path, monkeypatch):
     assert client.get("/api/people").json()[0]["active"] is True
 
 
-def test_schema_v7_migration_preserves_transactions_and_adds_categories(tmp_path, monkeypatch):
+def test_schema_migrations_preserve_transactions_and_add_categories(tmp_path, monkeypatch):
     import sqlite3
 
     path = tmp_path / "legacy-v6.db"
@@ -357,7 +357,28 @@ def test_schema_v7_migration_preserves_transactions_and_adds_categories(tmp_path
         ).fetchone()
         assert transaction["category"] == "income"
         assert transaction["transaction_type"] == "income"
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
         assert db.execute(
             "SELECT 1 FROM categories WHERE name = 'paychecks' AND transaction_type = 'income'"
+        ).fetchone() is not None
+
+
+def test_schema_v8_adds_scheduled_item_links(tmp_path, monkeypatch):
+    path = tmp_path / "legacy-v7.db"
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(path))
+    database.initialize_database()
+    with database.connect() as db:
+        db.execute("DROP INDEX idx_transactions_linked_obligation")
+        db.execute("ALTER TABLE transactions DROP COLUMN linked_obligation_type")
+        db.execute("ALTER TABLE transactions DROP COLUMN linked_obligation_id")
+        db.execute("PRAGMA user_version = 7")
+
+    database.initialize_database()
+    with database.connect() as db:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(transactions)")}
+        assert {"linked_obligation_type", "linked_obligation_id"} <= columns
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'index' "
+            "AND name = 'idx_transactions_linked_obligation'"
         ).fetchone() is not None
