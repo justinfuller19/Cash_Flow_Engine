@@ -334,7 +334,7 @@ def test_migration_adds_active_to_legacy_persons_table(tmp_path, monkeypatch):
     assert client.get("/api/people").json()[0]["active"] is True
 
 
-def test_schema_v7_migration_preserves_transactions_and_adds_categories(tmp_path, monkeypatch):
+def test_schema_migrations_preserve_transactions_and_add_categories(tmp_path, monkeypatch):
     import sqlite3
 
     path = tmp_path / "legacy-v6.db"
@@ -357,7 +357,7 @@ def test_schema_v7_migration_preserves_transactions_and_adds_categories(tmp_path
         ).fetchone()
         assert transaction["category"] == "income"
         assert transaction["transaction_type"] == "income"
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
         assert db.execute(
             "SELECT 1 FROM categories WHERE name = 'paychecks' AND transaction_type = 'income'"
         ).fetchone() is not None
