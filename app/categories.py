@@ -148,7 +148,7 @@ const box=document.getElementById("status");
 function message(text,error=false){box.textContent=text;box.classList.toggle("error",error);box.hidden=false;}
 async function api(url,options={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...options});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"Please check your entries.");return d;}
 function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n;}
-function title(value){return value.replace(/\b\w/g,c=>c.toUpperCase());}
+function title(value){return value.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ");}
 async function refresh(){const rows=await api("/api/categories");const root=document.getElementById("categories");root.replaceChildren();
 if(!rows.length){root.appendChild(el("p","muted","No categories yet."));return;}
 for(const category of rows){const item=el("div","item");item.appendChild(el("strong","",title(category.name)));item.appendChild(el("div","detail",title(category.transaction_type)));
