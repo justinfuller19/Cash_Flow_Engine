@@ -25,7 +25,7 @@ from .cash_flow import router as cash_flow_router
 from .settings_data import router as settings_data_router
 from .household import router as household_router
 from .security import remote_access_guard
-from .auth import (household_auth_guard, login_page, register_page, login_route, register_route, logout_route)
+from .auth import (household_auth_guard, initialize_auth_database, login_page, register_page, login_route, register_route, logout_route)
 
 
 @asynccontextmanager
