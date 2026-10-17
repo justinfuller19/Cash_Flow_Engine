@@ -4,6 +4,7 @@ import hashlib, hmac, os, secrets, sqlite3, time
 from contextvars import ContextVar
 from contextlib import contextmanager
 from pathlib import Path
+from threading import Lock
 from fastapi import Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from . import database
@@ -11,6 +12,12 @@ from . import database
 SESSION_COOKIE = "cashflow_session"
 SESSION_SECONDS = 604800
 _tenant: ContextVar[int | None] = ContextVar("tenant", default=None)
+_initialized_auth_paths: set[str] = set()
+_init_lock = Lock()
+LOGIN_ATTEMPT_LIMIT = 10
+LOGIN_WINDOW_SECONDS = 900
+_login_attempts: dict[str, list[float]] = {}
+_login_attempts_lock = Lock()
 
 def set_current_household(household_id: int):
     return _tenant.set(household_id)
@@ -42,22 +49,54 @@ def auth_connect():
         db.close()
 
 def initialize_auth_database():
-    with auth_connect() as db:
-        db.executescript("""
-        CREATE TABLE IF NOT EXISTS households (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          household_name TEXT NOT NULL,
-          username TEXT NOT NULL COLLATE NOCASE UNIQUE,
-          password_hash TEXT NOT NULL,
-          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS household_sessions (
-          token_hash TEXT PRIMARY KEY,
-          household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
-          expires_at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON household_sessions(expires_at);
-        """)
+    path_key = str(auth_database_path().resolve())
+    with _init_lock:
+        if path_key in _initialized_auth_paths and Path(path_key).is_file():
+            return
+        with auth_connect() as db:
+            db.executescript("""
+            CREATE TABLE IF NOT EXISTS households (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              household_name TEXT NOT NULL,
+              username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+              password_hash TEXT NOT NULL,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS household_sessions (
+              token_hash TEXT PRIMARY KEY,
+              household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+              expires_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON household_sessions(expires_at);
+            """)
+        _initialized_auth_paths.add(path_key)
+
+
+def _prune_login_attempts(key: str, now: float) -> list[float]:
+    cutoff = now - LOGIN_WINDOW_SECONDS
+    return [attempt for attempt in _login_attempts.get(key, []) if attempt > cutoff]
+
+
+def login_is_rate_limited(key: str, now: float | None = None) -> bool:
+    now = time.monotonic() if now is None else now
+    with _login_attempts_lock:
+        attempts = _prune_login_attempts(key, now)
+        if attempts:
+            _login_attempts[key] = attempts
+        else:
+            _login_attempts.pop(key, None)
+        return len(attempts) >= LOGIN_ATTEMPT_LIMIT
+
+
+def record_login_failure(key: str, now: float | None = None) -> None:
+    now = time.monotonic() if now is None else now
+    with _login_attempts_lock:
+        _login_attempts[key] = _prune_login_attempts(key, now) + [now]
+
+
+def clear_login_failures(key: str) -> None:
+    with _login_attempts_lock:
+        _login_attempts.pop(key, None)
 
 def household_count() -> int:
     initialize_auth_database()
@@ -168,9 +207,17 @@ async def household_auth_guard(request: Request, call_next):
 
 async def login_route(request: Request):
     from urllib.parse import parse_qs
+    client_key = request.client.host if request.client else "unknown"
+    if login_is_rate_limited(client_key):
+        response = login_page("Too many failed attempts. Wait 15 minutes before trying again.")
+        response.status_code = 429
+        return response
     form = parse_qs((await request.body()).decode("utf-8", errors="replace"))
     household_id = authenticate(form.get("username", [""])[0], form.get("password", [""])[0])
-    if household_id is None: return login_page("The username or password was incorrect.")
+    if household_id is None:
+        record_login_failure(client_key)
+        return login_page("The username or password was incorrect.")
+    clear_login_failures(client_key)
     token = issue_session(household_id)
     response = RedirectResponse("/", status_code=303)
     response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_SECONDS, httponly=True,
