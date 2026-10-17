@@ -80,12 +80,9 @@ def rename_category(category_id: int, body: CategoryRename):
     try:
         with database.connect() as db:
             current = _category(db, category_id)
-            if current["name"].casefold() == name.casefold():
-                db.execute("UPDATE categories SET name = ? WHERE id = ?", (name, category_id))
-            else:
-                db.execute(
-                    "UPDATE categories SET name = ? WHERE id = ?", (name, category_id)
-                )
+            if current["name"] == "other" and name != "other":
+                raise HTTPException(status_code=422, detail="The Other category must remain available")
+            db.execute("UPDATE categories SET name = ? WHERE id = ?", (name, category_id))
             # The ledger keeps a readable snapshot string for simple exports; keep it
             # synchronized so renames immediately update existing transaction history.
             db.execute(
