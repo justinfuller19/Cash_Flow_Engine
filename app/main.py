@@ -30,6 +30,7 @@ from .auth import (household_auth_guard, initialize_auth_database, login_page, r
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    initialize_auth_database()
     database.initialize_database()
     yield
 
