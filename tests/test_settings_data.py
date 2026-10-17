@@ -110,3 +110,37 @@ def test_settings_data_page_explains_backup_and_confirmation(tmp_path, monkeypat
     assert "DELETE ALL DATA" in response.text
     assert "Create & download backup" in response.text
     assert "backup" in response.text.lower()
+
+
+def test_household_two_backup_and_reset_back_up_the_active_database(tmp_path, monkeypatch):
+    client, _db_path, backup_dir = setup_client(tmp_path, monkeypatch)
+    seed_financial_data(client)
+
+    # Register a second household on the same server and give it different data.
+    response = client.post("/register", data={
+        "household_name": "Second Household",
+        "username": "second-household@example.test",
+        "password": "second-household-password-123",
+    }, follow_redirects=False)
+    assert response.status_code == 303
+    person = client.post("/api/people", json={"name": "Second household member"})
+    assert person.status_code == 201
+
+    # A manual backup must contain household 2's data, not household 1's data.
+    response = client.get("/api/settings-data/backup")
+    assert response.status_code == 200
+    manual_backup = next(backup_dir.glob("cashflow-*.db"))
+    with sqlite3.connect(manual_backup) as db:
+        names = [row[0] for row in db.execute("SELECT name FROM persons")]
+        assert names == ["Second household member"]
+
+    # The safety backup made before Clear All Data must use the same tenant DB.
+    response = client.post("/api/settings-data/clear-all-data", json={
+        "confirmation_phrase": "DELETE ALL DATA",
+    })
+    assert response.status_code == 200, response.text
+    reset_backup = backup_dir / response.json()["backup_file"]
+    with sqlite3.connect(reset_backup) as db:
+        names = [row[0] for row in db.execute("SELECT name FROM persons")]
+        assert names == ["Second household member"]
+    assert client.get("/api/people").json() == []
