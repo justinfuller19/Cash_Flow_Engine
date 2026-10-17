@@ -77,7 +77,7 @@ nav a{background:white;padding:10px 13px;border-radius:9px;box-shadow:0 3px 14px
 .progress{height:7px;background:#e2e8f0;border-radius:7px;overflow:hidden;margin-top:7px}.fill{height:100%;background:#0e7490}
 </style></head><body><main>
 <h1>CashFlow Engine</h1><p class="muted">Your household cash-flow overview. Forecasts help you plan; they do not send payments or move money.</p>
-<nav><a href="/setup">Household & Income</a><a href="/bills">Bills & Debt</a><a href="/savings">Savings Goals</a><a href="/planner">Payday Planner</a><a href="/checklist">Payday Checklist</a><a href="/transactions">Transactions</a><a href="/docs">API Docs</a></nav>
+<nav><a href="/setup">Household & Income</a><a href="/bills">Bills & Debt</a><a href="/savings">Savings Goals</a><a href="/planner">Payday Planner</a><a href="/weekly">Weekly Report</a><a href="/checklist">Payday Checklist</a><a href="/transactions">Transactions</a><a href="/docs">API Docs</a></nav>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
 <div class="grid">
@@ -105,6 +105,13 @@ renderList("goals",d.savings_goals,"No active savings goals.",(li,x)=>{li.append
 renderList("plans",d.recent_plans,"No saved payday plans yet.",(li,x)=>{li.appendChild(el("div","item-title","Plan "+x.id+" · "+x.period_start+" to "+x.period_end));li.appendChild(el("div","detail",dollars(x.allocated_cents)+" allocated · "+dollars(x.unfunded_cents)+" unfunded"));const a=el("a","","View plan");a.href="/planner";li.appendChild(a);});
 document.getElementById("checklist-summary").textContent=d.pending_checklist_count?d.pending_checklist_count+" pending or attention-needed action(s).":"No pending checklist actions.";
 renderList("transactions",d.recent_transactions,"No transactions recorded yet.",(li,x)=>{const sign=x.amount_cents<0?"−":"";li.appendChild(el("div","item-title",x.description+" · "+sign+dollars(Math.abs(x.amount_cents))));li.appendChild(el("div","detail",x.transaction_date+" · "+x.category+(x.account_name?" · "+x.account_name:"")));});
+try{const weekly=await api("/api/cash-flow/weekly");const root=document.getElementById("weekly-summary");root.replaceChildren();
+root.appendChild(el("div","item-title",dollars(weekly.free_to_spend_cents)+" available above buffer and planned savings"));
+root.appendChild(el("div","detail","Starting cash "+dollars(weekly.starting_cash_cents)+" · expected income "+dollars(weekly.expected_income_cents)));
+root.appendChild(el("div","detail","Bills still due "+dollars(weekly.bills_due_cents)+" · minimum debt payments "+dollars(weekly.minimum_debt_payments_cents)));
+if(weekly.projected_shortfall_cents>0)root.appendChild(el("div","detail","Warning: projected shortfall "+dollars(weekly.projected_shortfall_cents)));
+else if(weekly.buffer_shortfall_cents>0)root.appendChild(el("div","detail","Warning: buffer short by "+dollars(weekly.buffer_shortfall_cents)));
+}catch(error){document.getElementById("weekly-summary").textContent="Weekly forecast unavailable: "+error.message;}
 }
 load().catch(e=>{statusBox.textContent=e.message;statusBox.classList.add("error");statusBox.hidden=false;});
 </script></body></html>"""
