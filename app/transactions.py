@@ -33,6 +33,20 @@ def _validate_category(db, category: str, transaction_type: str) -> None:
         raise HTTPException(status_code=422, detail="Choose a category that belongs to the selected transaction type")
 
 
+def _validate_link(db, transaction_type: str, link_type: str | None, link_id: int | None) -> None:
+    if (link_type is None) != (link_id is None):
+        raise HTTPException(status_code=422, detail="Select both a scheduled item type and item")
+    if link_type is None:
+        return
+    if (link_type == "income" and transaction_type != "income") or (
+        link_type in {"bill", "debt"} and transaction_type != "expense"
+    ):
+        raise HTTPException(status_code=422, detail="Scheduled item type must match the transaction type")
+    table = {"income": "income_sources", "bill": "bills", "debt": "credit_cards"}[link_type]
+    if db.execute(f"SELECT id FROM {table} WHERE id = ?", (link_id,)).fetchone() is None:
+        raise HTTPException(status_code=422, detail="Linked scheduled item was not found")
+
+
 @router.get("/api/transactions", response_model=list[TransactionOut])
 def list_transactions(
     start_date: date | None = Query(default=None),
@@ -51,7 +65,7 @@ def list_transactions(
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     with database.connect() as db:
         rows = db.execute(
-            """SELECT id, transaction_date, category, transaction_type, description, amount_cents,
+            """SELECT id, transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, description, amount_cents,
                       account_name, notes, created_at
                FROM transactions""" + where + " ORDER BY transaction_date DESC, id DESC LIMIT 500",
             params,
@@ -70,12 +84,13 @@ def create_transaction(body: TransactionCreate):
     try:
         with database.connect() as db:
             _validate_category(db, values["category"], transaction_type)
+            _validate_link(db, transaction_type, values["linked_obligation_type"], values["linked_obligation_id"])
             cursor = db.execute(
                 """INSERT INTO transactions
-                   (transaction_date, category, transaction_type, description, amount_cents, account_name, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (values["transaction_date"], values["category"], transaction_type,
-                 values["description"], values["amount_cents"], values["account_name"], values["notes"]),
+                   (transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, description, amount_cents, account_name, notes)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (values["transaction_date"], values["category"], transaction_type, values["linked_obligation_type"],
+                 values["linked_obligation_id"], values["description"], values["amount_cents"], values["account_name"], values["notes"]),
             )
             row = db.execute(
                 """SELECT id, transaction_date, category, transaction_type, description, amount_cents,
@@ -92,22 +107,28 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
     updates = _clean(body.model_dump(exclude_unset=True))
     if not updates:
         raise HTTPException(status_code=422, detail="no fields to update")
-    allowed = {"transaction_date", "category", "transaction_type", "description", "amount_cents", "account_name", "notes"}
+    allowed = {"transaction_date", "category", "transaction_type", "linked_obligation_type", "linked_obligation_id", "description", "amount_cents", "account_name", "notes"}
     if not set(updates) <= allowed:
         raise HTTPException(status_code=422, detail="unsupported field")
     try:
         with database.connect() as db:
             current = db.execute(
-                "SELECT id, category, transaction_type FROM transactions WHERE id = ?",
+                "SELECT id, category, transaction_type, linked_obligation_type, linked_obligation_id "
+                "FROM transactions WHERE id = ?",
                 (transaction_id,),
             ).fetchone()
             if current is None:
                 raise HTTPException(status_code=404, detail="Transaction not found")
             category = updates.get("category", current["category"])
             transaction_type = updates.get("transaction_type", current["transaction_type"])
+            link_type = updates.get("linked_obligation_type", current["linked_obligation_type"])
+            link_id = updates.get("linked_obligation_id", current["linked_obligation_id"])
             _validate_category(db, category, transaction_type)
+            _validate_link(db, transaction_type, link_type, link_id)
             updates["category"] = category
             updates["transaction_type"] = transaction_type
+            updates["linked_obligation_type"] = link_type
+            updates["linked_obligation_id"] = link_id
             assignments = ", ".join(f"{key} = ?" for key in updates)
             db.execute(f"UPDATE transactions SET {assignments} WHERE id = ?", (*updates.values(), transaction_id))
             row = db.execute(
