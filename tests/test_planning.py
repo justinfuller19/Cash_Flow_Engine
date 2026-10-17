@@ -5,6 +5,10 @@ from fastapi.testclient import TestClient
 
 from app import database
 from app.forecast import occurrences_between
+from app.engine import (
+    Bill, BufferReservation, CreditCard, PaydayRequest, SavingsGoal,
+    generate_payday_plan,
+)
 from app.main import app
 
 
@@ -101,7 +105,7 @@ def test_generate_plan_uses_saved_household_records_and_saves_history(tmp_path, 
     assert plan["unfunded_cents"] == 0
     assert plan["is_fully_funded"] is True
     assert [item["category"] for item in plan["items"]] == [
-        "buffer", "bill", "debt_minimum", "savings", "debt_extra"
+        "bill", "debt_minimum", "buffer", "savings", "debt_extra"
     ]
     assert plan["items"][3]["requested_cents"] == 10000
 
@@ -145,3 +149,48 @@ def test_schema_v4_adds_contributions_and_plan_totals(tmp_path, monkeypatch):
     assert {"income_cents", "total_available_cents", "allocated_cents",
             "unallocated_cents", "unfunded_cents", "target_card"} <= plan_columns
     assert version == database.SCHEMA_VERSION == 6
+
+
+def test_required_obligations_are_funded_before_underfunded_household_buffer():
+    """A low buffer must not starve bills or debt minimums."""
+    plan = generate_payday_plan(
+        PaydayRequest(
+            plan_date=date(2026, 11, 20),
+            period_start=date(2026, 11, 20),
+            period_end=date(2026, 11, 26),
+            starting_cash_cents=50000,
+            buffers=[BufferReservation(name="Household cash buffer", amount_cents=20000)],
+            bills=[Bill(name="Rent", amount_cents=45000, due_date=date(2026, 11, 22))],
+            credit_cards=[
+                CreditCard(
+                    name="Card",
+                    balance_cents=30000,
+                    minimum_payment_cents=10000,
+                    due_date=date(2026, 11, 23),
+                    apr_percent=24.9,
+                )
+            ],
+            savings_goals=[
+                SavingsGoal(
+                    name="Emergency fund",
+                    target_amount_cents=100000,
+                    current_balance_cents=0,
+                    remaining_periods=1,
+                    contribution_per_period_cents=5000,
+                )
+            ],
+        )
+    )
+
+    assert [item.category for item in plan.items] == [
+        "bill", "debt_minimum", "buffer", "savings"
+    ]
+    bill, minimum, buffer, savings = plan.items
+    assert (bill.funded_cents, bill.unfunded_cents) == (45000, 0)
+    assert (minimum.funded_cents, minimum.unfunded_cents) == (5000, 5000)
+    assert (buffer.funded_cents, buffer.unfunded_cents) == (0, 20000)
+    assert (savings.funded_cents, savings.unfunded_cents) == (0, 5000)
+    assert plan.allocated_cents == 50000
+    assert plan.unallocated_cents == 0
+    assert plan.unfunded_cents == 30000
+    assert plan.total_available_cents == plan.allocated_cents + plan.unallocated_cents
