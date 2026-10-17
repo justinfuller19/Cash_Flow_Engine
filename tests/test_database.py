@@ -20,7 +20,7 @@ def test_database_initializes_expected_tables(tmp_path, monkeypatch):
 
     assert {"persons", "income_sources", "bills", "credit_cards",
             "savings_accounts", "savings_goals", "transactions", "categories",
-            "payday_plans", "plan_items"} <= names
+            "payday_plans", "plan_items", "email_notification_log"} <= names
 
 
 def test_person_and_income_source_endpoints_persist(tmp_path, monkeypatch):
@@ -357,7 +357,7 @@ def test_schema_migrations_preserve_transactions_and_add_categories(tmp_path, mo
         ).fetchone()
         assert transaction["category"] == "income"
         assert transaction["transaction_type"] == "income"
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 9
         assert db.execute(
             "SELECT 1 FROM categories WHERE name = 'paychecks' AND transaction_type = 'income'"
         ).fetchone() is not None
@@ -377,7 +377,7 @@ def test_schema_v8_adds_scheduled_item_links(tmp_path, monkeypatch):
     with database.connect() as db:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(transactions)")}
         assert {"linked_obligation_type", "linked_obligation_id"} <= columns
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 9
         assert db.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'index' "
             "AND name = 'idx_transactions_linked_obligation'"

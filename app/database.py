@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 def database_path() -> Path:
@@ -120,6 +120,13 @@ def initialize_database() -> None:
                 transaction_type TEXT NOT NULL CHECK(transaction_type IN ('income', 'expense', 'transfer')),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(transaction_type, name COLLATE NOCASE)
+            );
+
+            CREATE TABLE IF NOT EXISTS email_notification_log (
+                notification_key TEXT PRIMARY KEY,
+                payload_hash TEXT NOT NULL,
+                last_sent_on TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
             CREATE TABLE IF NOT EXISTS transactions (
@@ -336,4 +343,12 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_transactions_linked_obligation "
             "ON transactions(linked_obligation_type, linked_obligation_id)"
+        )
+
+    if version < 9:
+        # Idempotency log prevents repeated due-date reminders and controls
+        # repeated shortfall alerts across daily systemd timer runs.
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_email_notification_last_sent "
+            "ON email_notification_log(last_sent_on)"
         )

@@ -18,6 +18,7 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 - Manual transaction ledger with typed income, expense, and transfer entries, user-managed categories, safe category renaming/deletion, and optional links to scheduled income, bills, and debt payments for reconciliation.
 - Weekly cash-flow calculation API plus a dedicated `/weekly` report page and dashboard summary for expected income, due bills and debt minimums, recorded transactions, the shared buffer, planned savings, shortfalls, and free-to-spend / extra debt payoff capacity.
 - Settings & Data page with a downloadable database backup and a typed, backup-first Clear All Data workflow that preserves the application schema and category definitions.
+- Optional SMTP email delivery for weekly cash-flow reports, upcoming bill/debt reminders, and projected shortfall or buffer alerts.
 - Persistent household-member and income-source APIs.
 - Initial schema for recurring bills, credit cards, savings accounts and goals, transactions, payday plans, and checklist items.
 - Unit tests for allocation behavior, setup APIs, and invalid input.
@@ -74,6 +75,7 @@ The database file is excluded from Git by `.gitignore`. Back it up regularly and
 - `GET /api/plans` and `GET /api/plans/{id}` — review saved plan history and details.
 - `GET /api/dashboard` — retrieve upcoming paydays, bills, debts, savings progress, and pending checklist counts.
 - `GET /api/cash-flow/weekly?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` — calculate a weekly cash-flow forecast; defaults to seven days and accepts up to 31 days.
+- Optional systemd timers send daily due-date/shortfall reminders and a Sunday evening weekly summary when SMTP environment variables are configured.
 - `GET /api/checklist` and `PATCH /api/plan-items/{id}` — review and update planned actions with actual amounts and dates.
 - `GET/POST /api/transactions` and `PATCH /api/transactions/{id}` — record and edit actual income/expense transactions (positive amounts are inflows; negative amounts are outflows).
 
