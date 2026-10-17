@@ -25,7 +25,7 @@ from .cash_flow import router as cash_flow_router
 from .settings_data import router as settings_data_router
 from .household import router as household_router
 from .security import remote_access_guard
-from .auth import (household_auth_guard, initialize_auth_database, login_page, register_page, login_route, register_route, logout_route)
+from .auth import (household_auth_guard, initialize_auth_database, login_page, register_page, login_route, register_route, logout_route, account_page, account_update_route)
 
 
 @asynccontextmanager
@@ -84,6 +84,16 @@ async def logout_post(request: Request):
     return await logout_route(request)
 
 
+@app.get("/account", response_class=HTMLResponse)
+def account_get():
+    return account_page()
+
+
+@app.post("/account", response_class=HTMLResponse)
+async def account_post(request: Request):
+    return await account_update_route(request)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "app": "CashFlow Engine"}
@@ -111,7 +121,7 @@ nav a{background:white;padding:10px 13px;border-radius:9px;box-shadow:0 3px 14px
 .progress{height:7px;background:#e2e8f0;border-radius:7px;overflow:hidden;margin-top:7px}.fill{height:100%;background:#0e7490}
 </style></head><body><main>
 <h1>CashFlow Engine</h1><p class="muted">Your household cash-flow overview. Forecasts help you plan; they do not send payments or move money.</p>
-<nav><a href="/setup">Household & Income</a><a href="/bills">Bills & Debt</a><a href="/savings">Savings Goals</a><a href="/planner">Payday Planner</a><a href="/weekly">Weekly Report</a><a href="/settings-data">Settings & Data</a><a href="/checklist">Payday Checklist</a><a href="/transactions">Transactions</a><a href="/docs">API Docs</a><a href="/logout">Log out</a></nav>
+<nav><a href="/setup">Household & Income</a><a href="/bills">Bills & Debt</a><a href="/savings">Savings Goals</a><a href="/planner">Payday Planner</a><a href="/weekly">Weekly Report</a><a href="/settings-data">Settings & Data</a><a href="/checklist">Payday Checklist</a><a href="/transactions">Transactions</a><a href="/docs">API Docs</a><a href="/account">Account</a><a href="/logout">Log out</a></nav>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
 <div class="grid">
