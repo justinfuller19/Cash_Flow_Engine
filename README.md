@@ -78,9 +78,9 @@ Money values use integer cents: `$1,234.56` is `123456`. Income frequency option
 
 ## Allocation order
 
-1. Protect the shared household cash buffer target.
-2. Fund bills due during the pay-period window.
-3. Fund credit-card minimums due during the window.
+1. Fund bills due during the pay-period window, ordered by due date.
+2. Fund credit-card minimums due during the window, ordered by due date.
+3. Restore the shared household cash buffer toward its target.
 4. Contribute to savings goals by priority.
 5. Apply remaining cash to extra debt payoff using avalanche or snowball order.
 
@@ -92,7 +92,7 @@ See [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md) for the systemd s
 
 ## Current limitations and security
 
-Household members and income sources can be added, edited, and deactivated/reactivated through both the API and the browser setup page. Transactions can be entered manually, but automatic imports and reconciliation against bank activity are not yet implemented. The planner forecasts saved income and recurring bills, protects the shared household cash buffer target, includes active debt minimums, and applies configured savings contributions before extra debt payoff. Irregular income is only forecast for its explicitly saved date. The Raspberry Pi systemd and backup/restore guide is in [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md). Remote requests are blocked by default. Optional Basic authentication is available via `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`; use it only behind HTTPS or a trusted VPN, and keep the service bound to localhost. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
+Household members and income sources can be added, edited, and deactivated/reactivated through both the API and the browser setup page. Transactions can be entered manually, but automatic imports and reconciliation against bank activity are not yet implemented. The planner forecasts saved income and recurring bills, funds bills and active debt minimums before restoring the shared household cash buffer, then applies configured savings contributions before extra debt payoff. Irregular income is only forecast for its explicitly saved date. The Raspberry Pi systemd and backup/restore guide is in [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md). Remote requests are blocked by default. Optional Basic authentication is available via `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`; use it only behind HTTPS or a trusted VPN, and keep the service bound to localhost. Keep the service bound to localhost or a trusted private network and do not expose it to the public internet.
 
 
 ### Deleting records
