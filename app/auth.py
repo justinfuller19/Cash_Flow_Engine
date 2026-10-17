@@ -69,6 +69,9 @@ def initialize_auth_database():
             );
             CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON household_sessions(expires_at);
             """)
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(households)")}
+            if "notification_email" not in columns:
+                db.execute("ALTER TABLE households ADD COLUMN notification_email TEXT")
         _initialized_auth_paths.add(path_key)
 
 
@@ -246,3 +249,103 @@ async def logout_route(request: Request):
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="lax")
     return response
+
+
+
+def household_account(household_id: int) -> dict:
+    initialize_auth_database()
+    with auth_connect() as db:
+        row = db.execute(
+            "SELECT household_name, username, notification_email FROM households WHERE id = ?",
+            (household_id,),
+        ).fetchone()
+    if row is None:
+        raise ValueError("Household account not found.")
+    return dict(row)
+
+
+def update_household_account(
+    household_id: int,
+    current_password: str,
+    notification_email: str,
+    new_password: str = "",
+) -> bool:
+    """Update the household notification address and optionally rotate its password.
+
+    Returns True when the password changed, allowing the caller to rotate sessions.
+    """
+    notification_email = notification_email.strip()
+    if notification_email and (
+        "@" not in notification_email
+        or any(char.isspace() for char in notification_email)
+        or len(notification_email) > 254
+    ):
+        raise ValueError("Enter a valid notification email address or leave it blank.")
+    if new_password and len(new_password) < 12:
+        raise ValueError("New password must be at least 12 characters.")
+    with auth_connect() as db:
+        row = db.execute(
+            "SELECT password_hash FROM households WHERE id = ?", (household_id,)
+        ).fetchone()
+        if row is None or not _verify_password(current_password, row["password_hash"]):
+            raise ValueError("Current password is incorrect.")
+        if new_password:
+            db.execute(
+                "UPDATE households SET notification_email = ?, password_hash = ? WHERE id = ?",
+                (notification_email or None, _hash_password(new_password), household_id),
+            )
+            db.execute("DELETE FROM household_sessions WHERE household_id = ?", (household_id,))
+            return True
+        db.execute(
+            "UPDATE households SET notification_email = ? WHERE id = ?",
+            (notification_email or None, household_id),
+        )
+        return False
+
+
+def account_page(error: str = "", success: str = "") -> HTMLResponse:
+    household_id = current_household_id()
+    if household_id is None:
+        return RedirectResponse("/login", status_code=303)
+    account = household_account(household_id)
+    import html
+    message = f'<p class="error">{html.escape(error)}</p>' if error else ""
+    notice = f'<p class="notice">{html.escape(success)}</p>' if success else ""
+    email = html.escape(account["notification_email"] or "", quote=True)
+    username = html.escape(account["username"])
+    name = html.escape(account["household_name"])
+    return _page("Household account", f"""{message}{notice}
+<p class="muted">Manage notification delivery and the shared household password.</p>
+<p><strong>{name}</strong><br><span class="muted">Login: {username}</span></p>
+<form method="post" action="/account">
+<label>Notification email (optional)</label><input name="notification_email" type="email" maxlength="254" value="{email}" autocomplete="email">
+<p class="muted">Only this address receives this household's scheduled reports and reminders.</p>
+<label>Current password (required to save)</label><input name="current_password" type="password" autocomplete="current-password" required>
+<label>New password (optional; at least 12 characters)</label><input name="new_password" type="password" minlength="12" autocomplete="new-password">
+<button>Save account settings</button></form>""")
+
+async def account_update_route(request: Request):
+    from urllib.parse import parse_qs
+    household_id = current_household_id()
+    if household_id is None:
+        return RedirectResponse("/login", status_code=303)
+    form = parse_qs((await request.body()).decode("utf-8", errors="replace"))
+    try:
+        password_changed = update_household_account(
+            household_id,
+            form.get("current_password", [""])[0],
+            form.get("notification_email", [""])[0],
+            form.get("new_password", [""])[0],
+        )
+    except ValueError as exc:
+        return account_page(str(exc))
+    if password_changed:
+        session = issue_session(household_id)
+        response = account_page(success="Password updated. Other household sessions were signed out.")
+        response.set_cookie(SESSION_COOKIE, session, max_age=SESSION_SECONDS, httponly=True,
+            secure=os.getenv("CASHFLOW_COOKIE_SECURE", "").lower() in {"1","true","yes"},
+            samesite="lax", path="/")
+        return response
+    return account_page(success="Household account settings saved.")
+
+
