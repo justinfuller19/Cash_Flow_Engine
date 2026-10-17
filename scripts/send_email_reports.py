@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import os
 import smtplib
+import sqlite3
 import ssl
 import sys
 from dataclasses import dataclass
