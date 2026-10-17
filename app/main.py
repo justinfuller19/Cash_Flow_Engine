@@ -81,6 +81,7 @@ nav a{background:white;padding:10px 13px;border-radius:9px;box-shadow:0 3px 14px
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
 <div class="grid">
+<section class="card"><h2>Weekly cash flow</h2><div id="weekly-summary" class="muted">Loading forecast…</div><p><a href="/weekly">Open full weekly report →</a></p></section>
 <section class="card"><h2>Next paydays</h2><ul id="paydays" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Upcoming bills · 30 days</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Debt payments · 30 days</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
