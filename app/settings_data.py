@@ -32,7 +32,7 @@ class ClearAllDataRequest(BaseModel):
 def download_database_backup():
     """Create a consistent server-side backup and return it as a download."""
     try:
-        path = create_backup()
+        path = create_backup(database.database_path())
     except (OSError, sqlite3.Error, ValueError) as exc:
         raise HTTPException(status_code=500, detail="Could not create a database backup") from exc
     return FileResponse(
@@ -54,7 +54,7 @@ def clear_all_data(body: ClearAllDataRequest):
 
     # A failed backup must never be followed by destructive database changes.
     try:
-        backup_path = create_backup()
+        backup_path = create_backup(database.database_path())
     except (OSError, sqlite3.Error, ValueError) as exc:
         raise HTTPException(
             status_code=500,
