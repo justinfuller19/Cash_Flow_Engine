@@ -42,10 +42,10 @@ def load_email_config(environ=None) -> EmailConfig | None:
     )
     username = environ.get("CASHFLOW_SMTP_USERNAME", "").strip()
     password = environ.get("CASHFLOW_SMTP_PASSWORD", "")
-    if not host or not sender or not recipients:
+    if not host or not sender:
         raise ValueError(
-            "Email is partially configured. Set CASHFLOW_SMTP_HOST, "
-            "CASHFLOW_SMTP_FROM, and CASHFLOW_EMAIL_TO together."
+            "Email is partially configured. Set CASHFLOW_SMTP_HOST and "
+            "CASHFLOW_SMTP_FROM together. Recipients may be set per household in Account settings."
         )
     if bool(username) != bool(password):
         raise ValueError("Set both CASHFLOW_SMTP_USERNAME and CASHFLOW_SMTP_PASSWORD, or neither.")
