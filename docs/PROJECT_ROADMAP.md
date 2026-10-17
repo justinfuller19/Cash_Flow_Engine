@@ -14,7 +14,7 @@ The app is a planning tool. It must not claim that money was transferred or a bi
 - [x] FastAPI application and health endpoint.
 - [x] SQLite schema and startup initialization.
 - [x] Initial household-member and income-source API/UI foundation.
-- [x] Initial tests for engine and database/API behavior.
+- [x] Initial tests for engine and database/API behavior.\n- [x] Typed transaction categories with schema migration and history-preserving category management.
 
 The current state of the repository and merged code is authoritative. Check open pull requests before assuming unmerged work is part of `main`.
 
@@ -125,7 +125,7 @@ The home page now summarizes upcoming paydays, bills, debt minimums, savings pro
 ### Milestone 10 — Reliability, privacy, and data protection (in progress)
 **Goal:** Make the app trustworthy for real household financial data.
 
-A manual signed-amount transaction ledger and monthly dashboard totals are available. Bank imports/reconciliation, authentication, backup/restore validation, and deployment hardening remain.
+A manual transaction ledger now supports income, expense, and transfer types; user-managed categories; safe renaming and deletion with history reassignment; and monthly dashboard totals that exclude transfers. Schema v7 migrates existing transactions and seeds starter categories. The unified weekly cash-flow report, bank imports/reconciliation, authentication, backup/restore validation, and deployment hardening remain.
 
 - Expand tests to cover engine, API, persistence, recurrence, and full planning workflows.
 - Test database persistence across application restarts and transaction rollback on failure.
