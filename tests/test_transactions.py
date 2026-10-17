@@ -137,7 +137,7 @@ def test_category_management_preserves_and_reassigns_transaction_history(tmp_pat
     listed = client.get("/api/transactions").json()
     assert listed[0]["category"] == "pet supplies"
 
-    deleted = client.delete(
+    deleted = client.request("DELETE",
         f"/api/categories/{category['id']}",
         json={"replacement_category_id": next(
             row["id"] for row in client.get("/api/categories?transaction_type=expense").json()
@@ -148,7 +148,7 @@ def test_category_management_preserves_and_reassigns_transaction_history(tmp_pat
     listed = client.get("/api/transactions").json()
     assert listed[0]["category"] == "other"
     assert listed[0]["description"] == "Dog food"
-    assert client.delete(
+    assert client.request("DELETE",
         f"/api/categories/{deleted.json()['id']}",
         json={"replacement_category_id": 1},
     ).status_code == 404
@@ -200,7 +200,7 @@ def test_category_deletion_requires_same_type_replacement_and_keeps_other(tmp_pa
         row for row in client.get("/api/categories?transaction_type=income").json()
         if row["name"] == "paychecks"
     )
-    assert client.delete(
+    assert client.request("DELETE",
         f"/api/categories/{category['id']}",
         json={"replacement_category_id": income_category["id"]},
     ).status_code == 422
@@ -208,7 +208,7 @@ def test_category_deletion_requires_same_type_replacement_and_keeps_other(tmp_pa
         row for row in client.get("/api/categories?transaction_type=expense").json()
         if row["name"] == "other"
     )
-    assert client.delete(
+    assert client.request("DELETE",
         f"/api/categories/{other['id']}",
         json={"replacement_category_id": category["id"]},
     ).status_code == 422
