@@ -103,6 +103,7 @@ h1{color:#155e75;margin:8px 0}h2{font-size:1.15rem;margin:0 0 10px}.muted{color:
 .card{background:white;padding:22px;border-radius:16px;box-shadow:0 8px 28px #172b4d0d;margin-top:18px}
 button{border:0;border-radius:8px;padding:11px 14px;background:#0e7490;color:white;font-weight:700;cursor:pointer}
 button:disabled{opacity:.55;cursor:wait}.danger{background:#b91c1c}
+.action-link{display:inline-block;padding:11px 14px;background:#0e7490;color:white;border-radius:8px}
 label{display:block;font-size:.92rem;font-weight:700;margin:14px 0 6px}
 input{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
 .warning{background:#fff7ed;color:#9a3412;padding:13px;border-radius:9px;line-height:1.5}
@@ -113,6 +114,9 @@ input{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:in
 <section class="card"><h2>Back up your database</h2>
 <p class="muted">Create a consistent SQLite backup download. A separate server-side backup is also created automatically before any reset.</p>
 <button id="backup" type="button">Create & download backup</button></section>
+<section class="card"><h2>Transaction categories</h2>
+<p class="muted">Add, rename, or delete the categories used to organize income, expenses, and transfers in your transaction ledger.</p>
+<a class="action-link" href="/categories">Manage transaction categories</a></section>
 <section class="card"><h2>Clear all financial data</h2>
 <div class="warning"><strong>This cannot be undone from the app.</strong> The reset will first create and verify a backup, then delete household members, income sources, bills, debts, savings accounts and goals, transactions, saved payday plans, and checklist items. The shared cash buffer and starting cash will be reset to $0. The database schema, application, and category definitions will remain.</div>
 <form id="reset-form"><label for="confirmation">To confirm, type DELETE ALL DATA exactly</label>
