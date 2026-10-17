@@ -80,6 +80,9 @@ def create_server_backups() -> list[Path]:
         ]
 
     results: list[Path] = []
+    if not household_ids and base.is_file():
+        # Existing installations may have financial data before the first account is registered.
+        results.append(create_backup(base, label="unassigned"))
     for household_id in household_ids:
         source = base if household_id == 1 else base.with_name(
             f"{base.stem}.household-{household_id}{base.suffix}"
