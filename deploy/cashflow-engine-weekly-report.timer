@@ -1,0 +1,11 @@
+[Unit]
+Description=Sunday evening CashFlow Engine weekly report
+
+[Timer]
+OnCalendar=Sun *-*-* 19:00:00
+Persistent=true
+RandomizedDelaySec=5m
+Unit=cashflow-engine-weekly-report.service
+
+[Install]
+WantedBy=timers.target
