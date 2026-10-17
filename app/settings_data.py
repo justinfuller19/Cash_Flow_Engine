@@ -1,6 +1,5 @@
 """Backup download and guarded household-data reset endpoints."""
 import sqlite3
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
@@ -76,7 +75,6 @@ def clear_all_data(body: ClearAllDataRequest):
                        updated_at = CURRENT_TIMESTAMP
                    WHERE id = 1"""
             )
-            db.execute("PRAGMA optimize")
     except sqlite3.Error as exc:
         raise HTTPException(
             status_code=500,
