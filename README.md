@@ -19,6 +19,7 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 - Weekly cash-flow calculation API plus a dedicated `/weekly` report page and dashboard summary for expected income, due bills and debt minimums, recorded transactions, spending by category, the shared buffer, planned savings, shortfalls, and free-to-spend / extra debt payoff capacity.
 - Settings & Data page with a downloadable database backup and a typed, backup-first Clear All Data workflow that preserves the application schema and category definitions.
 - Optional SMTP email delivery for weekly cash-flow reports, upcoming bill/debt reminders, and projected shortfall or buffer alerts.
+- Shared household login accounts with scrypt password hashes, expiring opaque sessions, and a separate SQLite database file per household.
 - Persistent household-member and income-source APIs.
 - Initial schema for recurring bills, credit cards, savings accounts and goals, transactions, payday plans, and checklist items.
 - Unit tests for allocation behavior, setup APIs, and invalid input.
@@ -51,6 +52,16 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Open <http://127.0.0.1:8000> for the dashboard, <http://127.0.0.1:8000/setup> for household and income setup, <http://127.0.0.1:8000/bills> for bills and debts, <http://127.0.0.1:8000/savings> for savings goals, <http://127.0.0.1:8000/planner> for payday plans, <http://127.0.0.1:8000/checklist> for actual actions, <http://127.0.0.1:8000/transactions> for account activity, and <http://127.0.0.1:8000/categories> to manage transaction categories, and <http://127.0.0.1:8000/weekly> for the weekly cash-flow report, and <http://127.0.0.1:8000/settings-data> for backups and the protected data reset. Explore the API at <http://127.0.0.1:8000/docs>.
 
+## Household accounts and access
+
+On first launch, open the app and create a household account at `/register`. Each household shares one username/email and password; partners do not need separate user accounts. Additional households can register on the same server, and each household's financial records are stored in a separate SQLite database file. Existing records remain in the original `CASHFLOW_DB_PATH` database and are assigned to the first household created.
+
+Passwords are stored as salted scrypt hashes. Session tokens are random, expire after seven days, and are stored as hashes in a separate `<database>.auth.sqlite` account registry. Sign in and open `/account` to set this household's notification email or change its shared password. Password changes require the current password and sign out other sessions. Login attempts are rate-limited after 10 failed attempts per client address in a 15-minute window. Password recovery and household deletion are not currently available.
+
+Set `CASHFLOW_COOKIE_SECURE=1` when serving the app over HTTPS so session cookies are marked Secure. The existing remote-access guard remains in place. When `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD` are configured, Basic authentication is intentionally required **in addition to** the household login; the two layers protect different access boundaries. Remote use still requires HTTPS or a trusted VPN. Do not expose the app directly to the public internet.
+
+The scheduled backup script backs up every registered household database plus the shared `.auth.sqlite` account registry, with integrity checks and restrictive file permissions. The in-app manual download and Clear All Data safety backup cover only the currently signed-in household's financial database; use the scheduled server-wide backup for recovery of all accounts and records. Keep all backups together.
+
 ## Database
 
 By default, SQLite data is stored at `data/cashflow.db` in the project directory. The `data/` folder is created automatically. Override the location with `CASHFLOW_DB_PATH` if you want the database somewhere else, such as a persistent data directory on your Raspberry Pi.
@@ -75,7 +86,7 @@ The database file is excluded from Git by `.gitignore`. Back it up regularly and
 - `GET /api/plans` and `GET /api/plans/{id}` — review saved plan history and details.
 - `GET /api/dashboard` — retrieve upcoming paydays, bills, debts, savings progress, and pending checklist counts.
 - `GET /api/cash-flow/weekly?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` — calculate a weekly cash-flow forecast; defaults to seven days and accepts up to 31 days.
-- Optional systemd timers send daily due-date/shortfall reminders and a Sunday evening weekly summary when SMTP environment variables are configured.
+- Optional systemd timers send daily due-date/shortfall reminders and a Sunday evening weekly summary when SMTP transport settings are configured. Each household must set its own recipient under `/account`; the legacy `CASHFLOW_EMAIL_TO` setting is used only for household 1.
 - `GET /api/checklist` and `PATCH /api/plan-items/{id}` — review and update planned actions with actual amounts and dates.
 - `GET/POST /api/transactions` and `PATCH /api/transactions/{id}` — record and edit actual income/expense transactions (positive amounts are inflows; negative amounts are outflows).
 

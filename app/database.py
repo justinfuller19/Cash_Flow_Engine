@@ -19,9 +19,27 @@ DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 SCHEMA_VERSION = 9
 
 
-def database_path() -> Path:
+def base_database_path() -> Path:
+    """Return the configured default database path, independent of request tenant."""
     configured = os.environ.get("CASHFLOW_DB_PATH")
     return Path(configured).expanduser().resolve() if configured else DEFAULT_DATABASE_PATH
+
+
+def database_path() -> Path:
+    """Resolve the active household's isolated database file.
+
+    Household 1 adopts the existing database to preserve current installations.
+    Later households receive sibling files named <database>.household-N.sqlite.
+    """
+    base = base_database_path()
+    try:
+        from .auth import current_household_id
+        household_id = current_household_id()
+    except ImportError:
+        household_id = None
+    if household_id is None or household_id == 1:
+        return base
+    return base.with_name(f"{base.stem}.household-{household_id}{base.suffix}")
 
 
 @contextmanager

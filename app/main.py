@@ -2,7 +2,7 @@
 import sqlite3
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 
 from . import database
@@ -25,10 +25,12 @@ from .cash_flow import router as cash_flow_router
 from .settings_data import router as settings_data_router
 from .household import router as household_router
 from .security import remote_access_guard
+from .auth import (household_auth_guard, initialize_auth_database, login_page, register_page, login_route, register_route, logout_route, account_page, account_update_route)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    initialize_auth_database()
     database.initialize_database()
     yield
 
@@ -49,7 +51,48 @@ app.include_router(categories_router)
 app.include_router(cash_flow_router)
 app.include_router(settings_data_router)
 app.include_router(household_router)
+app.middleware("http")(household_auth_guard)
 app.middleware("http")(remote_access_guard)
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page_route():
+    return login_page()
+
+
+@app.post("/login")
+async def login_post(request: Request):
+    return await login_route(request)
+
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page_route():
+    return register_page()
+
+
+@app.post("/register")
+async def register_post(request: Request):
+    return await register_route(request)
+
+
+@app.get("/logout")
+async def logout_get(request: Request):
+    return await logout_route(request)
+
+
+@app.post("/logout")
+async def logout_post(request: Request):
+    return await logout_route(request)
+
+
+@app.get("/account", response_class=HTMLResponse)
+def account_get():
+    return account_page()
+
+
+@app.post("/account", response_class=HTMLResponse)
+async def account_post(request: Request):
+    return await account_update_route(request)
 
 
 @app.get("/health")
@@ -66,8 +109,21 @@ def home():
 body{margin:0;padding:24px 14px 48px}main{max-width:1100px;margin:auto}
 h1{margin:0 0 8px;color:#155e75}h2{font-size:1.12rem;margin:0 0 12px}
 p{line-height:1.5}.muted{color:#5b6678}a{color:#0e7490;font-weight:650;text-decoration:none}
-nav{display:flex;flex-wrap:wrap;gap:12px;margin:20px 0}
-nav a{background:white;padding:10px 13px;border-radius:9px;box-shadow:0 3px 14px #172b4d0d}
+.app-header{background:#0f3d4a;color:#f8fafc;padding:22px max(18px,calc((100% - 1100px)/2));margin:-24px -14px 28px;box-shadow:0 8px 24px #0f3d4a20}
+.brand-row{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.brand{margin:0;color:#fff;font-size:1.55rem;letter-spacing:-.035em}
+.brand-subtitle{margin:5px 0 0;color:#c5dce2;font-size:.94rem}
+.account-links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.account-links a{color:#f8fafc;padding:8px 11px;border:1px solid #5b8791;border-radius:8px;font-size:.9rem}
+nav{max-width:1100px;margin:22px auto 0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.nav-group{min-width:0;padding:12px;background:#174b59;border:1px solid #316775;border-radius:12px}
+.nav-label{display:block;color:#b7d3da;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.09em;margin:0 0 8px}
+.nav-links{display:flex;flex-wrap:wrap;gap:6px}
+nav a{display:inline-flex;align-items:center;min-height:36px;background:transparent;color:#f8fafc;padding:8px 10px;border-radius:7px;font-size:.88rem;font-weight:650}
+nav a:hover,nav a:focus-visible{background:#286777;outline:2px solid #a5f3fc;outline-offset:1px}
+nav a[aria-current="page"]{background:#cffafe;color:#164e63}
+@media(max-width:760px){.app-header{padding:18px 14px;margin:-24px -14px 24px}nav{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.nav-group{padding:10px}.nav-links{gap:4px}nav a{padding:8px;font-size:.84rem}}
+@media(max-width:420px){nav{grid-template-columns:1fr}.brand-row{align-items:flex-start}.account-links{width:100%}}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px}
 .card{background:white;padding:20px;border-radius:15px;box-shadow:0 8px 28px #172b4d0d;min-width:0}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:18px 0}
@@ -78,8 +134,19 @@ nav a{background:white;padding:10px 13px;border-radius:9px;box-shadow:0 3px 14px
 .status{padding:12px;border-radius:9px;background:#e0f2fe;color:#075985}.error{background:#fee2e2;color:#991b1b}.status[hidden]{display:none}
 .progress{height:7px;background:#e2e8f0;border-radius:7px;overflow:hidden;margin-top:7px}.fill{height:100%;background:#0e7490}
 </style></head><body><main>
-<h1>CashFlow Engine</h1><p class="muted">Your household cash-flow overview. Forecasts help you plan; they do not send payments or move money.</p>
-<nav><a href="/setup">Household & Income</a><a href="/bills">Bills & Debt</a><a href="/savings">Savings Goals</a><a href="/planner">Payday Planner</a><a href="/weekly">Weekly Report</a><a href="/settings-data">Settings & Data</a><a href="/checklist">Payday Checklist</a><a href="/transactions">Transactions</a><a href="/docs">API Docs</a></nav>
+<header class="app-header">
+<div class="brand-row">
+<div><h1 class="brand">CashFlow Engine</h1><p class="brand-subtitle">A clearer view of your household money.</p></div>
+<div class="account-links"><a href="/account">Account settings</a><a href="/logout">Log out</a></div>
+</div>
+<nav aria-label="Main navigation">
+<section class="nav-group"><span class="nav-label">Overview</span><div class="nav-links"><a href="/" aria-current="page">Dashboard</a><a href="/weekly">Weekly report</a></div></section>
+<section class="nav-group"><span class="nav-label">Plan & Budget</span><div class="nav-links"><a href="/setup">Household & income</a><a href="/bills">Bills & debt</a><a href="/savings">Savings goals</a><a href="/planner">Payday planner</a></div></section>
+<section class="nav-group"><span class="nav-label">Track Activity</span><div class="nav-links"><a href="/checklist">Payday checklist</a><a href="/transactions">Transactions</a></div></section>
+<section class="nav-group"><span class="nav-label">Manage</span><div class="nav-links"><a href="/settings-data">Settings & data</a><a href="/docs">API docs</a></div></section>
+</nav>
+</header>
+<p class="muted">Your household cash-flow overview. Forecasts help you plan; they do not send payments or move money.</p>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
 <div class="grid">

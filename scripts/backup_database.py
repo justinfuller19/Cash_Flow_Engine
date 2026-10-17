@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Create a consistent SQLite backup using SQLite's online backup API."""
+"""Create verified SQLite backups for every household and the account registry."""
 from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -22,7 +23,11 @@ def configured_backup_dir() -> Path:
     return Path(configured).expanduser().resolve() if configured else PROJECT_ROOT / "backups"
 
 
-def create_backup(source_path: Path | None = None, backup_dir: Path | None = None) -> Path:
+def create_backup(
+    source_path: Path | None = None,
+    backup_dir: Path | None = None,
+    label: str | None = None,
+) -> Path:
     source_path = (source_path or configured_database_path()).resolve()
     backup_dir = (backup_dir or configured_backup_dir()).resolve()
     if not source_path.is_file():
@@ -30,10 +35,11 @@ def create_backup(source_path: Path | None = None, backup_dir: Path | None = Non
 
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    destination = backup_dir / f"cashflow-{stamp}.db"
+    prefix = f"cashflow-{label}-" if label else "cashflow-"
+    destination = backup_dir / f"{prefix}{stamp}.db"
     counter = 1
     while destination.exists():
-        destination = backup_dir / f"cashflow-{stamp}-{counter}.db"
+        destination = backup_dir / f"{prefix}{stamp}-{counter}.db"
         counter += 1
 
     try:
@@ -60,13 +66,43 @@ def create_backup(source_path: Path | None = None, backup_dir: Path | None = Non
     return destination
 
 
+def create_server_backups() -> list[Path]:
+    """Back up each registered household DB and the shared auth registry."""
+    base = configured_database_path()
+    auth_path = base.with_name(base.stem + ".auth.sqlite")
+    if not auth_path.is_file():
+        # Preserve the pre-accounts single-database backup workflow for fresh installs.
+        return [create_backup(base)]
+
+    with closing(sqlite3.connect(str(auth_path))) as auth_db:
+        household_ids = [
+            int(row[0]) for row in auth_db.execute("SELECT id FROM households ORDER BY id")
+        ]
+
+    results: list[Path] = []
+    if not household_ids and base.is_file():
+        # Existing installations may have financial data before the first account is registered.
+        results.append(create_backup(base, label="unassigned"))
+    for household_id in household_ids:
+        source = base if household_id == 1 else base.with_name(
+            f"{base.stem}.household-{household_id}{base.suffix}"
+        )
+        results.append(create_backup(source, label=f"household-{household_id}"))
+
+    # The registry contains credentials hashes and sessions, so it is protected with
+    # the same restrictive permissions as financial backups.
+    results.append(create_backup(auth_path, label="auth-registry"))
+    return results
+
+
 def main() -> int:
     try:
-        destination = create_backup()
+        destinations = create_server_backups()
     except (OSError, sqlite3.Error, ValueError) as exc:
-        print(f"Backup failed: {exc}", file=__import__("sys").stderr)
+        print(f"Backup failed: {exc}", file=sys.stderr)
         return 1
-    print(destination)
+    for destination in destinations:
+        print(destination)
     return 0
 
 

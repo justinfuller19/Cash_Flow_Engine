@@ -129,3 +129,27 @@ def test_send_email_uses_tls_and_sends_to_all_recipients(monkeypatch):
     assert send_call[1] == "Test subject"
     assert send_call[2] == ("one@example.test", "two@example.test")
     assert "Test body" in send_call[3]
+
+
+def test_household_recipients_do_not_leak_reports_between_accounts():
+    config = email_reports.EmailConfig(
+        "smtp.example.test", 587, "budget@example.test", ("legacy-family@example.test",)
+    )
+    first = {"id": 1, "notification_email": None}
+    second_without_email = {"id": 2, "notification_email": None}
+    second_with_email = {"id": 2, "notification_email": "second-household@example.test"}
+
+    assert email_reports._recipients_for_household(first, config) == ("legacy-family@example.test",)
+    assert email_reports._recipients_for_household(second_without_email, config) == ()
+    assert email_reports._recipients_for_household(second_with_email, config) == (
+        "second-household@example.test",
+    )
+
+
+def test_email_config_allows_recipients_to_be_set_per_household():
+    config = email_reports.load_email_config({
+        "CASHFLOW_SMTP_HOST": "smtp.example.test",
+        "CASHFLOW_SMTP_FROM": "budget@example.test",
+    })
+    assert config is not None
+    assert config.recipients == ()

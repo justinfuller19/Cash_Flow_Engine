@@ -113,7 +113,9 @@ sudo systemctl status cashflow-engine-backup.service
 sudo ls -lh /var/backups/cashflow-engine
 ```
 
-The backup script uses SQLite's online backup API, validates the copy with `PRAGMA integrity_check`, restricts file permissions, and removes old `cashflow-*.db` backups based on the configured retention period.
+The backup script uses SQLite's online backup API, validates every copy with `PRAGMA integrity_check`, restricts file permissions, and removes old `cashflow-*.db` backups based on the configured retention period. With household accounts enabled, it backs up each registered household database and the shared `.auth.sqlite` account registry. Filenames identify household backups (for example, `cashflow-household-2-...`) and the account registry (`cashflow-auth-registry-...`). A missing registered household database causes the backup job to fail rather than silently claiming a complete backup.
+
+The in-app download/reset safety backup still covers only the active household's financial database. Use the scheduled backup set for server-wide recovery. Keep the registry and all household backups from the same backup run together.
 
 You can also run it manually:
 
@@ -132,7 +134,7 @@ sudo systemctl start cashflow-engine
 sudo systemctl status cashflow-engine
 ```
 
-The script validates the backup before asking for the exact word `RESTORE`, creates a pre-restore safety backup when the active database exists, and validates the restored database. Add `--yes` only for a deliberate non-interactive restore.
+The script validates the backup before asking for the exact word `RESTORE`, creates a pre-restore safety backup when the active database exists, and validates the restored database. Add `--yes` only for a deliberate non-interactive restore. To restore a household database, set `CASHFLOW_DB_PATH` to that household's live database path before running the restore command. To restore the shared account registry, stop the app and carefully restore the matching `cashflow-auth-registry-...` backup to the configured base database's `.auth.sqlite` path; preserve the original file as a safety copy first. Restore the registry and household databases from a consistent backup set.
 
 ## 8. Updates and rollback
 
@@ -155,7 +157,7 @@ For rollback, stop the service, check out the previous known-good commit, reinst
 ## Security and privacy notes
 
 - Do not port-forward this service or expose it to the public internet.
-- Without `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`, non-loopback and forwarded requests are blocked. If credentials are configured, Basic authentication is required for every request.
+- Without `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`, non-loopback and forwarded requests are blocked. If credentials are configured, Basic authentication is required for every request in addition to the household login.
 - Basic authentication is not encryption. Use HTTPS or a trusted VPN for remote access; do not expose the service directly to the public internet.
 - Protect backups like the live database; they contain the same financial information.
 - Test a restore periodically. A backup that has never been restored is not a verified recovery plan.

@@ -9,11 +9,11 @@ import smtplib
 import sqlite3
 import ssl
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from email.message import EmailMessage
 
-from app import database
+from app import auth, database
 from app.cash_flow import weekly_cash_flow
 
 
@@ -42,10 +42,10 @@ def load_email_config(environ=None) -> EmailConfig | None:
     )
     username = environ.get("CASHFLOW_SMTP_USERNAME", "").strip()
     password = environ.get("CASHFLOW_SMTP_PASSWORD", "")
-    if not host or not sender or not recipients:
+    if not host or not sender:
         raise ValueError(
-            "Email is partially configured. Set CASHFLOW_SMTP_HOST, "
-            "CASHFLOW_SMTP_FROM, and CASHFLOW_EMAIL_TO together."
+            "Email is partially configured. Set CASHFLOW_SMTP_HOST and "
+            "CASHFLOW_SMTP_FROM together. Recipients may be set per household in Account settings."
         )
     if bool(username) != bool(password):
         raise ValueError("Set both CASHFLOW_SMTP_USERNAME and CASHFLOW_SMTP_PASSWORD, or neither.")
@@ -263,6 +263,23 @@ def run_once(mode: str, today: date, config: EmailConfig | None, dry_run: bool =
     return True
 
 
+def _recipients_for_household(household: dict, config: EmailConfig | None) -> tuple[str, ...]:
+    """Never apply the legacy global recipient list to households beyond household 1."""
+    if household.get("notification_email"):
+        return (household["notification_email"],)
+    if int(household["id"]) == 1 and config is not None:
+        return config.recipients
+    return ()
+
+
+def _registered_households() -> list[dict]:
+    auth.initialize_auth_database()
+    with auth.auth_connect() as db:
+        return [dict(row) for row in db.execute(
+            "SELECT id, notification_email FROM households ORDER BY id"
+        ).fetchall()]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=("daily", "weekly"), default="daily")
@@ -270,13 +287,38 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="Print the message without sending or logging it")
     args = parser.parse_args()
     try:
-        database.initialize_database()
         today = args.date or date.today()
         config = load_email_config()
         if config is None and not args.dry_run:
             print("Email is not configured; skipping notifications.")
             return 0
-        run_once(args.mode, today, config, dry_run=args.dry_run)
+
+        households = _registered_households()
+        if not households:
+            # Compatibility for a pre-account database or an installation not yet registered.
+            database.initialize_database()
+            run_once(args.mode, today, config, dry_run=args.dry_run)
+            return 0
+
+        sent_or_previewed = 0
+        for household in households:
+            household_id = int(household["id"])
+            # The environment recipient list is a legacy default for household 1 only.
+            # Every additional household must explicitly set its own notification address.
+            recipients = _recipients_for_household(household, config)
+            if not args.dry_run and (config is None or not recipients):
+                print(f"Skipping household {household_id}: no household-specific email recipient configured.")
+                continue
+            household_config = replace(config, recipients=tuple(recipients)) if config else None
+            token = auth.set_current_household(household_id)
+            try:
+                database.initialize_database()
+                if run_once(args.mode, today, household_config, dry_run=args.dry_run):
+                    sent_or_previewed += 1
+            finally:
+                auth.reset_current_household(token)
+        if sent_or_previewed == 0:
+            print("No household notifications were sent or previewed.")
         return 0
     except (OSError, sqlite3.Error, ValueError, smtplib.SMTPException) as exc:
         print(f"Email notification run failed: {exc}", file=sys.stderr)
