@@ -24,7 +24,7 @@ The current state of the repository and merged code is authoritative. Check open
 **Goal:** Keep the financial rules deterministic, testable, and independent of HTTP/UI code.
 
 - Represent all monetary values as integer cents; never use floating-point arithmetic for money.
-- Protect the single shared household cash buffer target (schema v6 migrated the former per-person buffers into one household target).
+- Restore the single shared household cash buffer target after bills and minimum debt payments (schema v6 migrated the former per-person buffers into one household target).
 - Allocate funds to bills due within the selected planning window.
 - Fund required debt minimum payments.
 - Allocate to savings goals according to configured priority.
@@ -92,7 +92,7 @@ A first end-to-end `/planner` workflow now loads saved active income, buffers, b
 
 - Let the user choose a payday/planning window and applicable income sources.
 - Combine forecast income, starting cash, required buffers, bills, debt minimums, savings goals, and payoff strategy.
-- Preserve the agreed allocation order: buffers → bills → minimum debt payments → prioritized savings → extra debt payoff.
+- Preserve the agreed allocation order: bills → minimum debt payments → household buffer restoration → prioritized savings → extra debt payoff.
 - Support avalanche (highest APR first) and snowball (smallest balance first).
 - Save each generated plan and its line items for review and history.
 - Explain every allocation and any shortfall in plain language.
