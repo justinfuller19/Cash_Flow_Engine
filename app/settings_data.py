@@ -117,6 +117,13 @@ input{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:in
 <section class="card"><h2>Transaction categories</h2>
 <p class="muted">Add, rename, or delete the categories used to organize income, expenses, and transfers in your transaction ledger.</p>
 <a class="action-link" href="/categories">Manage transaction categories</a></section>
+<section class="card"><h2>Update application</h2>
+<p class="muted">Install the latest version merged into the main branch. The updater creates a safety backup, downloads the update, installs dependencies, runs automated tests, and restarts CashFlow Engine. The page may briefly disconnect during the restart.</p>
+<p class="warning">Only update when you are ready for a short interruption. If the update fails, the updater attempts to restore the previous application revision. Keep your Raspberry Pi on your trusted home network.</p>
+<form id="update-form"><label for="update-confirmation">Type UPDATE APPLICATION to confirm</label>
+<input id="update-confirmation" name="confirmation_phrase" required autocomplete="off" maxlength="40" placeholder="UPDATE APPLICATION">
+<button id="update-button" type="submit">Back up and update application</button></form>
+<p class="muted">The result and last update status will appear here.</p></section>
 <section class="card"><h2>Clear all financial data</h2>
 <div class="warning"><strong>This cannot be undone from the app.</strong> The reset will first create and verify a backup, then delete household members, income sources, bills, debts, savings accounts and goals, transactions, saved payday plans, and checklist items. The shared cash buffer and starting cash will be reset to $0. The database schema, application, and category definitions will remain.</div>
 <form id="reset-form"><label for="confirmation">To confirm, type DELETE ALL DATA exactly</label>
@@ -129,4 +136,38 @@ function message(text,error=false){box.textContent=text;box.className="status"+(
 async function jsonApi(url,options={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...options});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"The request failed.");return d;}
 document.getElementById("backup").addEventListener("click",async()=>{const button=document.getElementById("backup");button.disabled=true;try{const response=await fetch("/api/settings-data/backup");if(!response.ok){const data=await response.json().catch(()=>({}));throw Error(data.detail||"Could not create backup.");}const blob=await response.blob();const disposition=response.headers.get("content-disposition")||"";const match=disposition.match(/filename="?([^";]+)"?/i);const filename=match?match[1]:"cashflow-backup.db";const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);message("Backup created and downloaded: "+filename);}catch(e){message(e.message,true);}finally{button.disabled=false;}});
 document.getElementById("reset-form").addEventListener("submit",async(e)=>{e.preventDefault();if(document.getElementById("confirmation").value!=="DELETE ALL DATA"){message("The confirmation phrase must match exactly.",true);return;}if(!confirm("This will delete the household financial records. A verified backup is created first. Continue?"))return;const button=document.getElementById("reset");button.disabled=true;try{const result=await jsonApi("/api/settings-data/clear-all-data",{method:"POST",body:JSON.stringify({confirmation_phrase:document.getElementById("confirmation").value})});document.getElementById("confirmation").value="";const total=Object.values(result.deleted_records).reduce((sum,count)=>sum+count,0);message("All financial data was cleared. "+total+" records removed. Safety backup: "+result.backup_file+". Category definitions were kept.");}catch(err){message(err.message,true);}finally{button.disabled=false;}});
+document.getElementById("update-form").addEventListener("submit",async(e)=>{
+  e.preventDefault();
+  const confirmation=document.getElementById("update-confirmation");
+  if(confirmation.value!=="UPDATE APPLICATION"){message("The confirmation phrase must match exactly.",true);return;}
+  if(!confirm("CashFlow Engine will create a backup, update the application, run tests, and restart. The app may be unavailable briefly. Continue?"))return;
+  const button=document.getElementById("update-button");button.disabled=true;
+  const requestStarted=Date.now();
+  try{
+    const accepted=await jsonApi("/api/settings-data/update-application",{method:"POST",body:JSON.stringify({confirmation_phrase:confirmation.value})});
+    confirmation.value="";
+    message(accepted.message||"Update requested. Waiting for status…");
+    for(let attempt=0;attempt<450;attempt++){
+      await new Promise(resolve=>setTimeout(resolve,2000));
+      try{
+        const status=await jsonApi("/api/settings-data/update-status");
+        const updatedAt=Date.parse(status.updated_at||"");
+        if(updatedAt>=requestStarted-3000&&["completed","failed"].includes(status.state)){
+          message(status.message||("Update "+status.state+"."),status.state==="failed");
+          button.disabled=false;return;
+        }
+        if(status.state==="running"||status.state==="queued")message(status.message||"Update in progress. Please keep this page open.");
+      }catch(_statusError){message("The app is restarting. Waiting for it to return…");}
+    }
+    message("The update is taking longer than expected. Check the Settings & Data page again or inspect the Pi service logs.");
+  }catch(err){message(err.message,true);}
+  finally{button.disabled=false;}
+});
+async function showPreviousUpdateStatus(){
+  try{
+    const status=await jsonApi("/api/settings-data/update-status");
+    if(status.state!=="idle")message((status.message||"")+" (Status: "+status.state+").",status.state==="failed");
+  }catch(_error){}
+}
+showPreviousUpdateStatus();
 </script></body></html>"""
