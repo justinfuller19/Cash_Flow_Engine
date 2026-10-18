@@ -1,8 +1,6 @@
 """Guarded application self-update endpoints for the Settings & Data page."""
 import json
 import os
-import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -16,6 +14,8 @@ STATUS_PATH = Path(
         "/var/lib/cashflow-engine/application-update-status.json",
     )
 )
+REQUEST_PATH = STATUS_PATH.with_name("application-update-request")
+PATH_UNIT_FILE = Path("/etc/systemd/system/cashflow-engine-update.path")
 
 
 class ApplicationUpdateRequest(BaseModel):
@@ -43,11 +43,17 @@ def application_update_status():
 
 @router.post("/api/settings-data/update-application", status_code=202)
 def request_application_update(body: ApplicationUpdateRequest):
-    """Request the fixed, root-owned updater; never accept shell commands from users."""
+    """Create a fixed request marker observed by the root-owned systemd path unit."""
     if body.confirmation_phrase != CONFIRMATION_PHRASE:
         raise HTTPException(
             status_code=422,
             detail=f'Type "{CONFIRMATION_PHRASE}" exactly to confirm.',
+        )
+
+    if not PATH_UNIT_FILE.is_file():
+        raise HTTPException(
+            status_code=503,
+            detail="The updater is not installed. Run the updater setup command from the deployment guide.",
         )
 
     current = _read_status()
@@ -55,31 +61,17 @@ def request_application_update(body: ApplicationUpdateRequest):
         raise HTTPException(status_code=409, detail="An application update is already in progress.")
 
     try:
-        result = subprocess.run(
-            [
-                "/usr/bin/sudo",
-                "-n",
-                "/usr/bin/systemctl",
-                "start",
-                "--no-block",
-                "cashflow-engine-update.service",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=5,
+        descriptor = os.open(
+            REQUEST_PATH,
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            0o600,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="Could not start the updater. Run the updater setup command from the deployment guide.",
-        ) from exc
-
-    if result.returncode != 0:
-        raise HTTPException(
-            status_code=503,
-            detail="The updater is not installed or could not be started. See the deployment guide.",
-        )
+        with os.fdopen(descriptor, "w", encoding="utf-8") as request_file:
+            request_file.write("update requested\n")
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail="An application update is already queued.") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=503, detail="Could not queue the application update.") from exc
 
     return {
         "accepted": True,
