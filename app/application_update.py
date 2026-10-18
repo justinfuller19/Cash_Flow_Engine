@@ -1,6 +1,8 @@
 """Guarded application self-update endpoints for the Settings & Data page."""
 import json
 import os
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -35,9 +37,34 @@ def _read_status() -> dict:
         return {"state": "unknown", "message": "Update status is temporarily unavailable."}
 
 
+def _write_status(state: str, message: str) -> None:
+    """Atomically publish status so readers never see a partially written JSON file."""
+    STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "state": state,
+        "message": message,
+        "updated_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+    }
+    descriptor, temporary_path = tempfile.mkstemp(
+        prefix=".application-update-status-", dir=STATUS_PATH.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as status_file:
+            json.dump(payload, status_file)
+            status_file.write("\\n")
+        os.chmod(temporary_path, 0o640)
+        os.replace(temporary_path, STATUS_PATH)
+    except Exception:
+        try:
+            os.unlink(temporary_path)
+        except OSError:
+            pass
+        raise
+
+
 @router.get("/api/settings-data/update-status")
 def application_update_status():
-    """Return status written by the root-owned systemd update service."""
+    """Return status written by the application and root-owned update service."""
     return _read_status()
 
 
@@ -67,11 +94,18 @@ def request_application_update(body: ApplicationUpdateRequest):
             0o600,
         )
         with os.fdopen(descriptor, "w", encoding="utf-8") as request_file:
-            request_file.write("update requested\n")
+            request_file.write("update requested\\n")
     except FileExistsError as exc:
         raise HTTPException(status_code=409, detail="An application update is already queued.") from exc
     except OSError as exc:
         raise HTTPException(status_code=503, detail="Could not queue the application update.") from exc
+
+    try:
+        _write_status("queued", "Update queued. Preparing the safety backup.")
+    except OSError:
+        # The request marker is already visible to systemd; do not claim the request was rejected.
+        # The updater will publish its own status as soon as it starts.
+        pass
 
     return {
         "accepted": True,
