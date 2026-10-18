@@ -16,9 +16,11 @@ write_status() {
   local message="$2"
   local timestamp
   timestamp="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
-  install -d -o cashflow -g cashflow -m 750 "$(dirname "$STATUS_FILE")"
+  local status_dir
+  status_dir="$(dirname "$STATUS_FILE")"
+  install -d -o cashflow -g cashflow -m 750 "$status_dir"
   local temp_file
-  temp_file="$(mktemp)"
+  temp_file="$(mktemp "$status_dir/.application-update-status.XXXXXX")"
   printf '{"state":"%s","message":%s,"updated_at":"%s"}\n' \
     "$state" "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$message")" "$timestamp" > "$temp_file"
   chown root:cashflow "$temp_file"
@@ -47,7 +49,39 @@ rm -f /var/lib/cashflow-engine/application-update-request
 write_status "running" "Creating a safety backup before updating."
 cd "$INSTALL_DIR"
 previous_sha="$(git rev-parse HEAD)"
-git remote get-url origin | grep -Eq '^https://github\.com/justinfuller19/Cash_Flow_Engine\.git$'
+git remote get-url origin | grep -Eq '^https://github\.com/justinfuller19/Cash_Flow_Engine\.git
+
+write_status "running" "Downloading the latest merged main branch."
+git fetch --depth 1 origin main
+
+write_status "running" "Installing the update and running automated tests."
+systemctl stop "$APP_SERVICE"
+app_stopped=1
+git reset --hard FETCH_HEAD
+"$INSTALL_DIR/.venv/bin/python" -m pip install -r "$INSTALL_DIR/requirements.txt"
+"$INSTALL_DIR/.venv/bin/python" -m pytest -q
+
+write_status "running" "Starting the updated application."
+systemctl start "$APP_SERVICE"
+app_stopped=0
+
+for attempt in {1..30}; do
+  if curl --fail --silent http://127.0.0.1:8000/health >/dev/null; then
+    new_sha="$(git rev-parse --short HEAD)"
+    write_status "completed" "Update completed successfully (revision $new_sha)."
+    trap - ERR
+    exit 0
+  fi
+  sleep 2
+done
+
+fail_update "The updated application did not pass its health check."
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  write_status "failed" "Update cancelled because the application checkout has local changes. Resolve them before updating."
+  trap - ERR
+  exit 1
+fi
 systemctl start "$BACKUP_SERVICE"
 
 write_status "running" "Downloading the latest merged main branch."
