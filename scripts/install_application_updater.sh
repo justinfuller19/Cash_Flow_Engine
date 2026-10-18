@@ -25,7 +25,6 @@ id "$SERVICE_USER" >/dev/null 2>&1 || {
   exit 1
 }
 
-install -o root -g root -m 755 "$INSTALL_DIR/scripts/update_application.sh" "$INSTALL_DIR/scripts/update_application.sh"
 install -o root -g root -m 644 "$UNIT_SOURCE" /etc/systemd/system/cashflow-engine-update.service
 install -o root -g root -m 440 "$SUDOERS_SOURCE" /etc/sudoers.d/cashflow-engine-update
 visudo -cf /etc/sudoers.d/cashflow-engine-update
