@@ -173,8 +173,8 @@ runs the automated test suite, restarts the app, and checks its local health end
 shows the result after the application returns.
 
 The updater is designed for the root-owned `/opt/cashflow-engine` installation created by the
-Raspberry Pi installer. The app service account can invoke only the fixed systemd updater unit;
-it cannot pass arbitrary shell commands, paths, or branch names. The Pi's root Git credentials
+Raspberry Pi installer. The app service account can only create a fixed request marker watched by a root-owned systemd path unit;
+it cannot invoke shell commands or pass arbitrary paths or branch names. The Pi's root Git credentials
 must still be able to fetch this private repository.
 
 For an installation created before the updater feature was added, first pull the merged code
