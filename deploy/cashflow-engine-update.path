@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for a CashFlow Engine application update request
+
+[Path]
+PathExists=/var/lib/cashflow-engine/application-update-request
+Unit=cashflow-engine-update.service
+
+[Install]
+WantedBy=multi-user.target
