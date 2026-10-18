@@ -23,6 +23,7 @@ from .transactions import router as transactions_router
 from .categories import router as categories_router
 from .cash_flow import router as cash_flow_router
 from .settings_data import router as settings_data_router
+from .application_update import router as application_update_router
 from .household import router as household_router
 from .security import remote_access_guard
 from .auth import (household_auth_guard, initialize_auth_database, login_page, register_page, login_route, register_route, logout_route, account_page, account_update_route)
@@ -50,6 +51,7 @@ app.include_router(transactions_router)
 app.include_router(categories_router)
 app.include_router(cash_flow_router)
 app.include_router(settings_data_router)
+app.include_router(application_update_router)
 app.include_router(household_router)
 app.middleware("http")(household_auth_guard)
 app.middleware("http")(remote_access_guard)
