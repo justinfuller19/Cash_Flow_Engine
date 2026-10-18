@@ -119,7 +119,7 @@ input{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font:in
 <a class="action-link" href="/categories">Manage transaction categories</a></section>
 <section class="card"><h2>Update application</h2>
 <p class="muted">Install the latest version merged into the main branch. The updater creates a safety backup, downloads the update, installs dependencies, runs automated tests, and restarts CashFlow Engine. The page may briefly disconnect during the restart.</p>
-<p class="warning">Only update when you are ready for a short interruption. If the update fails, the updater attempts to restore the previous application revision. Keep your Raspberry Pi on your trusted home network.</p>
+<p class="warning">Only update when you are ready for a short interruption. If the update fails, the updater attempts to restore the previous code revision. It does not automatically reverse database schema changes; the pre-update backup is retained for recovery. Keep your Raspberry Pi on your trusted home network.</p>
 <form id="update-form"><label for="update-confirmation">Type UPDATE APPLICATION to confirm</label>
 <input id="update-confirmation" name="confirmation_phrase" required autocomplete="off" maxlength="40" placeholder="UPDATE APPLICATION">
 <button id="update-button" type="submit">Back up and update application</button></form>
@@ -142,7 +142,7 @@ document.getElementById("update-form").addEventListener("submit",async(e)=>{
   if(confirmation.value!=="UPDATE APPLICATION"){message("The confirmation phrase must match exactly.",true);return;}
   if(!confirm("CashFlow Engine will create a backup, update the application, run tests, and restart. The app may be unavailable briefly. Continue?"))return;
   const button=document.getElementById("update-button");button.disabled=true;
-  const requestStarted=Date.now();
+  let sawActiveStatus=false;
   try{
     const accepted=await jsonApi("/api/settings-data/update-application",{method:"POST",body:JSON.stringify({confirmation_phrase:confirmation.value})});
     confirmation.value="";
@@ -151,12 +151,15 @@ document.getElementById("update-form").addEventListener("submit",async(e)=>{
       await new Promise(resolve=>setTimeout(resolve,2000));
       try{
         const status=await jsonApi("/api/settings-data/update-status");
-        const updatedAt=Date.parse(status.updated_at||"");
-        if(updatedAt>=requestStarted-3000&&["completed","failed"].includes(status.state)){
+        if(status.state==="running"||status.state==="queued"){
+          sawActiveStatus=true;
+          message(status.message||"Update in progress. Please keep this page open.");
+        }
+        // Do not mistake a previous run's completed/failed status for this request.
+        if(sawActiveStatus&&["completed","failed"].includes(status.state)){
           message(status.message||("Update "+status.state+"."),status.state==="failed");
           button.disabled=false;return;
         }
-        if(status.state==="running"||status.state==="queued")message(status.message||"Update in progress. Please keep this page open.");
       }catch(_statusError){message("The app is restarting. Waiting for it to return…");}
     }
     message("The update is taking longer than expected. Check the Settings & Data page again or inspect the Pi service logs.");
