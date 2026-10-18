@@ -1,0 +1,9 @@
+# Require the repository owner to review all proposed changes.
+# Enable "Require review from Code Owners" in the main branch rules.
+# The owner may need to use the administrator bypass for self-authored PRs.
+/* @justinfuller19
+
+# Explicitly document security-critical ownership as well.
+.github/ @justinfuller19
+scripts/ @justinfuller19
+deploy/ @justinfuller19
