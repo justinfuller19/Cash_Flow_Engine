@@ -188,3 +188,5 @@ sudo bash scripts/install_application_updater.sh
 Do not expose the app directly to the public internet. A failed update attempts to restore the
 previous application revision and restart the service; always keep verified backups and review
 the service logs if the page reports a failure.
+
+**Rollback limitation:** a failed update attempts to restore the previous application code and dependencies, but it does not automatically reverse database schema changes made by a newer version. The pre-update backup is retained; if an update involving a schema change fails, stop using the app and follow the database restore procedure before continuing. Do not treat code rollback alone as proof that the database was rolled back.
