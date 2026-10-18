@@ -116,6 +116,8 @@ for unit in \
   install -o root -g root -m 644 "$INSTALL_DIR/deploy/$unit" "/etc/systemd/system/$unit"
 done
 
+bash "$INSTALL_DIR/scripts/install_application_updater.sh"
+
 systemctl daemon-reload
 systemctl enable --now cashflow-engine.service
 systemctl enable --now cashflow-engine-backup.timer

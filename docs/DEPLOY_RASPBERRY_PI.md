@@ -162,3 +162,31 @@ For rollback, stop the service, check out the previous known-good commit, reinst
 - Protect backups like the live database; they contain the same financial information.
 - Test a restore periodically. A backup that has never been restored is not a verified recovery plan.
 - SQLite files and backups should remain outside the Git repository.
+
+
+## Updating from the Settings & Data page
+
+Once the application updater is installed, open **Settings & Data → Update application**, type
+`UPDATE APPLICATION`, and confirm. It backs up all configured household databases using the
+existing backup service, fetches the latest merged `main` branch, installs Python requirements,
+runs the automated test suite, restarts the app, and checks its local health endpoint. The page
+shows the result after the application returns.
+
+The updater is designed for the root-owned `/opt/cashflow-engine` installation created by the
+Raspberry Pi installer. The app service account can only create a fixed request marker watched by a root-owned systemd path unit;
+it cannot invoke shell commands or pass arbitrary paths or branch names. The Pi's root Git credentials
+must still be able to fetch this private repository.
+
+For an installation created before the updater feature was added, first pull the merged code
+using the normal terminal update procedure, then install the updater once:
+
+```bash
+cd /opt/cashflow-engine
+sudo bash scripts/install_application_updater.sh
+```
+
+Do not expose the app directly to the public internet. A failed update attempts to restore the
+previous application revision and restart the service; always keep verified backups and review
+the service logs if the page reports a failure.
+
+**Rollback limitation:** a failed update attempts to restore the previous application code and dependencies, but it does not automatically reverse database schema changes made by a newer version. The pre-update backup is retained; if an update involving a schema change fails, stop using the app and follow the database restore procedure before continuing. Do not treat code rollback alone as proof that the database was rolled back.
