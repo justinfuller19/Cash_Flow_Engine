@@ -1,0 +1,12 @@
+[Unit]
+Description=CashFlow Engine application updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/cashflow-engine
+ExecStart=/opt/cashflow-engine/scripts/update_application.sh
+TimeoutStartSec=900
