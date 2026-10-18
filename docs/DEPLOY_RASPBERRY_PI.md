@@ -162,3 +162,29 @@ For rollback, stop the service, check out the previous known-good commit, reinst
 - Protect backups like the live database; they contain the same financial information.
 - Test a restore periodically. A backup that has never been restored is not a verified recovery plan.
 - SQLite files and backups should remain outside the Git repository.
+
+
+## Updating from the Settings & Data page
+
+Once the application updater is installed, open **Settings & Data → Update application**, type
+`UPDATE APPLICATION`, and confirm. It backs up all configured household databases using the
+existing backup service, fetches the latest merged `main` branch, installs Python requirements,
+runs the automated test suite, restarts the app, and checks its local health endpoint. The page
+shows the result after the application returns.
+
+The updater is designed for the root-owned `/opt/cashflow-engine` installation created by the
+Raspberry Pi installer. The app service account can invoke only the fixed systemd updater unit;
+it cannot pass arbitrary shell commands, paths, or branch names. The Pi's root Git credentials
+must still be able to fetch this private repository.
+
+For an installation created before the updater feature was added, first pull the merged code
+using the normal terminal update procedure, then install the updater once:
+
+```bash
+cd /opt/cashflow-engine
+sudo bash scripts/install_application_updater.sh
+```
+
+Do not expose the app directly to the public internet. A failed update attempts to restore the
+previous application revision and restart the service; always keep verified backups and review
+the service logs if the page reports a failure.
