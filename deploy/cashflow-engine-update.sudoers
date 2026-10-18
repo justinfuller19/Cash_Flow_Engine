@@ -1,0 +1,2 @@
+# Allow the CashFlow Engine service account to start only the fixed updater unit.
+cashflow ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block cashflow-engine-update.service
