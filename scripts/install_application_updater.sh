@@ -25,7 +25,9 @@ id "$SERVICE_USER" >/dev/null 2>&1 || {
   exit 1
 }
 
-chown root:root "$INSTALL_DIR/scripts/update_application.sh"
+# The updater runs as root and executes code from this checkout. Keep the entire
+# checkout (including .git metadata and requirements) unwritable by the app user.
+chown -R root:root "$INSTALL_DIR"
 chmod 755 "$INSTALL_DIR/scripts/update_application.sh"
 install -o root -g root -m 644 "$UNIT_SOURCE" /etc/systemd/system/cashflow-engine-update.service
 install -o root -g root -m 644 "$PATH_SOURCE" /etc/systemd/system/cashflow-engine-update.path
