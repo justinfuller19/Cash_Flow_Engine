@@ -51,7 +51,7 @@ def _write_status(state: str, message: str) -> None:
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as status_file:
             json.dump(payload, status_file)
-            status_file.write("\\n")
+            status_file.write("\n")
         os.chmod(temporary_path, 0o640)
         os.replace(temporary_path, STATUS_PATH)
     except Exception:
@@ -94,7 +94,7 @@ def request_application_update(body: ApplicationUpdateRequest):
             0o600,
         )
         with os.fdopen(descriptor, "w", encoding="utf-8") as request_file:
-            request_file.write("update requested\\n")
+            request_file.write("update requested\n")
     except FileExistsError as exc:
         raise HTTPException(status_code=409, detail="An application update is already queued.") from exc
     except OSError as exc:
