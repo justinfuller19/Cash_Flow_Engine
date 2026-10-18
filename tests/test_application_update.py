@@ -42,6 +42,23 @@ def test_update_requires_exact_confirmation_and_creates_only_fixed_request_marke
     assert accepted.json()["accepted"] is True
     assert request_path.read_text(encoding="utf-8") == "update requested\n"
 
+    status = application_update._read_status()
+    assert status["state"] == "queued"
+    assert status["updated_at"].endswith("Z")
+
+
+def test_status_writer_publishes_valid_json(tmp_path, monkeypatch):
+    status_path = tmp_path / "status.json"
+    monkeypatch.setattr(application_update, "STATUS_PATH", status_path)
+
+    application_update._write_status("running", "Testing status write.")
+
+    status = application_update._read_status()
+    assert status["state"] == "running"
+    assert status["message"] == "Testing status write."
+    assert status["updated_at"].endswith("Z")
+
+
 
 def test_update_request_reports_missing_privileged_setup(tmp_path, monkeypatch):
     setup_update_paths(tmp_path, monkeypatch)
