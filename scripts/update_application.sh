@@ -43,6 +43,7 @@ fail_update() {
 }
 trap 'fail_update "Update failed near line $LINENO."' ERR
 
+rm -f /var/lib/cashflow-engine/application-update-request
 write_status "running" "Creating a safety backup before updating."
 cd "$INSTALL_DIR"
 previous_sha="$(git rev-parse HEAD)"
