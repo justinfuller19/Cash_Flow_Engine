@@ -77,8 +77,34 @@ write_status "running" "Starting the updated application."
 systemctl start "$APP_SERVICE"
 app_stopped=0
 
+health_check() {
+  "$INSTALL_DIR/.venv/bin/python" - <<'PY'
+import base64
+import os
+import urllib.error
+import urllib.request
+
+username = os.environ.get("CASHFLOW_USERNAME", "")
+password = os.environ.get("CASHFLOW_PASSWORD", "")
+if bool(username) != bool(password):
+    raise SystemExit(1)
+
+headers = {}
+if username and password:
+    credentials = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+    headers["Authorization"] = f"Basic {credentials}"
+
+request = urllib.request.Request("http://127.0.0.1:8000/health", headers=headers)
+try:
+    with urllib.request.urlopen(request, timeout=2) as response:
+        raise SystemExit(0 if response.status == 200 else 1)
+except (urllib.error.URLError, TimeoutError, OSError):
+    raise SystemExit(1)
+PY
+}
+
 for attempt in {1..30}; do
-  if curl --fail --silent http://127.0.0.1:8000/health >/dev/null; then
+  if health_check; then
     new_sha="$(git rev-parse --short HEAD)"
     write_status "completed" "Update completed successfully (revision $new_sha)."
     trap - ERR
