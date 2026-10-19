@@ -194,3 +194,12 @@ def test_required_obligations_are_funded_before_underfunded_household_buffer():
     assert plan.unallocated_cents == 0
     assert plan.unfunded_cents == 30000
     assert plan.total_available_cents == plan.allocated_cents + plan.unallocated_cents
+
+
+def test_planner_paginates_plan_items_and_saved_history():
+    client = TestClient(app)
+    response = client.get("/planner")
+    assert response.status_code == 200
+    assert 'id="item-pagination"' in response.text
+    assert 'id="history-pagination"' in response.text
+    assert "const PAGE_SIZE=10" in response.text
