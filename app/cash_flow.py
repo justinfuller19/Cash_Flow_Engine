@@ -66,20 +66,91 @@ def _take_matching_transaction(
 def weekly_cash_flow(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
+    forecast_weeks: int = 13,
 ):
-    """Return a seven-day cash forecast, reconciling explicitly linked transactions."""
+    """Forecast the selected window and reserve cash for later weeks' obligations."""
     start = start_date or date.today()
     end = end_date or (start + timedelta(days=6))
     if end < start:
         raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
     if (end - start).days > 30:
         raise HTTPException(status_code=422, detail="Cash-flow forecast window cannot exceed 31 days")
+    if isinstance(forecast_weeks, bool) or not isinstance(forecast_weeks, int) or not 1 <= forecast_weeks <= 52:
+        raise HTTPException(status_code=422, detail="forecast_weeks must be between 1 and 52")
 
+    report = _weekly_cash_flow_for_window(start, end)
+    buffer_target = report["buffer_target_cents"]
+    current_ending_cash = (
+        report["projected_cash_before_buffer_cents"] - report["funded_savings_cents"]
+    )
+    lowest_projected_cash = current_ending_cash
+    future_forecast = []
+    carried_cash = current_ending_cash
+    future_start = end + timedelta(days=1)
+
+    # Carry each period's ending cash forward. Re-read schedules and transactions
+    # for every future window so each request reflects current data.
+    for offset in range(1, forecast_weeks):
+        future_end = future_start + timedelta(days=6)
+        future = _weekly_cash_flow_for_window(
+            future_start, future_end, starting_cash_override=carried_cash
+        )
+        ending_cash = (
+            future["projected_cash_before_buffer_cents"] - future["funded_savings_cents"]
+        )
+        lowest_projected_cash = min(lowest_projected_cash, ending_cash)
+        future_forecast.append({
+            "start_date": future_start.isoformat(),
+            "end_date": future_end.isoformat(),
+            "starting_cash_cents": carried_cash,
+            "expected_income_cents": future["expected_income_cents"],
+            "recorded_income_cents": future["recorded_income_cents"],
+            "bills_due_cents": future["bills_due_cents"],
+            "minimum_debt_payments_cents": future["minimum_debt_payments_cents"],
+            "transaction_expenses_cents": future["transaction_expenses_cents"],
+            "projected_ending_cash_cents": ending_cash,
+            "projected_shortfall_cents": max(0, -ending_cash),
+            "buffer_shortfall_cents": max(0, buffer_target - ending_cash),
+        })
+        carried_cash = ending_cash
+        future_start = future_end + timedelta(days=1)
+
+    # The lowest balance in the entire horizon limits discretionary spending now.
+    safe_to_spend = max(0, lowest_projected_cash - buffer_target)
+    report["projected_ending_cash_cents"] = current_ending_cash
+    report["free_to_spend_before_future_reserve_cents"] = report["free_to_spend_cents"]
+    report["future_buffer_reservation_cents"] = max(
+        0, report["free_to_spend_cents"] - safe_to_spend
+    )
+    report["free_to_spend_cents"] = safe_to_spend
+    report["extra_debt_payoff_capacity_cents"] = safe_to_spend
+    report["forecast_weeks"] = forecast_weeks
+    report["lowest_projected_cash_cents"] = lowest_projected_cash
+    report["future_buffer_shortfall_cents"] = max(0, buffer_target - lowest_projected_cash)
+    report["future_forecast"] = future_forecast
+    report["notes"].append(
+        "Safe-to-spend reserves cash against the lowest projected ending balance across "
+        + str(forecast_weeks)
+        + " forecast week(s); future weeks carry forward prior ending cash."
+    )
+    return report
+
+
+def _weekly_cash_flow_for_window(
+    start: date,
+    end: date,
+    starting_cash_override: int | None = None,
+) -> dict:
+    """Calculate one period without lookahead, optionally carrying prior cash."""
     with database.connect() as db:
         settings = db.execute(
             "SELECT starting_cash_cents, buffer_target_cents FROM household_settings WHERE id = 1"
         ).fetchone()
-        starting_cash = settings["starting_cash_cents"] if settings else 0
+        starting_cash = (
+            starting_cash_override
+            if starting_cash_override is not None
+            else (settings["starting_cash_cents"] if settings else 0)
+        )
         buffer_target = settings["buffer_target_cents"] if settings else 0
 
         # Include a short look-back for payments recorded just before the window
@@ -119,13 +190,48 @@ def weekly_cash_flow(
                     "amount_cents": row["net_amount_cents"],
                 })
         income_occurrences.sort(key=lambda item: (item["date"], item["name"]))
+        income_schedules = {
+            row["id"]: (date.fromisoformat(row["next_payday"]), row["frequency"])
+            for row in rows
+        }
         used_transactions: set[int] = set()
         expected_income = []
         covered_income = []
         for item in income_occurrences:
+            due_date = date.fromisoformat(item["date"])
+            anchor, frequency = income_schedules[item["source_id"]]
+
+            # A linked paycheck may be recorded up to seven days early or late,
+            # but it must cover the closest scheduled occurrence for that source.
+            # Otherwise a paycheck from last week could suppress this week's
+            # expected income when the paydays are exactly seven days apart.
+            eligible_transactions = []
+            for transaction in all_transactions:
+                if (
+                    transaction["linked_obligation_type"] != "income"
+                    or transaction["linked_obligation_id"] != item["source_id"]
+                    or transaction["id"] in used_transactions
+                ):
+                    continue
+                transaction_date = date.fromisoformat(transaction["transaction_date"])
+                if not _within_window(transaction_date, due_date, 7):
+                    continue
+                nearby_paydays = occurrences_between(
+                    anchor, frequency,
+                    transaction_date - timedelta(days=7),
+                    transaction_date + timedelta(days=7),
+                )
+                if nearby_paydays:
+                    nearest_payday = min(
+                        nearby_paydays,
+                        key=lambda payday: (abs((payday - transaction_date).days), payday),
+                    )
+                    if nearest_payday == due_date:
+                        eligible_transactions.append(transaction)
+
             match = _take_matching_transaction(
-                all_transactions, used_transactions, "income", item["source_id"],
-                date.fromisoformat(item["date"]), 7,
+                eligible_transactions, used_transactions, "income", item["source_id"],
+                due_date, 7,
             )
             if match:
                 covered_income.append({
@@ -326,6 +432,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 <section class="card"><h2>Recorded transactions</h2><ul id="transactions" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Spending by category</h2><ul id="category-spending" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Planned savings</h2><div id="savings" class="muted">Loading…</div></section>
+<section class="card"><h2>Upcoming weeks & buffer protection</h2><ul id="future-forecast" class="list"><li class="muted">Loading future forecast…</li></ul></section>
 <section class="card"><h2>Forecast assumptions</h2><ul id="notes" class="list"></ul></section>
 </div></main>
 <script>
@@ -346,11 +453,16 @@ for(const [label,value] of [
 ["Minimum debt payments",report.minimum_debt_payments_cents],["Recorded expenses",report.transaction_expenses_cents],
 ["Projected cash before buffer",report.projected_cash_before_buffer_cents],["Buffer target",report.buffer_target_cents],
 ["Buffer replenishment needed",report.buffer_replenishment_cents],["Planned savings",report.planned_savings_cents],
-["Savings funded",report.funded_savings_cents],["Free to spend",report.free_to_spend_cents],
+["Savings funded",report.funded_savings_cents],
+["Available before future reserve",report.free_to_spend_before_future_reserve_cents],
+["Reserved for future bills",report.future_buffer_reservation_cents],
+["Safe to spend",report.free_to_spend_cents],
 ["Extra debt payoff capacity",report.extra_debt_payoff_capacity_cents]
 ])metric(metrics,label,dollars(value));
 if(report.projected_shortfall_cents>0)message("Projected shortfall: "+dollars(report.projected_shortfall_cents)+". Required obligations exceed projected cash.","warning");
 else if(report.buffer_shortfall_cents>0)message("Projected cash is below the household buffer target by "+dollars(report.buffer_shortfall_cents)+". Extra spending and savings are not available until the buffer is restored.","warning");
+else if(report.future_buffer_shortfall_cents>0)message("Future weeks would fall below the household buffer by as much as "+dollars(report.future_buffer_shortfall_cents)+". Safe-to-spend has been reduced to $0 until the forecast gap is addressed.","warning");
+else if(report.future_buffer_reservation_cents>0)message(dollars(report.future_buffer_reservation_cents)+" is reserved for upcoming obligations so the projected household balance can stay above its buffer.","warning");
 else if(report.savings_shortfall_cents>0)message("Required obligations and the buffer are covered, but planned savings are short by "+dollars(report.savings_shortfall_cents)+".","warning");
 else {statusBox.hidden=true;}
 renderList("income",report.expected_income,"No scheduled income remains expected in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date));});
@@ -361,6 +473,11 @@ renderList("transactions",report.transactions,"No transactions recorded in this 
 renderList("category-spending",report.category_spending,"No expense transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(x.amount_cents)));});
 const savings=document.getElementById("savings");savings.replaceChildren();savings.appendChild(el("p","", "Planned: "+dollars(report.planned_savings_cents)));savings.appendChild(el("p","", "Funded after obligations and buffer: "+dollars(report.funded_savings_cents)));savings.appendChild(el("p","", "Not covered by this forecast: "+dollars(report.savings_shortfall_cents)));savings.appendChild(el("p","muted","Contributions are estimated from active savings goals and distinct scheduled payday dates."));
 renderList("notes",report.notes,"No additional assumptions.",(li,note)=>li.appendChild(el("div","detail",note)));
+renderList("future-forecast",report.future_forecast,"No future weeks included in this forecast.",(li,x)=>{
+  li.appendChild(el("div","item-title",x.start_date+" to "+x.end_date+" · ending cash "+dollars(x.projected_ending_cash_cents)));
+  li.appendChild(el("div","detail","Starting cash "+dollars(x.starting_cash_cents)+" · income "+dollars(x.expected_income_cents+x.recorded_income_cents)+" · bills "+dollars(x.bills_due_cents)+" · minimum debt "+dollars(x.minimum_debt_payments_cents)));
+  if(x.buffer_shortfall_cents>0)li.appendChild(el("div","detail","Buffer shortfall: "+dollars(x.buffer_shortfall_cents)));
+}); 
 }
 function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 const today=new Date();document.getElementById("start").value=iso(today);const end=new Date(today);end.setDate(end.getDate()+6);document.getElementById("end").value=iso(end);

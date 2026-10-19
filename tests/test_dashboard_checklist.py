@@ -97,6 +97,8 @@ def test_checklist_validation_and_page(tmp_path, monkeypatch):
     page = client.get("/checklist")
     assert page.status_code == 200
     assert "Payday Checklist" in page.text
+    assert 'id="checklist-pagination"' in page.text
+    assert "const PAGE_SIZE=10" in page.text
 
 
 def test_dashboard_summarizes_saved_household_and_plan(tmp_path, monkeypatch):

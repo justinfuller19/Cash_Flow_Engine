@@ -193,3 +193,113 @@ def test_weekly_report_page_and_dashboard_summary_are_available(tmp_path, monkey
     assert 'id="weekly-summary"' in dashboard.text
     assert 'href="/weekly"' in dashboard.text
     assert 'id="weekly-category-spending"' in dashboard.text
+
+
+
+def test_future_rent_reserves_current_surplus_and_flags_buffer_shortfall(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 20000 WHERE id = 1"
+        )
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, next_due_date, flexible_window_days, active,
+                category, frequency, autopay)
+               VALUES ('Rent', 90000, '2026-10-26', 0, 1, 'housing', 'monthly', 0)"""
+        )
+
+    response = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": "2026-10-19", "end_date": "2026-10-25", "forecast_weeks": 2},
+    )
+    assert response.status_code == 200, response.text
+    report = response.json()
+
+    # Without lookahead, this week would incorrectly show $800 as spendable.
+    assert report["free_to_spend_before_future_reserve_cents"] == 80000
+    # Next week's $900 rent leaves only $100, below the $200 household buffer.
+    assert report["future_forecast"][0]["starting_cash_cents"] == 100000
+    assert report["future_forecast"][0]["projected_ending_cash_cents"] == 10000
+    assert report["future_forecast"][0]["buffer_shortfall_cents"] == 10000
+    assert report["future_buffer_shortfall_cents"] == 10000
+    assert report["free_to_spend_cents"] == 0
+    assert report["extra_debt_payoff_capacity_cents"] == 0
+    assert report["future_buffer_reservation_cents"] == 80000
+
+
+def test_future_forecast_carries_ending_cash_and_limits_safe_spending(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 150000, buffer_target_cents = 20000 WHERE id = 1"
+        )
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, next_due_date, flexible_window_days, active,
+                category, frequency, autopay)
+               VALUES ('Rent', 90000, '2026-10-26', 0, 1, 'housing', 'monthly', 0)"""
+        )
+
+    response = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": "2026-10-19", "end_date": "2026-10-25", "forecast_weeks": 2},
+    )
+    assert response.status_code == 200, response.text
+    report = response.json()
+
+    # $1,500 cash less $900 rent leaves $600; only $400 is above the buffer.
+    assert report["future_forecast"][0]["starting_cash_cents"] == 150000
+    assert report["future_forecast"][0]["projected_ending_cash_cents"] == 60000
+    assert report["free_to_spend_cents"] == 40000
+    assert report["future_buffer_reservation_cents"] == 90000
+
+
+def test_early_linked_paycheck_within_seven_days_is_not_double_counted(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    scheduled_payday = date(2026, 10, 24)
+    recorded_payday = scheduled_payday - timedelta(days=5)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 0, buffer_target_cents = 0 WHERE id = 1"
+        )
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        income_id = db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Paycheck', 50000, 'weekly', ?, 1)""",
+            (person_id, scheduled_payday.isoformat()),
+        ).lastrowid
+
+    response = client.post("/api/transactions", json={
+        "transaction_date": recorded_payday.isoformat(),
+        "transaction_type": "income",
+        "linked_obligation_type": "income",
+        "linked_obligation_id": income_id,
+        "category": "paychecks",
+        "description": "Paycheck received early",
+        "amount_cents": 50000,
+    })
+    assert response.status_code == 201, response.text
+
+    response = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": recorded_payday.isoformat(),
+                "end_date": (recorded_payday + timedelta(days=6)).isoformat(),
+                "forecast_weeks": 1},
+    )
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["recorded_income_cents"] == 50000
+    assert report["expected_income_cents"] == 0
+    assert report["covered_income"][0]["covered_by_transaction_id"]
+
+
+def test_dashboard_explains_future_buffer_reservation(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "future_buffer_reservation_cents" in response.text
+    assert "reserved for upcoming bills to protect the household buffer." in response.text

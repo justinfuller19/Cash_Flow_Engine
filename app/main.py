@@ -187,6 +187,8 @@ if(!topCategories.length)categoryRoot.appendChild(el("li","muted","No recorded e
 else for(const item of topCategories){const li=el("li","");li.appendChild(el("div","item-title",item.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(item.amount_cents)));categoryRoot.appendChild(li);}
 if(weekly.projected_shortfall_cents>0)root.appendChild(el("div","detail","Warning: projected shortfall "+dollars(weekly.projected_shortfall_cents)));
 else if(weekly.buffer_shortfall_cents>0)root.appendChild(el("div","detail","Warning: buffer short by "+dollars(weekly.buffer_shortfall_cents)));
+else if(weekly.future_buffer_shortfall_cents>0)root.appendChild(el("div","detail","Warning: future weeks would fall below the household buffer by up to "+dollars(weekly.future_buffer_shortfall_cents)+". Safe-to-spend is reduced to $0 until the gap is addressed."));
+else if(weekly.future_buffer_reservation_cents>0)root.appendChild(el("div","detail",dollars(weekly.future_buffer_reservation_cents)+" reserved for upcoming bills to protect the household buffer."));
 }catch(error){document.getElementById("weekly-summary").textContent="Weekly forecast unavailable: "+error.message;}
 }
 load().catch(e=>{statusBox.textContent=e.message;statusBox.classList.add("error");statusBox.hidden=false;});
