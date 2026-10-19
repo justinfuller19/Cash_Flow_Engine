@@ -1,8 +1,10 @@
 # Buffer-Aware Cash-Flow Forecast and Pagination Requirements
 
-This document records the agreed behavior for the next cash-flow planning increment. It is an acceptance specification, not a claim that the full multi-week buffer forecast is already implemented.
+This document records the implemented behavior and acceptance criteria for the buffer-aware cash-flow forecast and pagination. The API calculates a default 13-week horizon (configurable from 1 to 52 weeks), carries each week's ending balance forward, and limits current safe-to-spend to the lowest projected ending balance above the shared buffer.
 
 ## Cash-flow engine rules
+
+The weekly cash-flow endpoint now returns the selected period plus `future_forecast` entries, `lowest_projected_cash_cents`, `future_buffer_shortfall_cents`, `future_buffer_reservation_cents`, and a lookahead-adjusted `free_to_spend_cents`. The weekly report displays the upcoming weeks and warnings. Recalculations use saved schedules and transactions at request time.
 
 1. **Forecast the full planning horizon.** Evaluate dated expected income, bills, minimum debt payments, recorded transactions, and savings contributions for every week in the configured horizon, not only the currently displayed week.
 2. **Carry balances forward.** Each period's projected ending cash becomes the next period's starting cash. Reconcile a scheduled item with a linked actual transaction once only; transfers between household accounts are cash-neutral.
