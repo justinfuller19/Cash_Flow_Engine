@@ -205,7 +205,7 @@ button:disabled{opacity:.55}.status{padding:12px;border-radius:9px;background:#e
 </style></head><body><main><a href="/">← Dashboard</a><h1>Payday Checklist</h1>
 <p class="muted">Record what you actually completed. Saving a status or actual amount only updates your records; it never sends a payment.</p>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
-<section class="card"><div id="items">Loading checklist…</div></section></main>
+<section class="card"><div id="items">Loading checklist…</div><nav id="checklist-pagination" aria-label="Checklist pages" class="controls"></nav></section></main>
 <script>
 const box=document.getElementById("status");
 function message(text,error=false){box.textContent=text;box.classList.toggle("error",error);box.hidden=false;}
@@ -213,12 +213,18 @@ function dollars(cents){return new Intl.NumberFormat(undefined,{style:"currency"
 function cents(value){if(value==="")return null;const n=Number(value);if(!Number.isFinite(n)||n<0)throw Error("Actual amount must be non-negative.");return Math.round((n+Number.EPSILON)*100);}
 async function api(url,options={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...options});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"Please check your entries.");return d;}
 function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;n.textContent=txt;return n;}
-async function refresh(){const items=await api("/api/checklist");const root=document.getElementById("items");root.replaceChildren();if(!items.length){root.appendChild(el("p","muted","Nothing needs attention right now. Generate a payday plan to create a checklist."));return;}
-for(const item of items){const card=el("div","item","");card.appendChild(el("div","title",item.name+" · planned "+dollars(item.funded_cents)));
+const PAGE_SIZE=10;let checklistItems=[];let checklistPage=1;
+function renderChecklistPage(){const root=document.getElementById("items");const nav=document.getElementById("checklist-pagination");root.replaceChildren();nav.replaceChildren();if(!checklistItems.length){root.appendChild(el("p","muted","Nothing needs attention right now. Generate a payday plan to create a checklist."));return;}
+const pageCount=Math.ceil(checklistItems.length/PAGE_SIZE);checklistPage=Math.min(checklistPage,pageCount);const start=(checklistPage-1)*PAGE_SIZE;
+for(const item of checklistItems.slice(start,start+PAGE_SIZE)){const card=el("div","item","");card.appendChild(el("div","title",item.name+" · planned "+dollars(item.funded_cents)));
 card.appendChild(el("div","detail",item.category+" · plan "+item.plan_period_start+" to "+item.plan_period_end+(item.due_date?" · due "+item.due_date:"")+(item.unfunded_cents?" · planned shortfall "+dollars(item.unfunded_cents):"")));
 const controls=el("div","controls","");const statusWrap=el("div","","");const statusLabel=el("label","","Status");const status=document.createElement("select");statusLabel.appendChild(status);for(const value of ["pending","completed","skipped","attention"]){const option=document.createElement("option");option.value=value;option.textContent=value[0].toUpperCase()+value.slice(1);status.appendChild(option);}status.value=item.status;statusWrap.appendChild(statusLabel);controls.appendChild(statusWrap);
 const amountWrap=el("div","","");const amountLabel=el("label","","Actual amount ($)");const amount=document.createElement("input");amount.type="number";amount.min="0";amount.step="0.01";amount.placeholder="Optional";amount.value=item.actual_amount_cents===null?"":(item.actual_amount_cents/100).toFixed(2);amountLabel.appendChild(amount);amountWrap.appendChild(amountLabel);controls.appendChild(amountWrap);
 const dateWrap=el("div","","");const dateLabel=el("label","","Actual date");const actualDate=document.createElement("input");actualDate.type="date";actualDate.value=item.actual_date||"";dateLabel.appendChild(actualDate);dateWrap.appendChild(dateLabel);controls.appendChild(dateWrap);
-const save=el("button","","Save action");save.type="button";save.addEventListener("click",async()=>{save.disabled=true;try{const actual=cents(amount.value);await api("/api/plan-items/"+item.id,{method:"PATCH",body:JSON.stringify({status:status.value,actual_amount_cents:actual,actual_date:actualDate.value||null})});await refresh();message("Checklist action saved.");}catch(e){message(e.message,true);save.disabled=false;}});controls.appendChild(save);card.appendChild(controls);root.appendChild(card);}}
+const save=el("button","","Save action");save.type="button";save.addEventListener("click",async()=>{save.disabled=true;try{const actual=cents(amount.value);await api("/api/plan-items/"+item.id,{method:"PATCH",body:JSON.stringify({status:status.value,actual_amount_cents:actual,actual_date:actualDate.value||null})});await refresh();message("Checklist action saved.");}catch(e){message(e.message,true);save.disabled=false;}});controls.appendChild(save);card.appendChild(controls);root.appendChild(card);}
+const previous=el("button","","Previous");previous.type="button";previous.disabled=checklistPage===1;previous.addEventListener("click",()=>{checklistPage--;renderChecklistPage();});nav.appendChild(previous);
+nav.appendChild(el("span","detail","Page "+checklistPage+" of "+pageCount+" · "+checklistItems.length+" actions"));
+const next=el("button","","Next");next.type="button";next.disabled=checklistPage===pageCount;next.addEventListener("click",()=>{checklistPage++;renderChecklistPage();});nav.appendChild(next);}
+async function refresh(){checklistItems=await api("/api/checklist");renderChecklistPage();}
 refresh().catch(e=>message("Could not load checklist: "+e.message,true));
 </script></body></html>"""
