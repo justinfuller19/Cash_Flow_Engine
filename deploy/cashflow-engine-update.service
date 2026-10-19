@@ -8,5 +8,6 @@ Type=oneshot
 User=root
 Group=root
 WorkingDirectory=/opt/cashflow-engine
+EnvironmentFile=-/etc/cashflow-engine.env
 ExecStart=/opt/cashflow-engine/scripts/update_application.sh
 TimeoutStartSec=900
