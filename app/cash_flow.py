@@ -66,7 +66,7 @@ def _take_matching_transaction(
 def weekly_cash_flow(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
-    forecast_weeks: int = Query(default=13, ge=1, le=52),
+    forecast_weeks: int = 13,
 ):
     """Forecast the selected window and reserve cash for later weeks' obligations."""
     start = start_date or date.today()
@@ -75,6 +75,8 @@ def weekly_cash_flow(
         raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
     if (end - start).days > 30:
         raise HTTPException(status_code=422, detail="Cash-flow forecast window cannot exceed 31 days")
+    if isinstance(forecast_weeks, bool) or not isinstance(forecast_weeks, int) or not 1 <= forecast_weeks <= 52:
+        raise HTTPException(status_code=422, detail="forecast_weeks must be between 1 and 52")
 
     report = _weekly_cash_flow_for_window(start, end)
     buffer_target = report["buffer_target_cents"]
@@ -194,7 +196,7 @@ def _weekly_cash_flow_for_window(
         for item in income_occurrences:
             match = _take_matching_transaction(
                 all_transactions, used_transactions, "income", item["source_id"],
-                date.fromisoformat(item["date"]), 7,
+                date.fromisoformat(item["date"]), 3,
             )
             if match:
                 covered_income.append({
