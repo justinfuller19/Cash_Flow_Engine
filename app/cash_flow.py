@@ -190,13 +190,48 @@ def _weekly_cash_flow_for_window(
                     "amount_cents": row["net_amount_cents"],
                 })
         income_occurrences.sort(key=lambda item: (item["date"], item["name"]))
+        income_schedules = {
+            row["id"]: (date.fromisoformat(row["next_payday"]), row["frequency"])
+            for row in rows
+        }
         used_transactions: set[int] = set()
         expected_income = []
         covered_income = []
         for item in income_occurrences:
+            due_date = date.fromisoformat(item["date"])
+            anchor, frequency = income_schedules[item["source_id"]]
+
+            # A linked paycheck may be recorded up to seven days early or late,
+            # but it must cover the closest scheduled occurrence for that source.
+            # Otherwise a paycheck from last week could suppress this week's
+            # expected income when the paydays are exactly seven days apart.
+            eligible_transactions = []
+            for transaction in all_transactions:
+                if (
+                    transaction["linked_obligation_type"] != "income"
+                    or transaction["linked_obligation_id"] != item["source_id"]
+                    or transaction["id"] in used_transactions
+                ):
+                    continue
+                transaction_date = date.fromisoformat(transaction["transaction_date"])
+                if not _within_window(transaction_date, due_date, 7):
+                    continue
+                nearby_paydays = occurrences_between(
+                    anchor, frequency,
+                    transaction_date - timedelta(days=7),
+                    transaction_date + timedelta(days=7),
+                )
+                if nearby_paydays:
+                    nearest_payday = min(
+                        nearby_paydays,
+                        key=lambda payday: (abs((payday - transaction_date).days), payday),
+                    )
+                    if nearest_payday == due_date:
+                        eligible_transactions.append(transaction)
+
             match = _take_matching_transaction(
-                all_transactions, used_transactions, "income", item["source_id"],
-                date.fromisoformat(item["date"]), 7,
+                eligible_transactions, used_transactions, "income", item["source_id"],
+                due_date, 7,
             )
             if match:
                 covered_income.append({
