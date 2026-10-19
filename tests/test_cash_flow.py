@@ -211,7 +211,7 @@ def test_future_rent_reserves_current_surplus_and_flags_buffer_shortfall(tmp_pat
 
     response = client.get(
         "/api/cash-flow/weekly",
-        params={"start_date": "2026-10-19", "end_date": "2026-10-25"},
+        params={"start_date": "2026-10-19", "end_date": "2026-10-25", "forecast_weeks": 2},
     )
     assert response.status_code == 200, response.text
     report = response.json()
