@@ -253,3 +253,51 @@ def test_future_forecast_carries_ending_cash_and_limits_safe_spending(tmp_path, 
     assert report["future_forecast"][0]["projected_ending_cash_cents"] == 60000
     assert report["free_to_spend_cents"] == 40000
     assert report["future_buffer_reservation_cents"] == 90000
+
+
+def test_early_linked_paycheck_within_seven_days_is_not_double_counted(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    scheduled_payday = date(2026, 10, 24)
+    recorded_payday = scheduled_payday - timedelta(days=5)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 0, buffer_target_cents = 0 WHERE id = 1"
+        )
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        income_id = db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Paycheck', 50000, 'weekly', ?, 1)""",
+            (person_id, scheduled_payday.isoformat()),
+        ).lastrowid
+
+    response = client.post("/api/transactions", json={
+        "transaction_date": recorded_payday.isoformat(),
+        "transaction_type": "income",
+        "linked_obligation_type": "income",
+        "linked_obligation_id": income_id,
+        "category": "paychecks",
+        "description": "Paycheck received early",
+        "amount_cents": 50000,
+    })
+    assert response.status_code == 201, response.text
+
+    response = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": recorded_payday.isoformat(),
+                "end_date": (recorded_payday + timedelta(days=6)).isoformat(),
+                "forecast_weeks": 1},
+    )
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["recorded_income_cents"] == 50000
+    assert report["expected_income_cents"] == 0
+    assert report["covered_income"][0]["covered_by_transaction_id"]
+
+
+def test_dashboard_explains_future_buffer_reservation():
+    from app.main import dashboard
+
+    assert 'future_buffer_reservation_cents' in dashboard
