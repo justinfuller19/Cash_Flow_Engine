@@ -193,3 +193,63 @@ def test_weekly_report_page_and_dashboard_summary_are_available(tmp_path, monkey
     assert 'id="weekly-summary"' in dashboard.text
     assert 'href="/weekly"' in dashboard.text
     assert 'id="weekly-category-spending"' in dashboard.text
+
+
+
+def test_future_rent_reserves_current_surplus_and_flags_buffer_shortfall(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 20000 WHERE id = 1"
+        )
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, next_due_date, flexible_window_days, active,
+                category, frequency, autopay)
+               VALUES ('Rent', 90000, '2026-10-26', 0, 1, 'housing', 'monthly', 0)"""
+        )
+
+    response = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": "2026-10-19", "end_date": "2026-10-25"},
+    )
+    assert response.status_code == 200, response.text
+    report = response.json()
+
+    # Without lookahead, this week would incorrectly show $800 as spendable.
+    assert report["free_to_spend_before_future_reserve_cents"] == 80000
+    # Next week's $900 rent leaves only $100, below the $200 household buffer.
+    assert report["future_forecast"][0]["starting_cash_cents"] == 100000
+    assert report["future_forecast"][0]["projected_ending_cash_cents"] == 10000
+    assert report["future_forecast"][0]["buffer_shortfall_cents"] == 10000
+    assert report["future_buffer_shortfall_cents"] == 10000
+    assert report["free_to_spend_cents"] == 0
+    assert report["extra_debt_payoff_capacity_cents"] == 0
+    assert report["future_buffer_reservation_cents"] == 80000
+
+
+def test_future_forecast_carries_ending_cash_and_limits_safe_spending(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 150000, buffer_target_cents = 20000 WHERE id = 1"
+        )
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, next_due_date, flexible_window_days, active,
+                category, frequency, autopay)
+               VALUES ('Rent', 90000, '2026-10-26', 0, 1, 'housing', 'monthly', 0)"""
+        )
+
+    response = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": "2026-10-19", "end_date": "2026-10-25", "forecast_weeks": 2},
+    )
+    assert response.status_code == 200, response.text
+    report = response.json()
+
+    # $1,500 cash less $900 rent leaves $600; only $400 is above the buffer.
+    assert report["future_forecast"][0]["starting_cash_cents"] == 150000
+    assert report["future_forecast"][0]["projected_ending_cash_cents"] == 60000
+    assert report["free_to_spend_cents"] == 40000
+    assert report["future_buffer_reservation_cents"] == 90000
