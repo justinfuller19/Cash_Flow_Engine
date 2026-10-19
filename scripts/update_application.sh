@@ -11,6 +11,11 @@ readonly APP_SERVICE="cashflow-engine.service"
 previous_sha=""
 app_stopped=0
 
+# Keep credentials available for the authenticated health check only.
+health_username="${CASHFLOW_USERNAME:-}"
+health_password="${CASHFLOW_PASSWORD:-}"
+unset CASHFLOW_USERNAME CASHFLOW_PASSWORD
+
 write_status() {
   local state="$1"
   local message="$2"
@@ -78,7 +83,7 @@ systemctl start "$APP_SERVICE"
 app_stopped=0
 
 health_check() {
-  "$INSTALL_DIR/.venv/bin/python" - <<'PY'
+  CASHFLOW_USERNAME="$health_username" CASHFLOW_PASSWORD="$health_password" "$INSTALL_DIR/.venv/bin/python" - <<'PY'
 import base64
 import os
 import urllib.error
