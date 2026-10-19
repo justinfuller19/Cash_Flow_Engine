@@ -196,7 +196,7 @@ def _weekly_cash_flow_for_window(
         for item in income_occurrences:
             match = _take_matching_transaction(
                 all_transactions, used_transactions, "income", item["source_id"],
-                date.fromisoformat(item["date"]), 3,
+                date.fromisoformat(item["date"]), 7,
             )
             if match:
                 covered_income.append({
