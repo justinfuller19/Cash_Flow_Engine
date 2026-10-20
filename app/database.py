@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 
 def base_database_path() -> Path:
@@ -170,6 +170,7 @@ def initialize_database() -> None:
                 starting_cash_cents INTEGER NOT NULL CHECK(starting_cash_cents >= 0),
                 debt_strategy TEXT NOT NULL CHECK(debt_strategy IN ('avalanche', 'snowball')),
                 status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'active', 'completed', 'cancelled')),
+                is_auto_generated INTEGER NOT NULL DEFAULT 0 CHECK(is_auto_generated IN (0, 1)),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 CHECK(period_end >= period_start)
             );
@@ -459,5 +460,19 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_surplus_allocations_status_date "
             "ON surplus_allocations(status, allocation_date)"
+        )
+
+    if version < 13:
+        # Distinguish automatically generated weekly checklists from manually
+        # created plans while retaining all existing plan history.
+        plan_columns = {row["name"] for row in db.execute("PRAGMA table_info(payday_plans)")}
+        if "is_auto_generated" not in plan_columns:
+            db.execute(
+                "ALTER TABLE payday_plans ADD COLUMN is_auto_generated INTEGER NOT NULL "
+                "DEFAULT 0 CHECK(is_auto_generated IN (0, 1))"
+            )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_auto_weekly_plans "
+            "ON payday_plans(is_auto_generated, period_start, period_end, status)"
         )
 
