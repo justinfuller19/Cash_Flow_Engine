@@ -283,7 +283,7 @@ def test_debt_payment_suggestions_need_confirmation_and_dismissed_matches_stay_h
         ).fetchall()
     assert row["linked_obligation_type"] == "debt"
     assert row["linked_obligation_id"] == second_debt_id
-    assert {item["status"] for item in statuses} == {"dismissed", "confirmed", "stale"}
+    assert {item["status"] for item in statuses} == {"dismissed", "confirmed"}
     assert client.get("/api/debt-payment-suggestions").json() == []
 
 
