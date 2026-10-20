@@ -77,6 +77,9 @@ def _take_matching_transactions(
         item for item in transactions
         if item["id"] not in used_ids
         and item["transaction_type"] == "expense"
+        # Surplus-allocation debt payments are linked for traceability but are
+        # extra principal reductions, not minimum-payment credits.
+        and not (link_type == "debt" and item["category"] == "debt payment")
         and item["linked_obligation_type"] == link_type
         and item["linked_obligation_id"] == link_id
         and _within_window(date.fromisoformat(item["transaction_date"]), due_date, window_days)
@@ -698,14 +701,16 @@ def record_allocated_debt_payment(allocation_id: int, body: DebtPaymentRecord):
             raise HTTPException(status_code=404, detail="Target debt no longer exists")
         cursor = db.execute(
             """INSERT INTO transactions
-               (transaction_date, category, transaction_type, description, amount_cents, notes)
-               VALUES (?, 'debt payment', 'expense', ?, ?, ?)""",
-            (body.transaction_date.isoformat(),
+               (transaction_date, category, transaction_type,
+                linked_obligation_type, linked_obligation_id,
+                description, amount_cents, notes)
+               VALUES (?, 'debt payment', 'expense', 'debt', ?, ?, ?, ?)""",
+            (body.transaction_date.isoformat(), debt["id"],
              body.description.strip() or ("Extra payment toward " + debt["name"]),
              body.actual_amount_cents,
              "Extra debt snowball payment for " + debt["name"] +
              "; recorded from surplus allocation #" + str(allocation_id) +
-             ". Kept separate from minimum-payment matching."),
+             ". Linked to this debt for traceability; excluded from minimum-payment matching."),
         )
         transaction_id = cursor.lastrowid
         db.execute(
