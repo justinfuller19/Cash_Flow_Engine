@@ -25,20 +25,20 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 1 — Starting cash snapshots
 
 **Priority:** Critical  
-**Status:** Not started
+**Status:** In progress — PR #35 (not merged)
 
-- [ ] Define starting cash as a confirmed household balance effective at the start of a specified financial week.
-- [ ] Track the effective financial-week start and last-confirmed timestamp; preserve history where needed for historical reports.
-- [ ] Add a dashboard/weekly-report control: **“Set cash on hand as of [week start]”.**
-- [ ] Show the previous confirmed amount, effective date, and last-confirmed date.
-- [ ] Apply transactions after the snapshot exactly once; do not reapply transactions already reflected in a confirmed balance.
-- [ ] Ensure new snapshots do not silently rewrite historical transactions or prior reports.
+- [x] Define starting cash as a confirmed household balance effective at the start of a specified financial week.
+- [x] Track the effective financial-week start and last-confirmed timestamp; preserve history where needed for historical reports.
+- [ ] Add a dashboard/weekly-report control: **“Set cash on hand as of [week start]”.** (A dated control is currently available in Household & income setup; dashboard/weekly-report editing remains open.)
+- [x] Show the previous confirmed amount, effective date, and last-confirmed date in Household & income setup.
+- [ ] Apply transactions after the snapshot exactly once; do not reapply transactions already reflected in a confirmed balance. (Snapshot selection is wired into period forecasts; transaction-boundary regression coverage remains open.)
+- [x] Ensure new snapshots do not silently rewrite historical transactions or prior reports; snapshots are versioned by effective week and prior snapshots are retained.
 - [ ] Optionally suggest a balance from the previous snapshot and known transactions; label it estimated and require explicit confirmation.
 - [ ] Add first-run guidance for establishing the initial cash balance.
-- [ ] Warn when the balance has not been confirmed in more than 10 days; centralize/configure the threshold.
-- [ ] Add safe schema migration and migration tests that preserve existing starting-cash settings and financial records.
-- [ ] Test exact before-and-after cash values, transaction boundaries, and multi-week safe-to-spend.
-- [ ] Update UI and `/api/cash-flow/weekly` notes to explain the balance and transaction period used.
+- [x] Warn when the balance has not been confirmed in more than 10 days; centralize/configure the threshold. (Threshold is currently 10 days and still needs central configuration.)
+- [x] Add safe schema migration and migration tests that preserve existing starting-cash settings and financial records.
+- [ ] Test exact before-and-after cash values, transaction boundaries, and multi-week safe-to-spend. (Exact snapshot values and historical-week selection are covered; transaction-boundary and multi-week safe-to-spend cases remain open.)
+- [x] Update UI and `/api/cash-flow/weekly` notes to explain the balance and transaction period used.
 
 **Acceptance criteria**
 
@@ -226,7 +226,8 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 
 Record meaningful implementation updates here. Each entry should include date, phase, PR/commit reference, tests run, and remaining work.
 
-- **2026-10-20 — Roadmap created:** Defined three milestones and eight phases. No application behavior changed by this documentation alone. Implementation remains pending.
+- **2026-10-20 — Roadmap created:** Defined three milestones and eight phases. No application behavior changed by this documentation alone. Implementation remained pending at that point.
+- **2026-10-20 — Phase 1 implementation started (PR #35):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, a dated Household & income control, and regression tests for snapshot persistence, history, migration, and stale warnings. Validation is pending GitHub Actions; transaction-boundary and multi-week safe-to-spend tests, first-run guidance, estimated balance suggestions, and dashboard/weekly editing remain open. This PR is not merged or deployed.
 
 ## Implementation / release rules
 
