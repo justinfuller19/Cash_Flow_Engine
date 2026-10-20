@@ -14,7 +14,10 @@ def seed_planned_household(tmp_path, monkeypatch):
     today = date.today()
     iso = lambda value: value.isoformat()
     person = client.post("/api/people", json={"name": "Member"}).json()
-    client.patch("/api/household/settings", json={"buffer_target_cents": 10000})
+    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    client.patch("/api/household/settings", json={
+        "buffer_target_cents": 10000, "financial_week_start": weekdays[today.weekday()]
+    })
     client.post(
         "/api/income-sources",
         json={
@@ -72,13 +75,35 @@ def test_checklist_records_status_actual_amount_and_date(tmp_path, monkeypatch):
     assert updated["actual_amount_cents"] == 9000
     assert updated["actual_date"] == today.isoformat()
 
-    assert len(client.get("/api/checklist").json()) == 4
+    assert len(client.get("/api/checklist").json()) == 3
     auto_plan = next(p for p in client.get("/api/plans").json() if p.get("is_auto_generated"))
     saved = client.get(f"/api/plans/{auto_plan['id']}").json()
     saved_item = next(row for row in saved["items"] if row["id"] == item["id"])
     assert saved_item["is_completed"] is True
     assert saved_item["status"] == "completed"
     assert saved_item["actual_amount_cents"] == 9000
+
+
+def test_checklist_savings_actual_updates_goal_and_carryover_history(tmp_path, monkeypatch):
+    client, _, today = seed_planned_household(tmp_path, monkeypatch)
+    checklist = client.get("/api/checklist").json()
+    savings_item = next(item for item in checklist if item["category"] == "savings")
+    response = client.patch(
+        f"/api/plan-items/{savings_item['id']}",
+        json={"status": "completed", "actual_amount_cents": 4000, "actual_date": today.isoformat()},
+    )
+    assert response.status_code == 200, response.text
+    with database.connect() as db:
+        goal = db.execute("SELECT current_balance_cents FROM savings_goals WHERE name = 'Emergency fund'").fetchone()
+        transactions = db.execute(
+            "SELECT COUNT(*) FROM transactions WHERE category = 'savings contribution'"
+        ).fetchone()[0]
+        allocations = db.execute(
+            "SELECT COUNT(*) FROM surplus_allocations WHERE allocation_type = 'savings' AND status = 'recorded'"
+        ).fetchone()[0]
+    assert goal["current_balance_cents"] == 4000
+    assert transactions == 1
+    assert allocations == 1
 
 
 def test_checklist_validation_and_page(tmp_path, monkeypatch):
