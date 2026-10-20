@@ -212,3 +212,118 @@ def test_category_deletion_requires_same_type_replacement_and_keeps_other(tmp_pa
         f"/api/categories/{other['id']}",
         json={"replacement_category_id": category["id"]},
     ).status_code == 422
+
+
+
+def test_debt_payment_suggestions_need_confirmation_and_dismissed_matches_stay_hidden(
+    tmp_path, monkeypatch
+):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    with database.connect() as db:
+        first_debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active, next_due_date)
+               VALUES ('Visa Card', 50000, 5000, ?, 19.9, 1, ?)""",
+            (today.day, today.isoformat()),
+        ).lastrowid
+        second_debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active, next_due_date)
+               VALUES ('Auto Loan', 90000, 12000, ?, 8.9, 1, ?)""",
+            (today.day, today.isoformat()),
+        ).lastrowid
+
+    transaction = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today.isoformat(),
+            "transaction_type": "expense",
+            "category": "debt",
+            "description": "Debt payment",
+            "amount_cents": -5000,
+        },
+    )
+    assert transaction.status_code == 201, transaction.text
+    transaction_id = transaction.json()["id"]
+
+    suggestions = client.get("/api/debt-payment-suggestions")
+    assert suggestions.status_code == 200, suggestions.text
+    candidates = suggestions.json()
+    assert {item["debt_id"] for item in candidates} == {first_debt_id, second_debt_id}
+    assert all(item["confidence"] == "review" for item in candidates)
+    assert all("Confirm only" in item["reason"] for item in candidates)
+    with database.connect() as db:
+        row = db.execute(
+            "SELECT linked_obligation_type, linked_obligation_id FROM transactions WHERE id = ?",
+            (transaction_id,),
+        ).fetchone()
+    assert row["linked_obligation_type"] is None
+    assert row["linked_obligation_id"] is None
+
+    dismissed = next(item for item in candidates if item["debt_id"] == first_debt_id)
+    assert client.post(
+        f"/api/debt-payment-suggestions/{dismissed['id']}/dismiss"
+    ).json()["status"] == "dismissed"
+    remaining = client.get("/api/debt-payment-suggestions").json()
+    assert [item["debt_id"] for item in remaining] == [second_debt_id]
+
+    chosen = remaining[0]
+    confirmed = client.post(f"/api/debt-payment-suggestions/{chosen['id']}/confirm")
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["status"] == "confirmed"
+    with database.connect() as db:
+        row = db.execute(
+            "SELECT linked_obligation_type, linked_obligation_id FROM transactions WHERE id = ?",
+            (transaction_id,),
+        ).fetchone()
+        statuses = db.execute(
+            "SELECT status FROM debt_payment_match_suggestions WHERE transaction_id = ?",
+            (transaction_id,),
+        ).fetchall()
+    assert row["linked_obligation_type"] == "debt"
+    assert row["linked_obligation_id"] == second_debt_id
+    assert {item["status"] for item in statuses} == {"dismissed", "confirmed"}
+    assert client.get("/api/debt-payment-suggestions").json() == []
+
+
+def test_dismissed_debt_match_can_reappear_after_transaction_data_changes(
+    tmp_path, monkeypatch
+):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    with database.connect() as db:
+        debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active, next_due_date)
+               VALUES ('Store Card', 30000, 4000, ?, 24.9, 1, ?)""",
+            (today.day, today.isoformat()),
+        ).lastrowid
+    transaction = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today.isoformat(),
+            "transaction_type": "expense",
+            "category": "debt",
+            "description": "Debt payment",
+            "amount_cents": -4000,
+        },
+    ).json()
+    suggestion = next(
+        item for item in client.get("/api/debt-payment-suggestions").json()
+        if item["debt_id"] == debt_id
+    )
+    assert client.post(
+        f"/api/debt-payment-suggestions/{suggestion['id']}/dismiss"
+    ).status_code == 200
+    assert client.get("/api/debt-payment-suggestions").json() == []
+
+    changed = client.patch(
+        f"/api/transactions/{transaction['id']}",
+        json={"description": "Store Card payment"},
+    )
+    assert changed.status_code == 200, changed.text
+    refreshed = client.get("/api/debt-payment-suggestions").json()
+    assert len(refreshed) == 1
+    assert refreshed[0]["debt_id"] == debt_id
+    assert refreshed[0]["confidence"] == "high"

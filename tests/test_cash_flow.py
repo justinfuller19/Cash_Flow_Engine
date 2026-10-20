@@ -344,8 +344,9 @@ def test_safe_surplus_allocation_is_reserved_and_can_be_cancelled(tmp_path, monk
         )
         debt_id = db.execute(
             """INSERT INTO credit_cards
-               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active)
-               VALUES ('Smallest card', 50000, 5000, 25, 19.9, 1)"""
+               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active, next_due_date)
+               VALUES ('Smallest card', 50000, 5000, 25, 19.9, 1, ?)""",
+            (date.today().isoformat(),),
         ).lastrowid
 
     before = client.get("/api/cash-flow/weekly").json()
@@ -380,8 +381,9 @@ def test_record_actual_debt_payment_updates_balance_and_transaction_ledger(tmp_p
         )
         debt_id = db.execute(
             """INSERT INTO credit_cards
-               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active)
-               VALUES ('Smallest card', 50000, 5000, 25, 19.9, 1)"""
+               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active, next_due_date)
+               VALUES ('Smallest card', 50000, 5000, 25, 19.9, 1, ?)""",
+            (date.today().isoformat(),),
         ).lastrowid
 
     allocation = client.post(
@@ -405,9 +407,19 @@ def test_record_actual_debt_payment_updates_balance_and_transaction_ledger(tmp_p
         ).fetchone()
     assert debt["balance_cents"] == 42000
     assert transaction["transaction_type"] == "expense"
-    assert transaction["linked_obligation_type"] is None
-    assert transaction["linked_obligation_id"] is None
+    assert transaction["linked_obligation_type"] == "debt"
+    assert transaction["linked_obligation_id"] == debt_id
     assert transaction["amount_cents"] == 8000
+
+    # The debt link improves traceability, but an extra principal payment must
+    # not satisfy the scheduled minimum-payment cycle.
+    report = client.get("/api/cash-flow/weekly", params={
+        "start_date": date.today().isoformat(),
+        "end_date": (date.today() + timedelta(days=6)).isoformat(),
+    }).json()
+    minimum = next(item for item in report["minimum_debt_payments"] if item["id"] == debt_id)
+    assert minimum["qualifying_payments_cents"] == 0
+    assert minimum["amount_cents"] == 5000
 
 def test_surplus_allocation_rejects_amount_above_safe_forecast(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
@@ -714,3 +726,38 @@ def test_debt_payment_link_does_not_cover_another_debt_or_wrong_cycle(tmp_path, 
     assert debts["Linked card"]["qualifying_payments_cents"] == 0
     assert debts["Other card"]["amount_cents"] == 8000
     assert debts["Other card"]["qualifying_payments_cents"] == 0
+
+
+
+def test_user_category_named_debt_payment_can_cover_minimum(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    start = date(2026, 10, 19)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 0 WHERE id = 1"
+        )
+        debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                apr_percent, active, next_due_date)
+               VALUES ('User-category card', 50000, 5000, 21, 19.9, 1, ?)""",
+            ((start + timedelta(days=2)).isoformat(),),
+        ).lastrowid
+        db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, linked_obligation_type,
+                linked_obligation_id, description, amount_cents, notes)
+               VALUES (?, 'debt payment', 'expense', 'debt', ?, 'Card minimum payment', -5000,
+                       'Manually recorded minimum payment')""",
+            ((start + timedelta(days=2)).isoformat(), debt_id),
+        )
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": start.isoformat(), "end_date": (start + timedelta(days=6)).isoformat()},
+    ).json()
+    debt = next(item for item in report["minimum_debt_payments"] if item["id"] == debt_id)
+
+    assert debt["qualifying_payments_cents"] == 5000
+    assert debt["amount_cents"] == 0
+    assert debt["status"] == "recorded"
