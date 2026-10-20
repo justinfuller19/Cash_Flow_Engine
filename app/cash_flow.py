@@ -595,6 +595,18 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 <div class="field"><label for="end">End date</label><input id="end" type="date" required></div><button id="refresh" type="button">Update report</button></div>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
+<section class="card"><h2>Allocate safe available money</h2>
+<p class="muted">The forecast reports the amount you can allocate without dropping below the household buffer in any forecast week. You decide where it goes; planned allocations reduce what remains available. The default debt suggestion follows the snowball method.</p>
+<p id="snowball-suggestion" class="muted">Loading debt recommendation…</p>
+<form id="allocation-form" class="toolbar">
+<div class="field"><label for="allocation-type">Use money for</label><select id="allocation-type"><option value="debt">Extra debt payment (snowball)</option><option value="buffer">Add to household buffer</option><option value="savings">Savings goal</option><option value="unallocated">Leave unallocated</option></select></div>
+<div class="field"><label for="allocation-amount">Amount ($)</label><input id="allocation-amount" type="number" min="0.01" step="0.01" required></div>
+<div class="field" id="debt-field"><label for="allocation-debt">Debt target</label><select id="allocation-debt"></select></div>
+<div class="field" id="savings-field" hidden><label for="allocation-savings">Savings goal</label><select id="allocation-savings"></select></div>
+<div class="field"><label for="allocation-description">Note (optional)</label><input id="allocation-description" maxlength="200" placeholder="What is this for?"></div>
+<button type="submit">Save allocation</button></form>
+<h2 style="margin-top:20px">Your allocations</h2><ul id="allocations" class="list"><li class="muted">Loading allocations…</li></ul>
+</section>
 <div class="grid">
 <section class="card"><h2>Expected income</h2><ul id="income" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Bills due</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
@@ -610,6 +622,7 @@ const statusBox=document.getElementById("status");
 function dollars(cents){const sign=cents<0?"−":"";return sign+new Intl.NumberFormat(undefined,{style:"currency",currency:"USD"}).format(Math.abs(cents)/100);}
 function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n;}
 async function api(url){const r=await fetch(url);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"Could not load the weekly forecast.");return d;}
+async function post(url,body){const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"Could not save the allocation.");return d;}
 function message(text,kind=""){statusBox.textContent=text;statusBox.className="status"+(kind?" "+kind:"");statusBox.hidden=false;}
 function renderList(id,items,empty,make){const root=document.getElementById(id);root.replaceChildren();if(!items.length){root.appendChild(el("li","muted",empty));return;}for(const item of items){const li=el("li","");make(li,item);root.appendChild(li);}}
 function metric(root,label,value){const card=el("div","metric");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));root.appendChild(card);}
@@ -626,8 +639,9 @@ for(const [label,value] of [
 ["Savings funded",report.funded_savings_cents],
 ["Available before future reserve",report.free_to_spend_before_future_reserve_cents],
 ["Reserved for future bills",report.future_buffer_reservation_cents],
-["Safe to spend",report.free_to_spend_cents],
-["Extra debt payoff capacity",report.extra_debt_payoff_capacity_cents]
+["Safe available surplus",report.free_to_spend_cents],
+["Already allocated",report.planned_allocations_cents],
+["Still available to allocate",report.free_to_spend_cents]
 ])metric(metrics,label,dollars(value));
 if(report.projected_shortfall_cents>0)message("Projected shortfall: "+dollars(report.projected_shortfall_cents)+". Required obligations exceed projected cash.","warning");
 else if(report.buffer_shortfall_cents>0)message("Projected cash is below the household buffer target by "+dollars(report.buffer_shortfall_cents)+". Extra spending and savings are not available until the buffer is restored.","warning");
@@ -643,6 +657,36 @@ renderList("transactions",report.transactions,"No transactions recorded in this 
 renderList("category-spending",report.category_spending,"No expense transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(x.amount_cents)));});
 const savings=document.getElementById("savings");savings.replaceChildren();savings.appendChild(el("p","", "Planned: "+dollars(report.planned_savings_cents)));savings.appendChild(el("p","", "Funded after obligations and buffer: "+dollars(report.funded_savings_cents)));savings.appendChild(el("p","", "Not covered by this forecast: "+dollars(report.savings_shortfall_cents)));savings.appendChild(el("p","muted","Contributions are estimated from active savings goals and distinct scheduled payday dates."));
 renderList("notes",report.notes,"No additional assumptions.",(li,note)=>li.appendChild(el("div","detail",note)));
+const recommendation=report.recommended_snowball_debt;
+document.getElementById("snowball-suggestion").textContent=recommendation
+ ? "Suggested snowball target: "+recommendation.name+" ("+dollars(recommendation.balance_cents)+" remaining). This is a suggestion only; you choose the allocation."
+ : "Add an active debt to receive a snowball recommendation.";
+const debtSelect=document.getElementById("allocation-debt");
+const goalSelect=document.getElementById("allocation-savings");
+const [debts,goals,allocations]=await Promise.all([
+ api("/api/debts"),api("/api/savings-goals"),api("/api/surplus-allocations")
+]);
+debtSelect.replaceChildren();for(const debt of debts.filter(x=>x.active&&x.balance_cents>0)){const option=el("option","",debt.name+" — "+dollars(debt.balance_cents));option.value=debt.id;debtSelect.appendChild(option);}
+if(recommendation)debtSelect.value=String(recommendation.id);
+goalSelect.replaceChildren();for(const goal of goals.filter(x=>x.active)){const option=el("option","",goal.name);option.value=goal.id;goalSelect.appendChild(option);}
+const typeSelect=document.getElementById("allocation-type");
+function updateAllocationFields(){document.getElementById("debt-field").hidden=typeSelect.value!=="debt";document.getElementById("savings-field").hidden=typeSelect.value!=="savings";}
+typeSelect.onchange=updateAllocationFields;updateAllocationFields();
+renderList("allocations",allocations,"No allocations yet. Choose an amount above to reserve part of your safe surplus.",(li,a)=>{
+ const label={debt:"Debt snowball",buffer:"Household buffer",savings:"Savings goal",unallocated:"Leave unallocated"}[a.allocation_type]||a.allocation_type;
+ li.appendChild(el("div","item-title",label+" · "+dollars(a.amount_cents)+" · "+a.status));
+ li.appendChild(el("div","detail",(a.target_debt_name||a.savings_goal_name||a.description||"No note")+" · "+a.allocation_date+(a.actual_amount_cents!==null&&a.actual_amount_cents!==undefined?" · actually paid "+dollars(a.actual_amount_cents):"")));
+ if(a.status==="planned"){
+   const actions=el("div","toolbar","");
+   if(a.allocation_type==="debt"){
+     const record=el("button","","Record actual debt payment");record.type="button";
+     record.onclick=async()=>{const input=prompt("Enter the actual payment in dollars (up to "+(a.amount_cents/100).toFixed(2)+"):",(a.amount_cents/100).toFixed(2));if(input===null)return;const amount=Math.round(Number(input)*100);if(!Number.isFinite(amount)||amount<=0){message("Enter a valid positive payment amount.","error");return;}try{await post("/api/surplus-allocations/"+a.id+"/record-debt-payment",{actual_amount_cents:amount,transaction_date:iso(new Date()),description:"Extra debt snowball payment"});message("Actual debt payment recorded. The debt balance and forecast have been updated.");await load();}catch(e){message(e.message,"error");}};
+     actions.appendChild(record);
+   }
+   const cancel=el("button","","Cancel allocation");cancel.type="button";cancel.onclick=async()=>{try{await post("/api/surplus-allocations/"+a.id+"/cancel",{});message("Allocation cancelled and surplus released.");await load();}catch(e){message(e.message,"error");}};
+   actions.appendChild(cancel);li.appendChild(actions);
+ }
+});
 renderList("future-forecast",report.future_forecast,"No future weeks included in this forecast.",(li,x)=>{
   li.appendChild(el("div","item-title",x.start_date+" to "+x.end_date+" · ending cash "+dollars(x.projected_ending_cash_cents)));
   li.appendChild(el("div","detail","Starting cash "+dollars(x.starting_cash_cents)+" · income "+dollars(x.expected_income_cents+x.recorded_income_cents)+" · bills "+dollars(x.bills_due_cents)+" · minimum debt "+dollars(x.minimum_debt_payments_cents)));
@@ -654,6 +698,7 @@ function alignToWeekStart(dayName){const index={Monday:0,Tuesday:1,Wednesday:2,T
 async function initializeWeekSettings(){const settings=await api("/api/household/settings");const select=document.getElementById("week-start");select.value=settings.financial_week_start||"Friday";alignToWeekStart(select.value);}
 document.getElementById("week-start").addEventListener("change",()=>alignToWeekStart(document.getElementById("week-start").value));
 document.getElementById("save-week-start").addEventListener("click",async()=>{try{const value=document.getElementById("week-start").value;const response=await fetch("/api/household/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({financial_week_start:value})});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.detail||"Could not save week start.");alignToWeekStart(value);message("Financial week start saved as "+value+".");await load();}catch(e){message(e.message,"error");}});
+document.getElementById("allocation-form").addEventListener("submit",async event=>{event.preventDefault();try{const type=document.getElementById("allocation-type").value;const amount=Math.round(Number(document.getElementById("allocation-amount").value)*100);if(!Number.isFinite(amount)||amount<=0)throw Error("Enter a valid positive amount.");const body={allocation_type:type,amount_cents:amount,allocation_date:iso(new Date()),description:document.getElementById("allocation-description").value};if(type==="debt")body.target_debt_id=Number(document.getElementById("allocation-debt").value);if(type==="savings")body.savings_goal_id=Number(document.getElementById("allocation-savings").value);await post("/api/surplus-allocations",body);document.getElementById("allocation-amount").value="";document.getElementById("allocation-description").value="";message("Allocation saved. The remaining safe surplus has been recalculated.");await load();}catch(e){message(e.message,"error");}});
 document.getElementById("refresh").addEventListener("click",()=>load().catch(e=>message(e.message,"error")));
 initializeWeekSettings().then(load).catch(e=>message(e.message,"error"));
 </script></body></html>"""
