@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 
 def base_database_path() -> Path:
@@ -621,3 +621,27 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
             )
             db.execute("DROP TABLE income_sources_phase18")
             db.execute("CREATE INDEX IF NOT EXISTS idx_income_person ON income_sources(person_id)")
+
+    if version < 20:
+        # Version 20 supports scheduled income end dates and temporary,
+        # effective-dated paycheck amount overrides without rewriting history.
+        income_columns = {row["name"] for row in db.execute("PRAGMA table_info(income_sources)")}
+        if "end_date" not in income_columns:
+            db.execute("ALTER TABLE income_sources ADD COLUMN end_date TEXT")
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS income_amount_overrides (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                income_source_id INTEGER NOT NULL REFERENCES income_sources(id) ON DELETE CASCADE,
+                start_date TEXT NOT NULL,
+                end_date TEXT NOT NULL,
+                amount_cents INTEGER NOT NULL CHECK(amount_cents >= 0),
+                reason TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CHECK(end_date >= start_date),
+                UNIQUE(income_source_id, start_date, end_date)
+            )"""
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_income_overrides_source_dates "
+            "ON income_amount_overrides(income_source_id, start_date, end_date)"
+        )
