@@ -146,15 +146,15 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 6 — More flexible recurrence options
 
 **Priority:** Medium-Low  
-**Status:** Not started
+**Status:** Implemented on `feature/phase-6-flexible-recurrence`; awaiting CI and review in PR #42.
 
-- [ ] Preserve current semimonthly behavior (1st and 15th) as the default.
-- [ ] Add a 15th-and-last-calendar-day option.
-- [ ] Add a 1st-and-3rd-Friday option.
-- [ ] Add a last-business-day-of-month option.
-- [ ] Use consistent rules in occurrence generation and monthly due-date helpers.
-- [ ] Define weekend, holiday, month-end, and short-month behavior.
-- [ ] Test February, leap years, short months, year boundaries, and existing-schedule compatibility.
+- [x] Preserve semimonthly (1st and 15th) and existing weekly/biweekly/monthly behavior.
+- [x] Add a 15th-and-last-calendar-day option.
+- [x] Add a 1st-and-3rd-Friday option.
+- [x] Add a last-business-day-of-month option using weekends and commonly observed US bank holidays, including Good Friday.
+- [x] Use calendar-based occurrence generation consistently in the weekly forecast and saved payday planner.
+- [x] Define weekend, holiday, month-end, and short-month behavior; monthly anchors return to their original day after short months.
+- [x] Add recurrence and legacy income-table migration regression tests for leap years, month ends, and schedule compatibility.
 
 ## Phase 7 — Income changes and end dates
 
