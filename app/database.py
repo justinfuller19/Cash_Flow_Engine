@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 15
 
 
 def base_database_path() -> Path:
@@ -170,6 +170,7 @@ def initialize_database() -> None:
                 starting_cash_cents INTEGER NOT NULL CHECK(starting_cash_cents >= 0),
                 debt_strategy TEXT NOT NULL CHECK(debt_strategy IN ('avalanche', 'snowball')),
                 status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'active', 'completed', 'cancelled')),
+                is_auto_generated INTEGER NOT NULL DEFAULT 0 CHECK(is_auto_generated IN (0, 1)),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 CHECK(period_end >= period_start)
             );
@@ -184,6 +185,8 @@ def initialize_database() -> None:
                 unfunded_cents INTEGER NOT NULL CHECK(unfunded_cents >= 0),
                 due_date TEXT,
                 note TEXT,
+                savings_goal_id INTEGER REFERENCES savings_goals(id) ON DELETE SET NULL,
+                actual_transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL,
                 is_completed INTEGER NOT NULL DEFAULT 0 CHECK(is_completed IN (0, 1))
             );
 
@@ -459,5 +462,57 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_surplus_allocations_status_date "
             "ON surplus_allocations(status, allocation_date)"
+        )
+
+    if version < 13:
+        # Distinguish automatically generated weekly checklists from manually
+        # created plans while retaining all existing plan history.
+        plan_columns = {row["name"] for row in db.execute("PRAGMA table_info(payday_plans)")}
+        if "is_auto_generated" not in plan_columns:
+            db.execute(
+                "ALTER TABLE payday_plans ADD COLUMN is_auto_generated INTEGER NOT NULL "
+                "DEFAULT 0 CHECK(is_auto_generated IN (0, 1))"
+            )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_auto_weekly_plans "
+            "ON payday_plans(is_auto_generated, period_start, period_end, status)"
+        )
+
+    if version < 14:
+        # Track savings-goal links and their actual transaction so checklist
+        # contributions update balances and weekly savings carryover exactly once.
+        item_columns = {row["name"] for row in db.execute("PRAGMA table_info(plan_items)")}
+        if "savings_goal_id" not in item_columns:
+            db.execute(
+                "ALTER TABLE plan_items ADD COLUMN savings_goal_id INTEGER "
+                "REFERENCES savings_goals(id) ON DELETE SET NULL"
+            )
+        if "actual_transaction_id" not in item_columns:
+            db.execute(
+                "ALTER TABLE plan_items ADD COLUMN actual_transaction_id INTEGER "
+                "REFERENCES transactions(id) ON DELETE SET NULL"
+            )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_plan_items_savings_goal "
+            "ON plan_items(savings_goal_id, actual_transaction_id)"
+        )
+
+    if version < 15:
+        # Enforce one active auto-generated checklist per financial week. If a
+        # prior race created duplicates, keep the newest active plan and mark
+        # older duplicates cancelled so their checklist history is preserved.
+        db.execute(
+            """UPDATE payday_plans SET status = 'cancelled'
+               WHERE is_auto_generated = 1 AND status = 'active'
+                 AND id NOT IN (
+                     SELECT MAX(id) FROM payday_plans
+                     WHERE is_auto_generated = 1 AND status = 'active'
+                     GROUP BY period_start, period_end
+                 )"""
+        )
+        db.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_auto_plan_per_week
+               ON payday_plans(period_start, period_end)
+               WHERE is_auto_generated = 1 AND status = 'active'"""
         )
 

@@ -1,5 +1,6 @@
 """Integration tests for the live dashboard and action checklist."""
 from datetime import date, timedelta
+import sqlite3
 
 from fastapi.testclient import TestClient
 
@@ -14,7 +15,10 @@ def seed_planned_household(tmp_path, monkeypatch):
     today = date.today()
     iso = lambda value: value.isoformat()
     person = client.post("/api/people", json={"name": "Member"}).json()
-    client.patch("/api/household/settings", json={"buffer_target_cents": 10000})
+    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    client.patch("/api/household/settings", json={
+        "buffer_target_cents": 10000, "financial_week_start": weekdays[today.weekday()]
+    })
     client.post(
         "/api/income-sources",
         json={
@@ -47,23 +51,15 @@ def seed_planned_household(tmp_path, monkeypatch):
             "priority": 1,
         },
     )
-    plan = client.post(
-        "/api/plans/generate",
-        json={
-            "plan_date": iso(today), "period_start": iso(today),
-            "period_end": iso(today + timedelta(days=6)),
-            "starting_cash_cents": 50000, "debt_strategy": "avalanche",
-        },
-    )
-    assert plan.status_code == 201, plan.text
-    return client, plan.json(), today
+    return client, None, today
 
 
 def test_checklist_records_status_actual_amount_and_date(tmp_path, monkeypatch):
     client, plan, today = seed_planned_household(tmp_path, monkeypatch)
     checklist = client.get("/api/checklist")
     assert checklist.status_code == 200
-    assert len(checklist.json()) == 5
+    assert len(checklist.json()) == 4
+    assert {item["category"] for item in checklist.json()} == {"income", "bill", "debt", "savings"}
     item = checklist.json()[0]
 
     response = client.patch(
@@ -80,12 +76,35 @@ def test_checklist_records_status_actual_amount_and_date(tmp_path, monkeypatch):
     assert updated["actual_amount_cents"] == 9000
     assert updated["actual_date"] == today.isoformat()
 
-    assert len(client.get("/api/checklist").json()) == 4
-    saved = client.get(f"/api/plans/{plan['id']}").json()
+    assert len(client.get("/api/checklist").json()) == 3
+    auto_plan = next(p for p in client.get("/api/plans").json() if p.get("is_auto_generated"))
+    saved = client.get(f"/api/plans/{auto_plan['id']}").json()
     saved_item = next(row for row in saved["items"] if row["id"] == item["id"])
     assert saved_item["is_completed"] is True
     assert saved_item["status"] == "completed"
     assert saved_item["actual_amount_cents"] == 9000
+
+
+def test_checklist_savings_actual_updates_goal_and_carryover_history(tmp_path, monkeypatch):
+    client, _, today = seed_planned_household(tmp_path, monkeypatch)
+    checklist = client.get("/api/checklist").json()
+    savings_item = next(item for item in checklist if item["category"] == "savings")
+    response = client.patch(
+        f"/api/plan-items/{savings_item['id']}",
+        json={"status": "completed", "actual_amount_cents": 4000, "actual_date": today.isoformat()},
+    )
+    assert response.status_code == 200, response.text
+    with database.connect() as db:
+        goal = db.execute("SELECT current_balance_cents FROM savings_goals WHERE name = 'Emergency fund'").fetchone()
+        transactions = db.execute(
+            "SELECT COUNT(*) FROM transactions WHERE category = 'savings contribution'"
+        ).fetchone()[0]
+        allocations = db.execute(
+            "SELECT COUNT(*) FROM surplus_allocations WHERE allocation_type = 'savings' AND status = 'recorded'"
+        ).fetchone()[0]
+    assert goal["current_balance_cents"] == 4000
+    assert transactions == 1
+    assert allocations == 1
 
 
 def test_checklist_validation_and_page(tmp_path, monkeypatch):
@@ -97,6 +116,7 @@ def test_checklist_validation_and_page(tmp_path, monkeypatch):
     page = client.get("/checklist")
     assert page.status_code == 200
     assert "Payday Checklist" in page.text
+    assert "generated automatically" in page.text
     assert 'id="checklist-pagination"' in page.text
     assert "const PAGE_SIZE=10" in page.text
 
@@ -108,12 +128,12 @@ def test_dashboard_summarizes_saved_household_and_plan(tmp_path, monkeypatch):
     data = response.json()
     assert data["active_household_members"] == 1
     assert data["protected_buffers_cents"] == 10000
-    assert data["pending_checklist_count"] == 5
+    assert data["pending_checklist_count"] == 4
     assert data["next_paydays"][0]["date"] == (today + timedelta(days=1)).isoformat()
     assert any(bill["name"] == "Electric" for bill in data["upcoming_bills"])
     assert any(debt["name"] == "Card" for debt in data["upcoming_debts"])
     assert data["savings_goals"][0]["name"] == "Emergency fund"
-    assert data["recent_plans"][0]["id"] == plan["id"]
+    assert any(row.get("is_auto_generated") for row in client.get("/api/plans").json())
 
 
 def test_schema_v5_adds_checklist_actual_fields(tmp_path, monkeypatch):
@@ -122,5 +142,37 @@ def test_schema_v5_adds_checklist_actual_fields(tmp_path, monkeypatch):
     with database.connect() as db:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(plan_items)")}
         version = db.execute("PRAGMA user_version").fetchone()[0]
-    assert {"status", "actual_amount_cents", "actual_date"} <= columns
+    assert {"status", "actual_amount_cents", "actual_date", "savings_goal_id", "actual_transaction_id"} <= columns
     assert version == database.SCHEMA_VERSION
+
+
+
+def test_only_one_active_automatic_plan_per_financial_week(tmp_path, monkeypatch):
+    client, _, _ = seed_planned_household(tmp_path, monkeypatch)
+    assert client.get("/api/checklist").status_code == 200
+    with database.connect() as db:
+        plan = db.execute(
+            """SELECT * FROM payday_plans
+               WHERE is_auto_generated = 1 AND status = 'active'"""
+        ).fetchone()
+        assert plan is not None
+        active_count = db.execute(
+            """SELECT COUNT(*) FROM payday_plans
+               WHERE is_auto_generated = 1 AND status = 'active'
+                 AND period_start = ? AND period_end = ?""",
+            (plan["period_start"], plan["period_end"]),
+        ).fetchone()[0]
+        assert active_count == 1
+        try:
+            db.execute(
+                """INSERT INTO payday_plans
+                   (plan_date, period_start, period_end, starting_cash_cents,
+                    debt_strategy, status, is_auto_generated)
+                   VALUES (?, ?, ?, ?, 'avalanche', 'active', 1)""",
+                (plan["plan_date"], plan["period_start"], plan["period_end"],
+                 plan["starting_cash_cents"]),
+            )
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("Database allowed duplicate active automatic plans for one week")

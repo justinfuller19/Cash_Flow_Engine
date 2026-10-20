@@ -58,4 +58,6 @@ def test_management_pages_show_delete_controls(tmp_path, monkeypatch):
     assert 'Delete "+(kind==="bills"?"bill":"debt")' in client.get("/bills").text
     assert "Delete goal" in client.get("/savings").text
     assert 'el("button","edit","Delete")' in client.get("/transactions").text
-    assert "Remove plan" in client.get("/planner").text
+    planner = client.get("/planner", follow_redirects=False)
+    assert planner.status_code == 307
+    assert planner.headers["location"] == "/checklist"

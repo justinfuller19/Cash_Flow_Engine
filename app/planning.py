@@ -4,7 +4,7 @@ from calendar import monthrange
 from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 
 from . import database
 from .engine import (
@@ -205,60 +205,7 @@ def delete_saved_plan(plan_id: int):
     return {"deleted": True, "id": plan_id}
 
 
-@router.get("/planner", response_class=HTMLResponse)
+@router.get("/planner")
 def planner_page():
-    return """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Payday Planner · CashFlow Engine</title>
-<style>
-:root{font-family:system-ui,sans-serif;color:#172033;background:#f3f6fa}*{box-sizing:border-box}
-body{margin:0;padding:24px 14px 48px}main{max-width:1100px;margin:auto}a{color:#0e7490;font-weight:650;text-decoration:none}
-h1{color:#155e75;margin:8px 0}.muted{color:#5c687a;line-height:1.5}
-.card{background:white;padding:22px;border-radius:16px;box-shadow:0 8px 28px #172b4d0d;margin-top:18px}
-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:12px;align-items:end}
-label{display:block;font-weight:650;font-size:.9rem;margin-bottom:5px}
-input,select{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit;background:white}
-button{border:0;border-radius:8px;padding:10px 12px;background:#0e7490;color:white;font-weight:700;cursor:pointer}
-button:disabled{opacity:.55}.status{padding:12px;border-radius:9px;background:#e0f2fe;color:#075985}.error{background:#fee2e2;color:#991b1b}.status[hidden]{display:none}
-.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px}
-.metric{background:#f8fafc;border-radius:10px;padding:12px}.metric strong{display:block;font-size:1.15rem;color:#155e75}
-.list{padding:0;list-style:none}.list li{padding:12px 0;border-top:1px solid #e2e8f0;overflow-wrap:anywhere}
-.title{font-weight:700}.detail{color:#5c687a;font-size:.9rem;margin-top:4px}.shortfall{color:#b91c1c}.ok{color:#166534}
-</style></head><body><main>
-<a href="/">← Dashboard</a><h1>Payday Planner</h1>
-<p class="muted">Generate and save a plan using your active household income, buffers, recurring bills, debts, and savings contributions. This forecasts allocations only; it does not pay bills or move money.</p>
-<div id="status" class="status" role="status" aria-live="polite" hidden></div>
-<section class="card"><h2>Build a payday plan</h2>
-<form id="plan-form">
-<div><label for="plan-date">Plan date</label><input id="plan-date" name="plan_date" type="date" required></div>
-<div><label for="period-start">Pay period starts</label><input id="period-start" name="period_start" type="date" required></div>
-<div><label for="period-end">Pay period ends</label><input id="period-end" name="period_end" type="date" required></div>
-<div><label for="starting-cash">Starting cash available ($)</label><input id="starting-cash" name="starting_cash" type="number" min="0" step="0.01" value="0" required></div>
-<div><label for="strategy">Extra debt payoff</label><select id="strategy" name="debt_strategy"><option value="avalanche">Avalanche (highest APR)</option><option value="snowball">Snowball (smallest balance)</option></select></div>
-<div><button type="submit">Generate & save plan</button></div>
-</form></section>
-<section class="card" id="current-plan" hidden><h2>Plan results</h2><div id="summary" class="summary"></div><ul id="items" class="list"></ul><nav id="item-pagination" aria-label="Plan item pages" class="detail"></nav></section>
-<section class="card"><h2>Saved plan history</h2><ul id="history" class="list"><li>Loading plans…</li></ul><nav id="history-pagination" aria-label="Saved plan pages" class="detail"></nav></section>
-</main>
-<script>
-const box=document.getElementById("status");
-function message(text,error=false){box.textContent=text;box.classList.toggle("error",error);box.hidden=false;}
-function dollars(value){return new Intl.NumberFormat(undefined,{style:"currency",currency:"USD"}).format(value/100);}
-function cents(value){const n=Number(value);if(!Number.isFinite(n)||n<0)throw Error("Starting cash must be a non-negative amount.");return Math.round((n+Number.EPSILON)*100);}
-async function api(url,options={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...options});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"Please check the dates and amounts.");return d;}
-function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;n.textContent=txt;return n;}
-const PAGE_SIZE=10;let planItemPage=1;let historyPage=1;
-function renderPlan(p){const section=document.getElementById("current-plan");section.hidden=false;planItemPage=1;const summary=document.getElementById("summary");summary.replaceChildren();
-for(const [label,value] of [["Income forecast",dollars(p.income_cents)],["Total available",dollars(p.total_available_cents)],["Allocated",dollars(p.allocated_cents)],["Remaining cash",dollars(p.unallocated_cents)],["Unfunded needs",dollars(p.unfunded_cents)]]){const card=el("div","metric","");card.appendChild(el("span","detail",label));card.appendChild(el("strong","",value));summary.appendChild(card);}
-const items=document.getElementById("items");items.replaceChildren();if(!p.items.length)items.appendChild(el("li","muted","No allocations were required in this window."));
-const itemPages=Math.max(1,Math.ceil(p.items.length/PAGE_SIZE));planItemPage=Math.min(planItemPage,itemPages);for(const item of p.items.slice((planItemPage-1)*PAGE_SIZE,planItemPage*PAGE_SIZE)){const li=el("li");li.appendChild(el("div","title",item.name+" · "+dollars(item.funded_cents)+" / "+dollars(item.requested_cents)));li.appendChild(el("div","detail",item.category+" · status "+item.status+(item.due_date?" · due "+item.due_date:"")+(item.actual_amount_cents!==null?" · actual "+dollars(item.actual_amount_cents):"")+(item.actual_date?" on "+item.actual_date:"")+(item.note?" · "+item.note:"")));if(item.unfunded_cents)li.appendChild(el("div","detail shortfall","Short by "+dollars(item.unfunded_cents)));items.appendChild(li);}
-const itemNav=document.getElementById("item-pagination");itemNav.replaceChildren();if(p.items.length>PAGE_SIZE){const prev=el("button","","Previous");prev.type="button";prev.disabled=planItemPage===1;prev.addEventListener("click",()=>{planItemPage--;renderPlanPageItems(p);});itemNav.appendChild(prev);itemNav.appendChild(el("span","detail"," Page "+planItemPage+" of "+itemPages+" "));const next=el("button","","Next");next.type="button";next.disabled=planItemPage===itemPages;next.addEventListener("click",()=>{planItemPage++;renderPlanPageItems(p);});itemNav.appendChild(next);}
-}
-function renderPlanPageItems(p){const items=document.getElementById("items");items.replaceChildren();const itemPages=Math.max(1,Math.ceil(p.items.length/PAGE_SIZE));for(const item of p.items.slice((planItemPage-1)*PAGE_SIZE,planItemPage*PAGE_SIZE)){const li=el("li");li.appendChild(el("div","title",item.name+" · "+dollars(item.funded_cents)+" / "+dollars(item.requested_cents)));li.appendChild(el("div","detail",item.category+" · status "+item.status+(item.due_date?" · due "+item.due_date:"")+(item.actual_amount_cents!==null?" · actual "+dollars(item.actual_amount_cents):"")+(item.actual_date?" on "+item.actual_date:"")+(item.note?" · "+item.note:"")));if(item.unfunded_cents)li.appendChild(el("div","detail shortfall","Short by "+dollars(item.unfunded_cents)));items.appendChild(li);}const nav=document.getElementById("item-pagination");nav.replaceChildren();if(p.items.length>PAGE_SIZE){const prev=el("button","","Previous");prev.type="button";prev.disabled=planItemPage===1;prev.addEventListener("click",()=>{planItemPage--;renderPlanPageItems(p);});nav.appendChild(prev);nav.appendChild(el("span","detail"," Page "+planItemPage+" of "+itemPages+" "));const next=el("button","","Next");next.type="button";next.disabled=planItemPage===itemPages;next.addEventListener("click",()=>{planItemPage++;renderPlanPageItems(p);});nav.appendChild(next);}}
-async function refreshHistory(){const plans=await api("/api/plans");const list=document.getElementById("history");const nav=document.getElementById("history-pagination");list.replaceChildren();nav.replaceChildren();if(!plans.length){list.appendChild(el("li","muted","No saved plans yet."));return;}const pageCount=Math.ceil(plans.length/PAGE_SIZE);historyPage=Math.min(historyPage,pageCount);
-for(const p of plans.slice((historyPage-1)*PAGE_SIZE,historyPage*PAGE_SIZE)){const li=el("li");li.appendChild(el("div","title","Plan "+p.id+" · "+p.period_start+" to "+p.period_end));li.appendChild(el("div","detail","Available "+dollars(p.total_available_cents)+" · allocated "+dollars(p.allocated_cents)+(p.unfunded_cents?" · short "+dollars(p.unfunded_cents):" · fully funded")));const b=el("button","","View plan");b.type="button";b.addEventListener("click",async()=>{try{renderPlan(await api("/api/plans/"+p.id));}catch(e){message(e.message,true);}});li.appendChild(b);const remove=el("button","","Remove plan");remove.type="button";remove.addEventListener("click",async()=>{if(!confirm("Remove saved plan "+p.id+"? Its checklist items will also be removed."))return;remove.disabled=true;try{await api("/api/plans/"+p.id,{method:"DELETE"});await refreshHistory();message("Saved plan removed.");}catch(e){message(e.message,true);remove.disabled=false;}});li.appendChild(remove);list.appendChild(li);}if(pageCount>1){const prev=el("button","","Previous");prev.type="button";prev.disabled=historyPage===1;prev.addEventListener("click",()=>{historyPage--;refreshHistory().catch(e=>message(e.message,true));});nav.appendChild(prev);nav.appendChild(el("span","detail"," Page "+historyPage+" of "+pageCount+" "));const next=el("button","","Next");next.type="button";next.disabled=historyPage===pageCount;next.addEventListener("click",()=>{historyPage++;refreshHistory().catch(e=>message(e.message,true));});nav.appendChild(next);}}
-document.getElementById("plan-form").addEventListener("submit",async(e)=>{e.preventDefault();const f=e.currentTarget;const b=f.querySelector("button");b.disabled=true;try{const p=await api("/api/plans/generate",{method:"POST",body:JSON.stringify({plan_date:f.elements.plan_date.value,period_start:f.elements.period_start.value,period_end:f.elements.period_end.value,starting_cash_cents:cents(f.elements.starting_cash.value),debt_strategy:f.elements.debt_strategy.value})});renderPlan(p);await refreshHistory();message("Payday plan generated and saved.");}catch(err){message(err.message,true);}finally{b.disabled=false;}});
-const today=new Date();const iso=d=>[d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
-document.getElementById("plan-date").value=iso(today);document.getElementById("period-start").value=iso(today);const end=new Date(today);end.setDate(end.getDate()+13);document.getElementById("period-end").value=iso(end);
-refreshHistory().catch(e=>message("Could not load plan history: "+e.message,true));
-</script></body></html>"""
+    return RedirectResponse(url="/checklist", status_code=307)
+

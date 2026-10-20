@@ -50,6 +50,7 @@ class SavedPlanOut(BaseModel):
     target_card: str | None
     debt_strategy: str
     status: str
+    is_auto_generated: bool = False
     created_at: str
     is_fully_funded: bool
     items: list[SavedPlanItemOut] = Field(default_factory=list)
