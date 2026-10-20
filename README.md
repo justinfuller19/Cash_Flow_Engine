@@ -12,7 +12,7 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 - Browser-based Household Setup page for household members, income sources, and the shared household cash buffer target.
 - Browser-based Bills & Debt page for recurring bills, credit-card balances, APRs, minimum payments, and due dates.
 - Browser-based Savings Goals page for targets, current balances, priorities, and target dates, with automatic weekly targets, carried shortfalls, safe-funding amounts, and deadline warnings.
-- Browser-based Payday Planner that forecasts active income and bills, protects the household cash buffer, allocates bill payments, debt minimums, savings contributions, and extra debt payoff, then saves plan history.
+- Automatically generated weekly checklist based on saved pay schedules, bills, debt minimums, savings goals, recorded transactions, and the safe cash-flow forecast. The old planner URL redirects to this checklist; historical manual plans remain available through the API.
 - Live dashboard for upcoming paydays, bills, debt minimums, savings progress, and recent plans.
 - Payday checklist for marking actions complete, skipped, or needing attention and recording actual amounts/dates.
 - Manual transaction ledger with typed income, expense, and transfer entries, user-managed categories, safe category renaming/deletion, and optional links to scheduled income, bills, and debt payments for reconciliation.
