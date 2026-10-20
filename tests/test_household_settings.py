@@ -259,3 +259,52 @@ def test_migration_seeds_existing_nonzero_starting_cash(tmp_path, monkeypatch):
         assert snapshot["effective_week_start"] == _current_week_start().isoformat()
         assert snapshot["balance_cents"] == 45678
         assert db.execute("PRAGMA user_version").fetchone()[0] == database.SCHEMA_VERSION
+
+
+
+def test_snapshot_week_counts_only_transactions_after_week_start_once(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    effective_week = _current_week_start()
+    client.patch(
+        "/api/household/settings",
+        json={
+            "buffer_target_cents": 20000,
+            "starting_cash_cents": 100000,
+            "starting_cash_effective_week": effective_week.isoformat(),
+        },
+    )
+    before = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": (effective_week - timedelta(days=1)).isoformat(),
+            "category": "groceries",
+            "transaction_type": "expense",
+            "description": "Before snapshot",
+            "amount_cents": -7000,
+        },
+    )
+    after = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": effective_week.isoformat(),
+            "category": "groceries",
+            "transaction_type": "expense",
+            "description": "After snapshot",
+            "amount_cents": -15000,
+        },
+    )
+    assert before.status_code == 201
+    assert after.status_code == 201
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={"forecast_weeks": 2},
+    )
+    assert report.status_code == 200
+    data = report.json()
+    assert data["starting_cash_cents"] == 100000
+    assert data["transaction_expenses_cents"] == 15000
+    assert data["projected_ending_cash_cents"] == 85000
+    assert data["future_forecast"][0]["starting_cash_cents"] == 85000
+    assert data["future_forecast"][0]["projected_ending_cash_cents"] == 85000
+    assert data["free_to_spend_cents"] == 65000
