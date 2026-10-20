@@ -85,7 +85,11 @@ def _refresh_debt_payment_suggestions(db) -> None:
             str(transaction.get(key) or "")
             for key in ("description", "account_name", "notes", "category")
         ).lower()
-        if not any(term in evidence_text for term in (
+        named_debt_evidence = any(
+            debt["name"].strip().lower() in evidence_text
+            for debt in debts if debt["name"].strip()
+        )
+        if not named_debt_evidence and not any(term in evidence_text for term in (
             "debt", "loan", "credit card", "card payment", "minimum payment",
             "debt payment", "credit payment", "payment",
         )):
