@@ -308,3 +308,20 @@ def test_snapshot_week_counts_only_transactions_after_week_start_once(tmp_path, 
     assert data["future_forecast"][0]["starting_cash_cents"] == 85000
     assert data["future_forecast"][0]["projected_ending_cash_cents"] == 85000
     assert data["free_to_spend_cents"] == 65000
+
+
+
+def test_cash_snapshot_rejects_future_financial_week(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    future_week = _current_week_start() + timedelta(days=7)
+    response = client.patch(
+        "/api/household/settings",
+        json={
+            "starting_cash_cents": 90000,
+            "starting_cash_effective_week": future_week.isoformat(),
+        },
+    )
+    assert response.status_code == 422
+    assert "current or a past financial week" in response.json()["detail"]
+    with database.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM cash_balance_snapshots").fetchone()[0] == 0
