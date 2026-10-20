@@ -74,7 +74,11 @@ def _ensure_automatic_checklist() -> int:
         if goal.get("arrears_cents", 0):
             note += " A previous weekly target was missed; see Savings Goals for the exact carryover."
         if goal.get("deadline_warning"):
-            note += " Warning: the goal may miss its target date at the current funding rate."
+            note += (
+                " Warning: the goal may miss its target date at the current funding rate."
+                if goal.get("target_date")
+                else " Warning: this week's ongoing savings target is not fully affordable."
+            )
         actions.append({
             "category": "savings", "name": "Save for: " + goal["goal_name"],
             "savings_goal_id": goal["goal_id"],
