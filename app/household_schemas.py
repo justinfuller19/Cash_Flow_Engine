@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 IncomeFrequency = Literal["weekly", "biweekly", "semimonthly", "monthly", "irregular"]
+Weekday = Literal["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
 class PersonCreate(BaseModel):
@@ -39,6 +40,7 @@ class HouseholdSettingsOut(BaseModel):
 
     buffer_target_cents: int
     starting_cash_cents: int
+    financial_week_start: Weekday = "Friday"
     updated_at: str
 
 
@@ -47,6 +49,7 @@ class HouseholdSettingsUpdate(BaseModel):
 
     buffer_target_cents: int | None = Field(default=None, ge=0)
     starting_cash_cents: int | None = Field(default=None, ge=0)
+    financial_week_start: Weekday | None = None
 
     @model_validator(mode="before")
     @classmethod

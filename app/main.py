@@ -152,7 +152,7 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
 <div class="grid">
-<section class="card"><h2>Weekly cash flow</h2><div id="weekly-summary" class="muted">Loading forecast…</div><h3>Recorded spending by category</h3><ul id="weekly-category-spending" class="list"><li class="muted">Loading…</li></ul><p><a href="/weekly">Open full weekly report →</a></p></section>
+<section class="card"><h2>Weekly cash flow</h2><div id="weekly-summary" class="muted">Loading forecast…</div><h3>Recorded spending by category</h3><ul id="weekly-category-spending" class="list"><li class="muted">Loading…</li></ul><p><a href="/weekly">Review safe surplus and allocate money →</a></p></section>
 <section class="card"><h2>Next paydays</h2><ul id="paydays" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Upcoming bills · 30 days</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Debt payments · 30 days</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
@@ -178,9 +178,12 @@ renderList("plans",d.recent_plans,"No saved payday plans yet.",(li,x)=>{li.appen
 document.getElementById("checklist-summary").textContent=d.pending_checklist_count?d.pending_checklist_count+" pending or attention-needed action(s).":"No pending checklist actions.";
 renderList("transactions",d.recent_transactions,"No transactions recorded yet.",(li,x)=>{const sign=x.amount_cents<0?"−":"";li.appendChild(el("div","item-title",x.description+" · "+sign+dollars(Math.abs(x.amount_cents))));li.appendChild(el("div","detail",x.transaction_date+" · "+x.category+(x.account_name?" · "+x.account_name:"")));});
 try{const weekly=await api("/api/cash-flow/weekly");const root=document.getElementById("weekly-summary");root.replaceChildren();
-root.appendChild(el("div","item-title",dollars(weekly.free_to_spend_cents)+" available above buffer and planned savings"));
+root.appendChild(el("div","item-title",dollars(weekly.free_to_spend_cents)+" safe available surplus"));
+root.appendChild(el("div","detail","After upcoming obligations, planned savings, existing allocations, and future weekly buffer protection."));
+root.appendChild(el("div","detail","Suggested debt snowball: "+(weekly.recommended_snowball_debt?weekly.recommended_snowball_debt.name:"Add a debt to get a recommendation")+" · Allocated so far "+dollars(weekly.planned_allocations_cents)));
 root.appendChild(el("div","detail","Starting cash "+dollars(weekly.starting_cash_cents)+" · expected income "+dollars(weekly.expected_income_cents)));
 root.appendChild(el("div","detail","Bills still due "+dollars(weekly.bills_due_cents)+" · minimum debt payments "+dollars(weekly.minimum_debt_payments_cents)));
+root.appendChild(el("div","detail","You choose how much to allocate to debt, savings, the household buffer, or leave unallocated."));
 const categoryRoot=document.getElementById("weekly-category-spending");categoryRoot.replaceChildren();
 const topCategories=weekly.category_spending.slice(0,3);
 if(!topCategories.length)categoryRoot.appendChild(el("li","muted","No recorded expenses this week."));

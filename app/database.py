@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 11
 
 
 def base_database_path() -> Path:
@@ -192,8 +192,26 @@ def initialize_database() -> None:
                     CHECK(buffer_target_cents >= 0),
                 starting_cash_cents INTEGER NOT NULL DEFAULT 0
                     CHECK(starting_cash_cents >= 0),
+                financial_week_start TEXT NOT NULL DEFAULT 'Friday'
+                    CHECK(financial_week_start IN ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')),
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS surplus_allocations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                allocation_date TEXT NOT NULL,
+                allocation_type TEXT NOT NULL CHECK(allocation_type IN ('debt', 'buffer', 'savings', 'unallocated')),
+                amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+                target_debt_id INTEGER REFERENCES credit_cards(id) ON DELETE SET NULL,
+                savings_goal_id INTEGER REFERENCES savings_goals(id) ON DELETE SET NULL,
+                description TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'planned' CHECK(status IN ('planned', 'recorded', 'cancelled')),
+                actual_amount_cents INTEGER CHECK(actual_amount_cents IS NULL OR actual_amount_cents >= 0),
+                transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_surplus_allocations_status_date
+                ON surplus_allocations(status, allocation_date);
 
             CREATE INDEX IF NOT EXISTS idx_income_person ON income_sources(person_id);
             CREATE INDEX IF NOT EXISTS idx_bills_due_date ON bills(next_due_date);
@@ -370,3 +388,38 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
             "CREATE INDEX IF NOT EXISTS idx_email_notification_last_sent "
             "ON email_notification_log(last_sent_on)"
         )
+
+    if version < 10:
+        # Version 10 adds the configurable start day for the household's
+        # seven-day financial week. Existing households default to Friday.
+        settings_columns = {row["name"] for row in db.execute("PRAGMA table_info(household_settings)")}
+        if "financial_week_start" not in settings_columns:
+            db.execute(
+                "ALTER TABLE household_settings ADD COLUMN financial_week_start TEXT NOT NULL "
+                "DEFAULT 'Friday' CHECK(financial_week_start IN "
+                "('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'))"
+            )
+
+    if version < 11:
+        # Persist user-controlled allocations of safe surplus without initiating
+        # transfers. Planned allocations reserve the amount until reconciled.
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS surplus_allocations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                allocation_date TEXT NOT NULL,
+                allocation_type TEXT NOT NULL CHECK(allocation_type IN ('debt', 'buffer', 'savings', 'unallocated')),
+                amount_cents INTEGER NOT NULL CHECK(amount_cents > 0),
+                target_debt_id INTEGER REFERENCES credit_cards(id) ON DELETE SET NULL,
+                savings_goal_id INTEGER REFERENCES savings_goals(id) ON DELETE SET NULL,
+                description TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'planned' CHECK(status IN ('planned', 'recorded', 'cancelled')),
+                actual_amount_cents INTEGER CHECK(actual_amount_cents IS NULL OR actual_amount_cents >= 0),
+                transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_surplus_allocations_status_date "
+            "ON surplus_allocations(status, allocation_date)"
+        )
+
