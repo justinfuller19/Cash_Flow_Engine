@@ -45,6 +45,10 @@ class HouseholdSettingsOut(BaseModel):
     starting_cash_effective_week: date | None = None
     starting_cash_confirmed_at: str | None = None
     starting_cash_is_stale: bool = False
+    suggested_cash_balance_cents: int | None = None
+    suggested_cash_effective_week: date | None = None
+    suggested_cash_transaction_count: int = 0
+    suggested_cash_based_on_effective_week: date | None = None
 
 
 class HouseholdSettingsUpdate(BaseModel):
