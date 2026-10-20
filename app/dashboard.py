@@ -238,14 +238,14 @@ def dashboard_summary():
         goals = []
         for row in db.execute(
             """SELECT id, name, target_amount_cents, current_balance_cents,
-                      contribution_per_period_cents, target_date, priority
+                      weekly_target_cents, target_date, priority
                FROM savings_goals WHERE active = 1 ORDER BY priority, name COLLATE NOCASE"""
         ).fetchall():
             target = row["target_amount_cents"]
             goals.append({
                 "id": row["id"], "name": row["name"], "target_amount_cents": target,
                 "current_balance_cents": row["current_balance_cents"],
-                "contribution_per_period_cents": row["contribution_per_period_cents"],
+                "weekly_target_cents": row["weekly_target_cents"],
                 "target_date": row["target_date"],
                 "progress_percent": 100 if target == 0 else min(100, round(row["current_balance_cents"] / target * 100)),
             })
