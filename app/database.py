@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 
 def base_database_path() -> Path:
@@ -515,4 +515,17 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
                ON payday_plans(period_start, period_end)
                WHERE is_auto_generated = 1 AND status = 'active'"""
         )
+
+    if version < 16:
+        # Savings are weekly, not per-paycheck. Preserve existing undated goals
+        # by carrying their former per-payday amount into a weekly target once.
+        db.execute(
+            """UPDATE savings_goals
+               SET weekly_target_cents = contribution_per_period_cents
+               WHERE target_date IS NULL AND weekly_target_cents = 0
+                 AND contribution_per_period_cents > 0"""
+        )
+        # Keep the legacy storage column for backward-compatible databases,
+        # but stop using it in the application and clear its old values.
+        db.execute("UPDATE savings_goals SET contribution_per_period_cents = 0")
 
