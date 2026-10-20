@@ -107,7 +107,8 @@ def weekly_cash_flow(
     for offset in range(1, forecast_weeks):
         future_end = future_start + timedelta(days=6)
         future = _weekly_cash_flow_for_window(
-            future_start, future_end, starting_cash_override=carried_cash
+            future_start, future_end, starting_cash_override=carried_cash,
+            include_savings_carryover=False,
         )
         ending_cash = (
             future["projected_cash_before_buffer_cents"] - future["funded_savings_cents"]
@@ -179,6 +180,7 @@ def _weekly_cash_flow_for_window(
     start: date,
     end: date,
     starting_cash_override: int | None = None,
+    include_savings_carryover: bool = True,
 ) -> dict:
     """Calculate one period without lookahead, optionally carrying prior cash."""
     with database.connect() as db:
@@ -332,9 +334,19 @@ def _weekly_cash_flow_for_window(
         debts.sort(key=lambda item: (item["due_date"], item["name"]))
 
         goals = db.execute(
-            """SELECT id, name, contribution_per_period_cents, priority
-               FROM savings_goals WHERE active = 1 AND contribution_per_period_cents > 0
+            """SELECT id, name, target_amount_cents, current_balance_cents, target_date,
+                      contribution_per_period_cents, weekly_target_cents, schedule_start_date,
+                      created_at, priority
+               FROM savings_goals WHERE active = 1
                ORDER BY priority, name COLLATE NOCASE, id"""
+        ).fetchall()
+        savings_history = db.execute(
+            """SELECT a.savings_goal_id, t.transaction_date, COALESCE(a.actual_amount_cents, 0) AS amount_cents
+               FROM surplus_allocations a
+               JOIN transactions t ON t.id = a.transaction_id
+               WHERE a.allocation_type = 'savings' AND a.status = 'recorded'
+                 AND a.savings_goal_id IS NOT NULL
+               ORDER BY t.transaction_date, a.id"""
         ).fetchall()
 
     # Recorded cash movements are counted by transaction type, never by category
@@ -373,10 +385,47 @@ def _weekly_cash_flow_for_window(
     bills_due_cents = sum(item["amount_cents"] for item in uncovered_bills)
     minimum_debt_cents = sum(item["amount_cents"] for item in uncovered_debts)
 
-    # A savings contribution is planned once per distinct payday date, not once
-    # per household member or income source on the same day.
+    # Dated savings goals are budgeted weekly, independently of paydays. Any
+    # missed prior weekly targets carry forward; recorded contributions reduce
+    # arrears. Goals without a deadline retain the legacy per-payday behavior.
     payday_dates = {item["date"] for item in income_occurrences}
-    planned_savings = sum(row["contribution_per_period_cents"] for row in goals) * len(payday_dates)
+    savings_plan = []
+    planned_savings = 0
+    history_by_goal: dict[int, list[tuple[date, int]]] = {}
+    for entry in savings_history:
+        history_by_goal.setdefault(entry["savings_goal_id"], []).append(
+            (date.fromisoformat(entry["transaction_date"]), entry["amount_cents"])
+        )
+    for goal in goals:
+        remaining = max(0, goal["target_amount_cents"] - goal["current_balance_cents"])
+        if goal["target_date"]:
+            target_date = date.fromisoformat(goal["target_date"])
+            schedule_start = date.fromisoformat(goal["schedule_start_date"] or goal["created_at"][:10])
+            weekly_target = goal["weekly_target_cents"] or 0
+            if weekly_target == 0 and remaining > 0 and target_date >= start:
+                weeks_left = max(1, ((target_date - start).days // 7) + 1)
+                weekly_target = (remaining + weeks_left - 1) // weeks_left
+            elapsed_weeks = max(0, (start - schedule_start).days // 7)
+            history = history_by_goal.get(goal["id"], [])
+            saved_before = sum(amount for day, amount in history if day < start)
+            saved_this_week = sum(amount for day, amount in history if start <= day <= end)
+            arrears = max(0, weekly_target * elapsed_weeks - saved_before) if include_savings_carryover else 0
+            due_this_week = min(remaining, max(0, weekly_target + arrears - saved_this_week))
+            weeks_remaining = max(1, ((target_date - start).days // 7) + 1) if target_date >= start else 0
+            required_weekly = (remaining + weeks_remaining - 1) // weeks_remaining if weeks_remaining else remaining
+            savings_plan.append({
+                "goal_id": goal["id"], "goal_name": goal["name"],
+                "weekly_target_cents": weekly_target, "arrears_cents": arrears,
+                "planned_this_week_cents": due_this_week,
+                "recorded_this_week_cents": saved_this_week,
+                "remaining_cents": remaining,
+                "target_date": goal["target_date"],
+                "required_weekly_to_deadline_cents": required_weekly,
+                "behind_schedule": bool(target_date < start or required_weekly > weekly_target),
+            })
+            planned_savings += due_this_week
+        else:
+            planned_savings += goal["contribution_per_period_cents"] * len(payday_dates)
     projected_cash = (
         starting_cash + expected_income_cents + transaction_income
         - bills_due_cents - minimum_debt_cents - transaction_expenses
@@ -421,6 +470,7 @@ def _weekly_cash_flow_for_window(
         "category_spending": category_spending,
         "transfers": transaction_transfers,
         "planned_savings_cents": planned_savings,
+        "savings_plan": savings_plan,
         "funded_savings_cents": funded_savings,
         "savings_shortfall_cents": savings_shortfall,
         "projected_cash_before_buffer_cents": projected_cash,
@@ -430,6 +480,7 @@ def _weekly_cash_flow_for_window(
         "free_to_spend_cents": free_to_spend,
         "extra_debt_payoff_capacity_cents": free_to_spend,
         "notes": [
+            "Dated savings goals use weekly targets and carry forward missed amounts based on recorded contributions.",
             "Only active scheduled income, bills, debts, and savings goals are included.",
             "Link a recorded transaction to the scheduled item it paid or received to prevent duplicate counting.",
             "Linked transactions match scheduled occurrences within seven days, or the bill's larger flexible window.",
