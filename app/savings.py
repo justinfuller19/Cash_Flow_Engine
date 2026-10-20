@@ -107,8 +107,12 @@ def update_savings_goal(goal_id: int, body: SavingsGoalUpdate):
                 schedule_start = _financial_week_start()
                 updates["schedule_start_date"] = schedule_start.isoformat()
                 updates["weekly_target_cents"] = _weekly_target(max(0, target_amount - current_balance), target_date, schedule_start)
-            elif "target_date" in updates and target_date is None:
-                updates["weekly_target_cents"] = updates.get("weekly_target_cents", existing["weekly_target_cents"])
+            elif target_date is None and ("target_date" in updates or "weekly_target_cents" in updates):
+                # Start the undated weekly schedule from the current financial
+                # week when its amount is set or its deadline is cleared.
+                updates["schedule_start_date"] = _financial_week_start().isoformat()
+                if "target_date" in updates and "weekly_target_cents" not in updates:
+                    updates["weekly_target_cents"] = existing["weekly_target_cents"]
             assignments = ", ".join(f"{key} = ?" for key in updates)
             db.execute(
                 f"UPDATE savings_goals SET {assignments} WHERE id = ?",
