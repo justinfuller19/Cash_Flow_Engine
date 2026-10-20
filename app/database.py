@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 
 def base_database_path() -> Path:
@@ -495,5 +495,24 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_plan_items_savings_goal "
             "ON plan_items(savings_goal_id, actual_transaction_id)"
+        )
+
+    if version < 15:
+        # Enforce one active auto-generated checklist per financial week. If a
+        # prior race created duplicates, keep the newest active plan and mark
+        # older duplicates cancelled so their checklist history is preserved.
+        db.execute(
+            """UPDATE payday_plans SET status = 'cancelled'
+               WHERE is_auto_generated = 1 AND status = 'active'
+                 AND id NOT IN (
+                     SELECT MAX(id) FROM payday_plans
+                     WHERE is_auto_generated = 1 AND status = 'active'
+                     GROUP BY period_start, period_end
+                 )"""
+        )
+        db.execute(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_auto_plan_per_week
+               ON payday_plans(period_start, period_end)
+               WHERE is_auto_generated = 1 AND status = 'active'"""
         )
 
