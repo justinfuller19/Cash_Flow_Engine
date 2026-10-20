@@ -56,7 +56,9 @@ def _ensure_automatic_checklist() -> int:
         })
 
     for debt in report.get("minimum_debt_payments", []):
-        if debt["status"] != "due":
+        # A partially paid minimum still needs an action for its remaining amount.
+        # Skip fully covered cycles and paid-off debts with a zero capped minimum.
+        if debt["amount_cents"] <= 0 or debt["status"] == "recorded":
             continue
         actions.append({
             "category": "debt", "name": "Pay minimum: " + debt["name"],
