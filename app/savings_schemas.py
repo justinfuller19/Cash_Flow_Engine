@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 
 class SavingsGoalCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    target_amount_cents: int = Field(ge=0)
+    target_amount_cents: int = Field(default=0, ge=0)
     current_balance_cents: int = Field(default=0, ge=0)
     target_date: date | None = None
     priority: int = Field(default=100, ge=0, le=10000)
