@@ -553,3 +553,164 @@ def test_changing_household_buffer_recalculates_weekly_savings_funding(tmp_path,
     after = client.get("/api/cash-flow/weekly", params=params).json()
     assert after["funded_savings_cents"] == 30000
     assert after["savings_plan"][0]["funded_this_week_cents"] == 30000
+
+
+def test_debt_minimum_uses_balance_cap_when_balance_is_below_stated_minimum(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    start = date(2026, 10, 19)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 0 WHERE id = 1"
+        )
+        db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                apr_percent, active, next_due_date)
+               VALUES ('Nearly paid card', 6000, 10000, 21, 19.9, 1, ?)""",
+            ((start + timedelta(days=2)).isoformat(),),
+        )
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": start.isoformat(), "end_date": (start + timedelta(days=6)).isoformat()},
+    ).json()
+
+    debt = report["minimum_debt_payments"][0]
+    assert debt["original_minimum_payment_cents"] == 10000
+    assert debt["balance_capped_minimum_cents"] == 6000
+    assert debt["amount_cents"] == 6000
+    assert report["minimum_debt_payments_cents"] == 6000
+
+
+def test_debt_minimum_subtracts_multiple_linked_partial_payments_once(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    start = date(2026, 10, 19)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 0 WHERE id = 1"
+        )
+        debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                apr_percent, active, next_due_date)
+               VALUES ('Partial card', 50000, 10000, 21, 19.9, 1, ?)""",
+            ((start + timedelta(days=2)).isoformat(),),
+        ).lastrowid
+
+    transaction_ids = []
+    for day, amount in ((start, 2500), (start + timedelta(days=2), 2000)):
+        response = client.post("/api/transactions", json={
+            "transaction_date": day.isoformat(),
+            "transaction_type": "expense",
+            "linked_obligation_type": "debt",
+            "linked_obligation_id": debt_id,
+            "category": "other",
+            "description": "Partial card payment",
+            "amount_cents": -amount,
+        })
+        assert response.status_code == 201, response.text
+        transaction_ids.append(response.json()["id"])
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": start.isoformat(), "end_date": (start + timedelta(days=6)).isoformat()},
+    ).json()
+    debt = report["minimum_debt_payments"][0]
+
+    assert debt["qualifying_payments_cents"] == 4500
+    assert debt["paid_toward_minimum_cents"] == 4500
+    assert debt["amount_cents"] == 5500
+    assert debt["status"] == "partial"
+    assert set(debt["covered_by_transaction_ids"]) == set(transaction_ids)
+    assert report["minimum_debt_payments_cents"] == 5500
+    assert report["debt_payments_covered_by_transactions_cents"] == 4500
+    # Actual payment expenses plus the remaining minimum equal the original minimum,
+    # rather than charging the payment and the full minimum a second time.
+    assert report["transaction_expenses_cents"] + report["minimum_debt_payments_cents"] == 10000
+
+
+def test_debt_overpayment_satisfies_minimum_and_reports_extra_reduction(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    start = date(2026, 10, 19)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 0 WHERE id = 1"
+        )
+        debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                apr_percent, active, next_due_date)
+               VALUES ('Overpaid card', 50000, 10000, 21, 19.9, 1, ?)""",
+            ((start + timedelta(days=2)).isoformat(),),
+        ).lastrowid
+
+    payment = client.post("/api/transactions", json={
+        "transaction_date": (start + timedelta(days=2)).isoformat(),
+        "transaction_type": "expense",
+        "linked_obligation_type": "debt",
+        "linked_obligation_id": debt_id,
+        "category": "other",
+        "description": "Payment above minimum",
+        "amount_cents": -12500,
+    })
+    assert payment.status_code == 201, payment.text
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": start.isoformat(), "end_date": (start + timedelta(days=6)).isoformat()},
+    ).json()
+    debt = report["minimum_debt_payments"][0]
+
+    assert debt["amount_cents"] == 0
+    assert debt["status"] == "recorded"
+    assert debt["paid_toward_minimum_cents"] == 10000
+    assert debt["extra_payment_cents"] == 2500
+    assert report["minimum_debt_payments_cents"] == 0
+    assert report["debt_payments_covered_by_transactions_cents"] == 10000
+    assert report["debt_extra_payments_by_transactions_cents"] == 2500
+    assert report["transaction_expenses_cents"] == 12500
+
+
+def test_debt_payment_link_does_not_cover_another_debt_or_wrong_cycle(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    start = date(2026, 10, 1)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 0 WHERE id = 1"
+        )
+        matched_debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                apr_percent, active, next_due_date)
+               VALUES ('Linked card', 50000, 10000, 5, 19.9, 1, '2026-10-05')"""
+        ).lastrowid
+        other_debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                apr_percent, active, next_due_date)
+               VALUES ('Other card', 50000, 8000, 20, 19.9, 1, '2026-10-20')"""
+        ).lastrowid
+
+    # This is linked to the first debt but is 15 days after its due date, so it
+    # cannot satisfy that cycle. It must not be credited to the other debt either.
+    payment = client.post("/api/transactions", json={
+        "transaction_date": "2026-10-20",
+        "transaction_type": "expense",
+        "linked_obligation_type": "debt",
+        "linked_obligation_id": matched_debt_id,
+        "category": "other",
+        "description": "Late unrelated-cycle payment",
+        "amount_cents": -10000,
+    })
+    assert payment.status_code == 201, payment.text
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": start.isoformat(), "end_date": "2026-10-31"},
+    ).json()
+    debts = {item["name"]: item for item in report["minimum_debt_payments"]}
+
+    assert debts["Linked card"]["amount_cents"] == 10000
+    assert debts["Linked card"]["qualifying_payments_cents"] == 0
+    assert debts["Other card"]["amount_cents"] == 8000
+    assert debts["Other card"]["qualifying_payments_cents"] == 0
