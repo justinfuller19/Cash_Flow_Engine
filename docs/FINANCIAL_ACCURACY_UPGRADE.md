@@ -133,15 +133,15 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 5 — Optional estimated debt interest
 
 **Priority:** Medium  
-**Status:** Not started
+**Status:** Implementation in progress in the Phase 5 PR; optional estimate is isolated to the multi-week forecast.
 
-- [ ] Add an optional, clearly labeled future-interest estimate for debts retaining a projected balance after planned payments.
-- [ ] Document and test the approximation (for example, monthly interest based on balance and APR), including cent rounding.
-- [ ] Keep estimated interest separate from actual transactions and confirmed balances.
-- [ ] Avoid duplicating interest across overlapping forecast windows.
-- [ ] Explain that actual interest depends on lender terms, daily balances, payment timing, and fees.
-- [ ] Keep the pure single-period engine unchanged initially unless separately approved.
-- [ ] Test zero balances, zero APR, higher APR, and effects on future cash requirements.
+- [x] Add an optional, clearly labeled future-interest estimate for debts retaining a projected balance after scheduled and recorded payments.
+- [x] Document and test a daily-prorated APR approximation (opening projected balance × APR × days / 365), rounded to the nearest cent.
+- [x] Keep estimated interest separate from actual transactions, confirmed balances, and cash-flow/safe-to-spend totals.
+- [x] Carry projected balances forward within each request so interest is not duplicated across the weeks of one forecast.
+- [x] Explain that actual interest depends on lender terms, daily balances, payment timing, statement cycles, and fees.
+- [x] Keep the pure single-period engine unchanged.
+- [x] Test opt-in behavior, zero balances, zero APR, higher APR, cent rounding, and that estimates do not change cash-flow requirements or saved balances.
 
 ## Phase 6 — More flexible recurrence options
 
@@ -228,7 +228,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 
 ## Milestone B — More realistic long-range forecasting
 
-- [ ] Phase 5: Optional estimated debt interest.
+- [x] Phase 5: Optional estimated debt interest (implementation in Phase 5 PR; awaiting CI/review).
 - [ ] Phase 6: More flexible recurrence options.
 - [ ] Phase 7: Income changes and end dates.
 
@@ -263,3 +263,7 @@ Record meaningful implementation updates here. Each entry should include date, p
 **Do not tell the household that money is safe to spend unless the forecast accounts for known obligations and the protected household cash buffer. Every important number should be explainable and testable.**
 
 - **2026-10-20 — Phase 4 implementation (PR #40, open):** Added shared integer-cent buffer arithmetic for the pure payday allocation engine and weekly forecast. The weekly API explicitly reports horizon-wide buffer replenishment and safe-to-spend before planned allocations; the dashboard shows safe-to-spend and forecast buffer gap. Regression tests cover underfunded buffers, allocation accounting, future-week gaps, and dashboard metrics. GitHub Actions run #178 passed 141 tests on Python 3.11, 3.12, and 3.13. PR #40 awaits review/merge; no deployment performed.
+
+
+- **2026-10-20 — Phase 4 merged (PR #40):** Household-wide buffer and horizon safe-to-spend semantics are merged. Earlier Phase 4 review notes are corrected in this update.
+- **2026-10-20 — Phase 5 implementation (PR pending):** Added an opt-in multi-week debt-interest estimate based on projected opening balances and APR, carried projected balances week by week, and exposed estimates in the weekly report. Estimates do not affect cash totals, saved debt balances, or recorded transactions. Regression tests cover opt-in behavior, zero APR/balance, higher APR, rounding, and unchanged cash values. CI results pending.
