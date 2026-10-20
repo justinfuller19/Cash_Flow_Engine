@@ -376,11 +376,6 @@ def test_suggested_cash_balance_uses_only_transactions_before_current_week(tmp_p
     assert on_snapshot_day.status_code == 201
     assert later_transaction.status_code == 201
 
-    transfer_category = client.post(
-        "/api/categories",
-        json={"name": "account transfer", "transaction_type": "transfer"},
-    )
-    assert transfer_category.status_code == 201
     transfer = client.post(
         "/api/transactions",
         json={
