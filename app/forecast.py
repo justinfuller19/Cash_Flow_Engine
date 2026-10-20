@@ -27,8 +27,8 @@ def _last_weekday(year: int, month: int, weekday: int) -> date:
     return last - timedelta(days=(last.weekday() - weekday) % 7)
 
 
-def _observed_fixed_holiday(day: date, month: int, day_of_month: int) -> date:
-    actual = date(day.year, month, day_of_month)
+def _observed_fixed_holiday(year: int, month: int, day_of_month: int) -> date:
+    actual = date(year, month, day_of_month)
     if actual.weekday() == 5:
         return actual - timedelta(days=1)
     if actual.weekday() == 6:
@@ -54,22 +54,21 @@ def _easter_sunday(year: int) -> date:
 
 def _us_federal_holidays(year: int) -> set[date]:
     holidays = {
-        _observed_fixed_holiday(date(year, 1, 1), 1, 1),
+        _observed_fixed_holiday(year, 1, 1),
         _nth_weekday(year, 1, 0, 3),   # Martin Luther King Jr. Day
         _nth_weekday(year, 2, 0, 3),   # Washington's Birthday
         _last_weekday(year, 5, 0),     # Memorial Day
         
-        _observed_fixed_holiday(date(year, 7, 4), 7, 4),
+        _observed_fixed_holiday(year, 7, 4),
         _nth_weekday(year, 9, 0, 1),   # Labor Day
         _nth_weekday(year, 10, 0, 2),  # Columbus Day
-        _observed_fixed_holiday(date(year, 11, 11), 11, 11),
+        _observed_fixed_holiday(year, 11, 11),
         _nth_weekday(year, 11, 3, 4),  # Thanksgiving
-        _observed_fixed_holiday(date(year, 12, 25), 12, 25),
+        _observed_fixed_holiday(year, 12, 25),
         _easter_sunday(year) - timedelta(days=2),  # Good Friday (bank convention)
     }
     if year >= 2021:
-        holidays.add(_observed_fixed_holiday(date(year, 6, 19), 6, 19))  # Juneteenth
-        holidays.add(_nth_weekday(year, 6, 0, 3))  # Juneteenth observed
+        holidays.add(_observed_fixed_holiday(year, 6, 19))  # Juneteenth
     return holidays
 
 
