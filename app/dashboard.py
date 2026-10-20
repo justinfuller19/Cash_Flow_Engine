@@ -65,11 +65,9 @@ def _ensure_automatic_checklist() -> int:
             "note": "Required minimum payment. Record the payment under Transactions and link it to this debt.",
         })
 
-    weekly_goal_funding = 0
     for goal in report.get("savings_plan", []):
         requested = goal["planned_this_week_cents"]
         funded = goal.get("funded_this_week_cents", 0)
-        weekly_goal_funding += funded
         if requested <= 0 and not goal.get("deadline_warning"):
             continue
         note = "Weekly savings target."
