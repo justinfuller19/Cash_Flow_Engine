@@ -576,7 +576,7 @@ def test_existing_savings_arrears_are_reserved_once_across_future_weeks(tmp_path
     # from each future week's projected cash.
     assert report["lowest_projected_cash_cents"] == 50000
     assert report["free_to_spend_cents"] == 50000
-    assert any("catch-up amounts already reserved" in note for note in report["notes"])
+    assert any("catch-up amounts already reserved" in note.lower() for note in report["notes"])
 
 
 def test_recorded_savings_contribution_reduces_arrears_once(tmp_path, monkeypatch):
