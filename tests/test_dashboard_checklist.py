@@ -1,5 +1,6 @@
 """Integration tests for the live dashboard and action checklist."""
 from datetime import date, timedelta
+import sqlite3
 
 from fastapi.testclient import TestClient
 
@@ -143,3 +144,35 @@ def test_schema_v5_adds_checklist_actual_fields(tmp_path, monkeypatch):
         version = db.execute("PRAGMA user_version").fetchone()[0]
     assert {"status", "actual_amount_cents", "actual_date", "savings_goal_id", "actual_transaction_id"} <= columns
     assert version == database.SCHEMA_VERSION
+
+
+
+def test_only_one_active_automatic_plan_per_financial_week(tmp_path, monkeypatch):
+    client, _, _ = seed_planned_household(tmp_path, monkeypatch)
+    assert client.get("/api/checklist").status_code == 200
+    with database.connect() as db:
+        plan = db.execute(
+            """SELECT * FROM payday_plans
+               WHERE is_auto_generated = 1 AND status = 'active'"""
+        ).fetchone()
+        assert plan is not None
+        active_count = db.execute(
+            """SELECT COUNT(*) FROM payday_plans
+               WHERE is_auto_generated = 1 AND status = 'active'
+                 AND period_start = ? AND period_end = ?""",
+            (plan["period_start"], plan["period_end"]),
+        ).fetchone()[0]
+        assert active_count == 1
+        try:
+            db.execute(
+                """INSERT INTO payday_plans
+                   (plan_date, period_start, period_end, starting_cash_cents,
+                    debt_strategy, status, is_auto_generated)
+                   VALUES (?, ?, ?, ?, 'avalanche', 'active', 1)""",
+                (plan["plan_date"], plan["period_start"], plan["period_end"],
+                 plan["starting_cash_cents"]),
+            )
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            raise AssertionError("Database allowed duplicate active automatic plans for one week")
