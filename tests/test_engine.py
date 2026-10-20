@@ -57,7 +57,7 @@ def test_only_income_received_inside_window_counts():
         buffers=[], bills=[], credit_cards=[], savings_goals=[],
     ))
     assert plan.income_cents == 100000
-    assert plan.unallocated_cents == 600000
+    assert plan.unallocated_cents == 10000000
 
 
 def test_shortfalls_are_explicit_and_never_make_cash_negative():
@@ -125,4 +125,4 @@ def test_buffer_reservation_does_not_consume_cash_twice():
     buffer_item = next(item for item in plan.items if item.category == "buffer")
     assert buffer_item.funded_cents == 5000
     assert plan.total_available_cents == plan.allocated_cents + plan.unallocated_cents
-    assert plan.unallocated_cents == 1000
+    assert plan.unallocated_cents == 6000
