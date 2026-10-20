@@ -105,6 +105,7 @@ def weekly_cash_flow(
     start_date: date | None = Query(default=None),
     end_date: date | None = Query(default=None),
     forecast_weeks: int = 13,
+    estimate_interest: bool = Query(default=False),
 ):
     """Forecast the selected window and reserve cash for later weeks' obligations."""
     if start_date is None:
@@ -137,6 +138,32 @@ def weekly_cash_flow(
     lowest_projected_cash = current_ending_cash
     future_forecast = []
     carried_cash = current_ending_cash
+
+    # Optional interest affects explanatory projected debt balances only.
+    # It never changes cash, transactions, or saved balances. APR is prorated
+    # daily across each future window and rounded to the nearest cent (half up).
+    with database.connect() as db:
+        debt_rows = db.execute(
+            """SELECT id, name, balance_cents, apr_percent
+               FROM credit_cards WHERE active = 1 ORDER BY id"""
+        ).fetchall()
+    projected_debts = {
+        row["id"]: {
+            "name": row["name"],
+            "balance_cents": row["balance_cents"],
+            "apr_basis_points": max(0, int(float(row["apr_percent"]) * 100 + 0.5)),
+            "apr_percent": float(row["apr_percent"]),
+        }
+        for row in debt_rows
+    }
+    for payment in report["minimum_debt_payments"]:
+        debt = projected_debts.get(payment["id"])
+        if debt:
+            debt["balance_cents"] = max(
+                0, debt["balance_cents"]
+                - payment["qualifying_payments_cents"] - payment["amount_cents"]
+            )
+    total_estimated_interest_cents = 0
     # Carry only arrears that already exist at the end of the selected week.
     # Future target shortfalls remain forecast gaps; they do not become new
     # arrears until those weeks actually occur.
@@ -164,10 +191,48 @@ def weekly_cash_flow(
             savings_arrears_override=carried_savings_arrears,
             savings_catch_up_override=carried_savings_catch_up,
         )
+        estimated_debt_interest = []
+        weekly_estimated_interest_cents = 0
+        if estimate_interest:
+            days_in_period = (future_end - future_start).days + 1
+            denominator = 10_000 * 365
+            for debt_id, debt in projected_debts.items():
+                opening_balance = debt["balance_cents"]
+                if opening_balance <= 0 or debt["apr_basis_points"] <= 0:
+                    interest_cents = 0
+                else:
+                    numerator = opening_balance * debt["apr_basis_points"] * days_in_period
+                    interest_cents = (numerator + denominator // 2) // denominator
+                estimated_debt_interest.append({
+                    "debt_id": debt_id,
+                    "debt_name": debt["name"],
+                    "opening_balance_cents": opening_balance,
+                    "apr_percent": debt["apr_percent"],
+                    "estimated_interest_cents": interest_cents,
+                })
+                weekly_estimated_interest_cents += interest_cents
         ending_cash = (
             future["projected_cash_before_buffer_cents"] - future["funded_savings_cents"]
         )
         lowest_projected_cash = min(lowest_projected_cash, ending_cash)
+        if estimate_interest:
+            payments_by_debt = {
+                payment["id"]: payment["qualifying_payments_cents"] + payment["amount_cents"]
+                for payment in future["minimum_debt_payments"]
+            }
+            for debt_id, debt in projected_debts.items():
+                interest = next(
+                    (item["estimated_interest_cents"] for item in estimated_debt_interest
+                     if item["debt_id"] == debt_id),
+                    0,
+                )
+                reduction = min(
+                    debt["balance_cents"] + interest,
+                    max(0, payments_by_debt.get(debt_id, 0)),
+                )
+                debt["balance_cents"] = max(0, debt["balance_cents"] + interest - reduction)
+            total_estimated_interest_cents += weekly_estimated_interest_cents
+
         future_forecast.append({
             "start_date": future_start.isoformat(),
             "end_date": future_end.isoformat(),
@@ -186,6 +251,18 @@ def weekly_cash_flow(
             "projected_ending_cash_cents": ending_cash,
             "projected_shortfall_cents": max(0, -ending_cash),
             "buffer_shortfall_cents": max(0, buffer_target - ending_cash),
+            "estimated_debt_interest_cents": weekly_estimated_interest_cents,
+            "estimated_debt_interest": estimated_debt_interest,
+            "projected_debt_balances": (
+                [
+                    {
+                        "debt_id": debt_id,
+                        "debt_name": debt["name"],
+                        "projected_balance_cents": debt["balance_cents"],
+                    }
+                    for debt_id, debt in projected_debts.items()
+                ] if estimate_interest else []
+            ),
         })
         carried_cash = ending_cash
         carried_savings_arrears = {
@@ -237,6 +314,8 @@ def weekly_cash_flow(
     report["free_to_spend_cents"] = safe_to_spend
     report["extra_debt_payoff_capacity_cents"] = safe_to_spend
     report["forecast_weeks"] = forecast_weeks
+    report["estimated_interest_enabled"] = estimate_interest
+    report["estimated_debt_interest_cents"] = total_estimated_interest_cents
     report["lowest_projected_cash_cents"] = lowest_projected_cash
     report["future_buffer_shortfall_cents"] = buffer_shortfall_cents(lowest_projected_cash, buffer_target)
     report["horizon_buffer_replenishment_cents"] = buffer_shortfall_cents(
@@ -251,6 +330,20 @@ def weekly_cash_flow(
         "weeks carry forward prior ending cash. Planned surplus allocations are reserved "
         "once and remain plans until recorded."
     )
+    if estimate_interest:
+        report["notes"].append(
+            "Estimated debt interest is an optional projection using each active debt's "
+            "opening projected balance, APR, and a daily-prorated calculation rounded to cents. "
+            "Interest is estimated before that week's projected payments reduce the balance. "
+            "It does not change cash-flow totals, saved debt balances, or recorded transactions. "
+            "Actual lender interest may differ due to daily balances, statement cycles, payment "
+            "timing, fees, and lender-specific terms."
+        )
+    else:
+        report["notes"].append(
+            "Estimated debt interest is off. Enable the optional estimate to see projected "
+            "interest and balances; estimates never alter recorded transactions or saved balances."
+        )
     report["notes"].append(
         "Savings arrears already present in the selected week carry into future weeks. "
         "Each future week adds its regular savings target, but an unfunded future target "
@@ -881,7 +974,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 </style></head><body><main><a href="/">← Dashboard</a><h1>Weekly Cash Flow</h1>
 <p class="muted">Review what is expected, what is already recorded, and what remains after required payments, the household buffer, and planned savings. Forecasts are estimates and never move money.</p>
 <div class="toolbar"><div class="field"><label for="week-start">Start of financial week</label><select id="week-start"><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option selected>Friday</option><option>Saturday</option><option>Sunday</option></select></div><button id="save-week-start" type="button">Save week start</button><div class="field"><label for="start">Start date</label><input id="start" type="date" required></div>
-<div class="field"><label for="end">End date</label><input id="end" type="date" required></div><button id="refresh" type="button">Update report</button></div>
+<div class="field"><label for="end">End date</label><input id="end" type="date" required></div><label><input id="estimate-interest" type="checkbox"> Estimate future debt interest</label><button id="refresh" type="button">Update report</button></div>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
 <section class="card"><h2>Confirm starting cash</h2>
@@ -928,12 +1021,14 @@ function renderList(id,items,empty,make){const root=document.getElementById(id);
 function metric(root,label,value){const card=el("div","metric");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));root.appendChild(card);}
 async function load(){const start=document.getElementById("start").value;const end=document.getElementById("end").value;
 if(!start||!end)throw Error("Choose both report dates.");
-const report=await api("/api/cash-flow/weekly?start_date="+encodeURIComponent(start)+"&end_date="+encodeURIComponent(end));
+const estimateInterest=document.getElementById("estimate-interest").checked;
+const report=await api("/api/cash-flow/weekly?start_date="+encodeURIComponent(start)+"&end_date="+encodeURIComponent(end)+"&estimate_interest="+String(estimateInterest));
 const metrics=document.getElementById("metrics");metrics.replaceChildren();
 for(const [label,value] of [
 ["Starting cash",report.starting_cash_cents],["Expected income",report.expected_income_cents],
 ["Recorded income",report.recorded_income_cents],["Bills still due",report.bills_due_cents],
 ["Minimum debt payments",report.minimum_debt_payments_cents],["Recorded expenses",report.transaction_expenses_cents],
+...(report.estimated_interest_enabled?[["Estimated future debt interest",report.estimated_debt_interest_cents]]:[]),
 ["Projected cash before buffer",report.projected_cash_before_buffer_cents],["Buffer target",report.buffer_target_cents],
 ["Buffer replenishment needed",report.buffer_replenishment_cents],["Planned savings",report.planned_savings_cents],
 ["Savings funded",report.funded_savings_cents],
@@ -1000,6 +1095,10 @@ renderList("future-forecast",report.future_forecast,"No future weeks included in
   li.appendChild(el("div","detail","Savings target "+dollars(x.planned_savings_cents)+" · safely funded "+dollars(x.funded_savings_cents)+" · arrears carried "+dollars(x.savings_arrears_cents)));
   if(x.savings_shortfall_cents>0)li.appendChild(el("div","detail","Savings target not currently affordable: "+dollars(x.savings_shortfall_cents)));
   if(x.buffer_shortfall_cents>0)li.appendChild(el("div","detail","Buffer shortfall: "+dollars(x.buffer_shortfall_cents)));
+  if(report.estimated_interest_enabled){
+    li.appendChild(el("div","detail","Estimated debt interest this week: "+dollars(x.estimated_debt_interest_cents)));
+    for(const debt of x.projected_debt_balances||[])li.appendChild(el("div","detail",debt.debt_name+" projected balance: "+dollars(debt.projected_balance_cents)));
+  }
 }); 
 }
 function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}

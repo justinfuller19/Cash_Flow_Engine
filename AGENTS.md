@@ -26,3 +26,5 @@ Before planning or implementing a feature in this repository, read **[docs/PROJE
 - Identify the milestone and acceptance criteria affected.
 - State important assumptions, then implement the smallest complete, tested increment.
 - Update the upgrade checklist and progress log in the same PR as the corresponding code changes.
+
+- Optional estimated debt interest belongs only to the multi-week forecast unless separately approved. Keep estimates visibly labeled and separate from actual balances, transactions, and cash/safe-to-spend calculations; never persist projections as actual activity.
