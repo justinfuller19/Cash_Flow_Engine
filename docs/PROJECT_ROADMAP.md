@@ -206,3 +206,10 @@ As the application grows, consider organizing code into route modules, schemas, 
 - Existing functionality remains covered by regression tests.
 - Financial calculations use integer cents and explain shortfalls rather than silently discarding them.
 - Changes are scoped to the milestone and delivered through a reviewable pull request.
+
+
+### Automatic weekly checklist workflow
+
+- [x] Generate the current financial week's checklist from the live safe cash-flow forecast when the dashboard or checklist is opened.
+- [x] Refresh pending actions when schedules, savings targets, or the shared buffer change while preserving recorded completion and actual amounts.
+- [x] Keep existing manually generated plan history intact and redirect the obsolete planner page to the checklist.
