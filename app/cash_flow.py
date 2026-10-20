@@ -434,6 +434,18 @@ def _weekly_cash_flow_for_window(
     available_after_buffer = max(0, projected_cash - buffer_target)
     funded_savings = min(planned_savings, available_after_buffer)
     savings_shortfall = planned_savings - funded_savings
+    remaining_savings_capacity = funded_savings
+    for item in savings_plan:
+        item["funded_this_week_cents"] = min(
+            item["planned_this_week_cents"], remaining_savings_capacity
+        )
+        item["unfunded_this_week_cents"] = (
+            item["planned_this_week_cents"] - item["funded_this_week_cents"]
+        )
+        remaining_savings_capacity -= item["funded_this_week_cents"]
+        item["deadline_warning"] = bool(
+            item["behind_schedule"] or item["unfunded_this_week_cents"] > 0
+        )
     free_to_spend = max(0, available_after_buffer - funded_savings)
 
     return {
