@@ -224,7 +224,6 @@ def initialize_database() -> None:
             """
         )
         _apply_migrations(db)
-        _apply_migrations(db)
         db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
