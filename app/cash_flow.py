@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from . import database
+from .household import CASH_SNAPSHOT_STALE_DAYS
 from .forecast import occurrences_between
 
 router = APIRouter()
@@ -212,7 +213,7 @@ def _weekly_cash_flow_for_window(
             try:
                 starting_cash_is_stale = (
                     date.today() - date.fromisoformat(snapshot["confirmed_at"][:10])
-                ).days > 10
+                ).days > CASH_SNAPSHOT_STALE_DAYS
             except (TypeError, ValueError):
                 starting_cash_is_stale = True
         buffer_target = settings["buffer_target_cents"] if settings else 0
@@ -542,7 +543,7 @@ def _weekly_cash_flow_for_window(
             (
                 "WARNING: no confirmed starting-cash snapshot is available for this week. Set cash on hand in Household & income."
                 if starting_cash_confirmed_at is None
-                else "WARNING: starting cash was last confirmed more than 10 days ago. Reconfirm it in Household & income."
+                else f"WARNING: starting cash was last confirmed more than {CASH_SNAPSHOT_STALE_DAYS} days ago. Reconfirm it in Household & income."
             ) if starting_cash_is_stale else "Starting cash confirmation is current.",
         ],
     }
