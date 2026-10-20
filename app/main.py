@@ -11,6 +11,7 @@ from .engine import (
     generate_payday_plan,
 )
 from .household_schemas import (
+    IncomeAmountOverrideCreate, IncomeAmountOverrideOut,
     IncomeSourceCreate, IncomeSourceOut, IncomeSourceUpdate,
     PersonCreate, PersonOut, PersonUpdate,
 )
@@ -615,7 +616,7 @@ def list_income_sources():
     with database.connect() as db:
         rows = db.execute(
             """SELECT id, person_id, name, net_amount_cents, frequency,
-                      next_payday, active, created_at
+                      next_payday, active, end_date, created_at
                FROM income_sources ORDER BY next_payday, id"""
         ).fetchall()
     return [dict(row) | {"active": bool(row["active"])} for row in rows]
@@ -639,16 +640,17 @@ def create_income_source(body: IncomeSourceCreate):
                 raise HTTPException(status_code=404, detail="Household member not found")
             cursor = db.execute(
                 """INSERT INTO income_sources
-                   (person_id, name, net_amount_cents, frequency, next_payday, active)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (person_id, name, net_amount_cents, frequency, next_payday, active, end_date)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     body.person_id, name, body.net_amount_cents, body.frequency,
                     body.next_payday.isoformat(), int(body.active),
+                    body.end_date.isoformat() if body.end_date else None,
                 ),
             )
             row = db.execute(
                 """SELECT id, person_id, name, net_amount_cents, frequency,
-                          next_payday, active, created_at
+                          next_payday, active, end_date, created_at
                    FROM income_sources WHERE id = ?""",
                 (cursor.lastrowid,),
             ).fetchone()
@@ -667,6 +669,8 @@ def update_income_source(income_id: int, body: IncomeSourceUpdate):
         updates["name"] = name
     if "next_payday" in updates:
         updates["next_payday"] = updates["next_payday"].isoformat()
+    if "end_date" in updates and updates["end_date"] is not None:
+        updates["end_date"] = updates["end_date"].isoformat()
     if "active" in updates:
         updates["active"] = int(updates["active"])
     if not updates:
@@ -702,6 +706,64 @@ def update_income_source(income_id: int, body: IncomeSourceUpdate):
             status_code=422, detail="Update violates a database constraint"
         ) from exc
     return dict(row) | {"active": bool(row["active"])}
+
+
+
+@app.get("/api/income-sources/{income_id}/amount-overrides", response_model=list[IncomeAmountOverrideOut])
+def list_income_amount_overrides(income_id: int):
+    with database.connect() as db:
+        exists = db.execute("SELECT id FROM income_sources WHERE id = ?", (income_id,)).fetchone()
+        if exists is None:
+            raise HTTPException(status_code=404, detail="Income source not found")
+        rows = db.execute(
+            """SELECT id, income_source_id, start_date, end_date, amount_cents, reason, created_at
+               FROM income_amount_overrides WHERE income_source_id = ?
+               ORDER BY start_date, end_date, id""",
+            (income_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/income-sources/{income_id}/amount-overrides", response_model=IncomeAmountOverrideOut, status_code=status.HTTP_201_CREATED)
+def create_income_amount_override(income_id: int, body: IncomeAmountOverrideCreate):
+    try:
+        with database.connect() as db:
+            exists = db.execute("SELECT id FROM income_sources WHERE id = ?", (income_id,)).fetchone()
+            if exists is None:
+                raise HTTPException(status_code=404, detail="Income source not found")
+            overlap = db.execute(
+                """SELECT id FROM income_amount_overrides
+                   WHERE income_source_id = ? AND start_date <= ? AND end_date >= ?""",
+                (income_id, body.end_date.isoformat(), body.start_date.isoformat()),
+            ).fetchone()
+            if overlap:
+                raise HTTPException(status_code=409, detail="This date range overlaps an existing amount override")
+            cursor = db.execute(
+                """INSERT INTO income_amount_overrides
+                   (income_source_id, start_date, end_date, amount_cents, reason)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (income_id, body.start_date.isoformat(), body.end_date.isoformat(),
+                 body.amount_cents, body.reason.strip()),
+            )
+            row = db.execute(
+                """SELECT id, income_source_id, start_date, end_date, amount_cents, reason, created_at
+                   FROM income_amount_overrides WHERE id = ?""", (cursor.lastrowid,)
+            ).fetchone()
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=422, detail="Amount override violates a database constraint") from exc
+    return dict(row)
+
+
+@app.delete("/api/income-sources/{income_id}/amount-overrides/{override_id}")
+def delete_income_amount_override(income_id: int, override_id: int):
+    with database.connect() as db:
+        cursor = db.execute(
+            "DELETE FROM income_amount_overrides WHERE id = ? AND income_source_id = ?",
+            (override_id, income_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Amount override not found")
+    return {"deleted": True, "id": override_id}
 
 
 @app.delete("/api/income-sources/{income_id}")
