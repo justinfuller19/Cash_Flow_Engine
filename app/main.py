@@ -143,7 +143,7 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 </div>
 <nav aria-label="Main navigation">
 <section class="nav-group"><span class="nav-label">Overview</span><div class="nav-links"><a href="/" aria-current="page">Dashboard</a><a href="/weekly">Weekly report</a></div></section>
-<section class="nav-group"><span class="nav-label">Plan & Budget</span><div class="nav-links"><a href="/setup">Household & income</a><a href="/bills">Bills & debt</a><a href="/savings">Savings goals</a><a href="/planner">Payday planner</a></div></section>
+<section class="nav-group"><span class="nav-label">Plan & Budget</span><div class="nav-links"><a href="/setup">Household & income</a><a href="/bills">Bills & debt</a><a href="/savings">Savings goals</a></div></section>
 <section class="nav-group"><span class="nav-label">Track Activity</span><div class="nav-links"><a href="/checklist">Payday checklist</a><a href="/transactions">Transactions</a></div></section>
 <section class="nav-group"><span class="nav-label">Manage</span><div class="nav-links"><a href="/settings-data">Settings & data</a><a href="/docs">API docs</a></div></section>
 </nav>
@@ -157,7 +157,7 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 <section class="card"><h2>Upcoming bills · 30 days</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Debt payments · 30 days</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Savings progress</h2><ul id="goals" class="list"><li class="muted">Loading…</li></ul></section>
-<section class="card"><h2>Recent payday plans</h2><ul id="plans" class="list"><li class="muted">Loading…</li></ul><p><a href="/planner">Generate or review plans →</a></p></section>
+<section class="card"><h2>Automatic weekly checklist</h2><p class="muted">This week's actions are generated from your saved schedules and safe cash-flow forecast.</p><a href="/checklist">Open this week's checklist →</a></section>
 <section class="card"><h2>Checklist</h2><p id="checklist-summary" class="muted">Loading checklist…</p><a href="/checklist">Review payday actions →</a></section>
 <section class="card"><h2>Recent transactions</h2><ul id="transactions" class="list"><li class="muted">Loading…</li></ul><a href="/transactions">Record or review transactions →</a></section>
 </div></main>
@@ -174,7 +174,7 @@ renderList("paydays",d.next_paydays,"No upcoming paydays found.",(li,x)=>{li.app
 renderList("bills",d.upcoming_bills,"No saved bills due in the next 30 days.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.category+(x.autopay?" · autopay":"")));});
 renderList("debts",d.upcoming_debts,"No debt due dates found in the next 30 days.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · minimum "+dollars(x.minimum_payment_cents)));li.appendChild(el("div","detail",x.date+" · balance "+dollars(x.balance_cents)));});
 renderList("goals",d.savings_goals,"No active savings goals.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.current_balance_cents)+" / "+dollars(x.target_amount_cents)));li.appendChild(el("div","detail",x.progress_percent+"% saved · "+dollars(x.contribution_per_period_cents)+" per payday"));const track=el("div","progress","");const fill=el("div","fill","");fill.style.width=x.progress_percent+"%";track.appendChild(fill);li.appendChild(track);});
-renderList("plans",d.recent_plans,"No saved payday plans yet.",(li,x)=>{li.appendChild(el("div","item-title","Plan "+x.id+" · "+x.period_start+" to "+x.period_end));li.appendChild(el("div","detail",dollars(x.allocated_cents)+" allocated · "+dollars(x.unfunded_cents)+" unfunded"));const a=el("a","","View plan");a.href="/planner";li.appendChild(a);});
+
 document.getElementById("checklist-summary").textContent=d.pending_checklist_count?d.pending_checklist_count+" pending or attention-needed action(s).":"No pending checklist actions.";
 renderList("transactions",d.recent_transactions,"No transactions recorded yet.",(li,x)=>{const sign=x.amount_cents<0?"−":"";li.appendChild(el("div","item-title",x.description+" · "+sign+dollars(Math.abs(x.amount_cents))));li.appendChild(el("div","detail",x.transaction_date+" · "+x.category+(x.account_name?" · "+x.account_name:"")));});
 try{const weekly=await api("/api/cash-flow/weekly");const root=document.getElementById("weekly-summary");root.replaceChildren();
@@ -246,7 +246,7 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <button type="submit">Add income source</button></form>
 <ul id="income-list" class="list" aria-label="Saved income sources"><li class="empty">Loading income sources…</li></ul>
 </section></div>
-<p class="muted">Continue with Bills & Debt, Savings Goals, Payday Planner, or Checklist from the dashboard. This screen does not connect to your bank or move money.</p>
+<p class="muted">Continue with Bills & Debt, Savings Goals, or your automatically generated Checklist. This screen does not connect to your bank or move money.</p>
 </main>
 <script>
 const statusBox = document.getElementById("status");
