@@ -46,7 +46,7 @@ def test_weekly_forecast_reconciles_linked_income_and_bill_transactions(tmp_path
         )
         db.execute(
             """INSERT INTO savings_goals
-               (name, target_amount_cents, current_balance_cents, contribution_per_period_cents)
+               (name, target_amount_cents, current_balance_cents, weekly_target_cents)
                VALUES ('Emergency savings', 100000, 20000, 5000)"""
         )
 
@@ -429,7 +429,7 @@ def test_record_actual_savings_contribution_updates_goal_and_ledger(tmp_path, mo
         )
         goal_id = db.execute(
             """INSERT INTO savings_goals
-               (name, target_amount_cents, current_balance_cents, contribution_per_period_cents)
+               (name, target_amount_cents, current_balance_cents, weekly_target_cents)
                VALUES ('Vacation', 100000, 10000, 0)"""
         ).lastrowid
 
@@ -485,7 +485,6 @@ def test_dated_savings_goal_uses_weekly_target_and_carries_shortfall(tmp_path, m
             "target_amount_cents": 50000,
             "current_balance_cents": 0,
             "target_date": deadline.isoformat(),
-            "contribution_per_period_cents": 0,
         },
     )
     assert created.status_code == 201, created.text

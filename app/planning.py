@@ -108,12 +108,12 @@ def _load_request(db, body: PlanGenerateRequest) -> PaydayRequest:
             current_balance_cents=row["current_balance_cents"],
             remaining_periods=1,
             priority=row["priority"],
-            contribution_per_period_cents=row["contribution_per_period_cents"],
+            contribution_per_period_cents=row["weekly_target_cents"],
         )
         for row in db.execute(
             """SELECT name, target_amount_cents, current_balance_cents, priority,
-                      contribution_per_period_cents
-               FROM savings_goals WHERE active = 1 AND contribution_per_period_cents > 0
+                      weekly_target_cents
+               FROM savings_goals WHERE active = 1 AND weekly_target_cents > 0
                ORDER BY priority, name COLLATE NOCASE, id"""
         ).fetchall()
     ]

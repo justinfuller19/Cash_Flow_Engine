@@ -82,7 +82,7 @@ def test_generate_plan_uses_saved_household_records_and_saves_history(tmp_path, 
             "name": "Emergency fund",
             "target_amount_cents": 100000,
             "current_balance_cents": 0,
-            "contribution_per_period_cents": 10000,
+            "weekly_target_cents": 10000,
             "priority": 1,
         },
     )

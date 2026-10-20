@@ -65,48 +65,26 @@ def _ensure_automatic_checklist() -> int:
             "note": "Required minimum payment. Record the payment under Transactions and link it to this debt.",
         })
 
-    dated_goal_funding = 0
     for goal in report.get("savings_plan", []):
         requested = goal["planned_this_week_cents"]
         funded = goal.get("funded_this_week_cents", 0)
-        dated_goal_funding += funded
         if requested <= 0 and not goal.get("deadline_warning"):
             continue
         note = "Weekly savings target."
         if goal.get("arrears_cents", 0):
             note += " A previous weekly target was missed; see Savings Goals for the exact carryover."
         if goal.get("deadline_warning"):
-            note += " Warning: the goal may miss its target date at the current funding rate."
+            note += (
+                " Warning: the goal may miss its target date at the current funding rate."
+                if goal.get("target_date")
+                else " Warning: this week's ongoing savings target is not fully affordable."
+            )
         actions.append({
             "category": "savings", "name": "Save for: " + goal["goal_name"],
             "savings_goal_id": goal["goal_id"],
             "requested_cents": max(0, requested), "funded_cents": max(0, funded),
             "unfunded_cents": max(0, goal.get("unfunded_this_week_cents", requested - funded)),
             "due_date": end.isoformat(), "note": note,
-        })
-
-    # Undated goals retain their existing per-paycheck contribution behavior.
-    payday_count = len(report.get("expected_income", [])) + len(report.get("covered_income", []))
-    with database.connect() as db:
-        legacy_goals = db.execute(
-            """SELECT id, name, contribution_per_period_cents, priority
-               FROM savings_goals
-               WHERE active = 1 AND target_date IS NULL AND contribution_per_period_cents > 0
-               ORDER BY priority, name COLLATE NOCASE, id"""
-        ).fetchall()
-    legacy_capacity = max(0, report.get("funded_savings_cents", 0) - dated_goal_funding)
-    for goal in legacy_goals:
-        requested = goal["contribution_per_period_cents"] * payday_count
-        if requested <= 0:
-            continue
-        funded = min(requested, legacy_capacity)
-        legacy_capacity -= funded
-        actions.append({
-            "category": "savings", "name": "Save for: " + goal["name"],
-            "savings_goal_id": goal["id"],
-            "requested_cents": requested, "funded_cents": funded,
-            "unfunded_cents": requested - funded, "due_date": end.isoformat(),
-            "note": "Savings contribution based on scheduled paydays; review any unfunded amount.",
         })
 
     income_total = report.get("expected_income_cents", 0) + report.get("recorded_income_cents", 0)
@@ -264,14 +242,14 @@ def dashboard_summary():
         goals = []
         for row in db.execute(
             """SELECT id, name, target_amount_cents, current_balance_cents,
-                      contribution_per_period_cents, target_date, priority
+                      weekly_target_cents, target_date, priority
                FROM savings_goals WHERE active = 1 ORDER BY priority, name COLLATE NOCASE"""
         ).fetchall():
             target = row["target_amount_cents"]
             goals.append({
                 "id": row["id"], "name": row["name"], "target_amount_cents": target,
                 "current_balance_cents": row["current_balance_cents"],
-                "contribution_per_period_cents": row["contribution_per_period_cents"],
+                "weekly_target_cents": row["weekly_target_cents"],
                 "target_date": row["target_date"],
                 "progress_percent": 100 if target == 0 else min(100, round(row["current_balance_cents"] / target * 100)),
             })
