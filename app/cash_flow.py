@@ -69,7 +69,20 @@ def weekly_cash_flow(
     forecast_weeks: int = 13,
 ):
     """Forecast the selected window and reserve cash for later weeks' obligations."""
-    start = start_date or date.today()
+    if start_date is None:
+        with database.connect() as db:
+            settings = db.execute(
+                "SELECT financial_week_start FROM household_settings WHERE id = 1"
+            ).fetchone()
+        weekday_name = settings["financial_week_start"] if settings else "Friday"
+        weekday_index = {
+            "Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
+            "Friday": 4, "Saturday": 5, "Sunday": 6,
+        }.get(weekday_name, 4)
+        today = date.today()
+        start = today - timedelta(days=(today.weekday() - weekday_index) % 7)
+    else:
+        start = start_date
     end = end_date or (start + timedelta(days=6))
     if end < start:
         raise HTTPException(status_code=422, detail="end_date must be on or after start_date")
@@ -351,6 +364,7 @@ def _weekly_cash_flow_for_window(
     return {
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
+        "financial_week_start": (settings["financial_week_start"] if settings and "financial_week_start" in settings.keys() else "Friday"),
         "starting_cash_cents": starting_cash,
         "buffer_target_cents": buffer_target,
         "expected_income": expected_income,
@@ -410,7 +424,7 @@ body{margin:0;padding:24px 14px 48px}main{max-width:1150px;margin:auto}a{color:#
 h1{color:#155e75;margin:8px 0}h2{font-size:1.1rem;margin:0 0 12px}.muted{color:#5c687a;line-height:1.5}
 .toolbar,.card{background:white;padding:20px;border-radius:15px;box-shadow:0 8px 28px #172b4d0d;margin-top:16px}
 .toolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.field{flex:1;min-width:150px}
-label{display:block;font-size:.9rem;font-weight:650;margin-bottom:5px}input{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+label{display:block;font-size:.9rem;font-weight:650;margin-bottom:5px}input,select{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
 button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:white;font-weight:700;cursor:pointer}
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;margin-top:16px}
 .metric{background:white;padding:15px;border-radius:12px;box-shadow:0 5px 18px #172b4d0a;min-width:0}
@@ -421,7 +435,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 .status{padding:12px;border-radius:9px;background:#e0f2fe;color:#075985;margin-top:16px}.warning{background:#fff7ed;color:#9a3412}.error{background:#fee2e2;color:#991b1b}.status[hidden]{display:none}
 </style></head><body><main><a href="/">← Dashboard</a><h1>Weekly Cash Flow</h1>
 <p class="muted">Review what is expected, what is already recorded, and what remains after required payments, the household buffer, and planned savings. Forecasts are estimates and never move money.</p>
-<div class="toolbar"><div class="field"><label for="start">Start date</label><input id="start" type="date" required></div>
+<div class="toolbar"><div class="field"><label for="week-start">Start of financial week</label><select id="week-start"><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option selected>Friday</option><option>Saturday</option><option>Sunday</option></select></div><button id="save-week-start" type="button">Save week start</button><div class="field"><label for="start">Start date</label><input id="start" type="date" required></div>
 <div class="field"><label for="end">End date</label><input id="end" type="date" required></div><button id="refresh" type="button">Update report</button></div>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
@@ -480,7 +494,10 @@ renderList("future-forecast",report.future_forecast,"No future weeks included in
 }); 
 }
 function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
-const today=new Date();document.getElementById("start").value=iso(today);const end=new Date(today);end.setDate(end.getDate()+6);document.getElementById("end").value=iso(end);
+function alignToWeekStart(dayName){const index={Monday:0,Tuesday:1,Wednesday:2,Thursday:3,Friday:4,Saturday:5,Sunday:6}[dayName]??4;const today=new Date();today.setHours(12,0,0,0);today.setDate(today.getDate()-((today.getDay()+6-index)%7));document.getElementById("start").value=iso(today);const end=new Date(today);end.setDate(end.getDate()+6);document.getElementById("end").value=iso(end);}
+async function initializeWeekSettings(){const settings=await api("/api/household/settings");const select=document.getElementById("week-start");select.value=settings.financial_week_start||"Friday";alignToWeekStart(select.value);}
+document.getElementById("week-start").addEventListener("change",()=>alignToWeekStart(document.getElementById("week-start").value));
+document.getElementById("save-week-start").addEventListener("click",async()=>{try{const value=document.getElementById("week-start").value;const response=await fetch("/api/household/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({financial_week_start:value})});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.detail||"Could not save week start.");alignToWeekStart(value);message("Financial week start saved as "+value+".");await load();}catch(e){message(e.message,"error");}});
 document.getElementById("refresh").addEventListener("click",()=>load().catch(e=>message(e.message,"error")));
-load().catch(e=>message(e.message,"error"));
+initializeWeekSettings().then(load).catch(e=>message(e.message,"error"));
 </script></body></html>"""
