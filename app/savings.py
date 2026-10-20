@@ -91,7 +91,7 @@ def update_savings_goal(goal_id: int, body: SavingsGoalUpdate):
         updates["active"] = int(updates["active"])
     if not updates:
         raise HTTPException(status_code=422, detail="no fields to update")
-    allowed = {"name", "target_amount_cents", "current_balance_cents", "target_date", "priority", "contribution_per_period_cents", "weekly_target_cents", "schedule_start_date", "active"}
+    allowed = {"name", "target_amount_cents", "current_balance_cents", "target_date", "priority", "weekly_target_cents", "schedule_start_date", "active"}
     if not set(updates) <= allowed:
         raise HTTPException(status_code=422, detail="unsupported field")
     try:
