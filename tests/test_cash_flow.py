@@ -585,7 +585,7 @@ def test_recorded_savings_contribution_reduces_arrears_once(tmp_path, monkeypatc
     start = today - timedelta(days=(today.weekday() - 4) % 7)
     with database.connect() as db:
         db.execute(
-            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 0, financial_week_start = 'Friday' WHERE id = 1"
+            "UPDATE household_settings SET starting_cash_cents = 500000, buffer_target_cents = 0, financial_week_start = 'Friday' WHERE id = 1"
         )
         goal_id = _insert_ongoing_savings_goal(
             db, "Emergency fund", start - timedelta(days=14)
@@ -625,8 +625,8 @@ def test_recorded_savings_contribution_reduces_arrears_once(tmp_path, monkeypatc
     assert plan["funded_catch_up_cents"] == 15000
     assert [week["savings_arrears_cents"] for week in report["future_forecast"]] == [15000, 15000]
     assert [week["planned_savings_cents"] for week in report["future_forecast"]] == [10000, 10000]
-    assert report["lowest_projected_cash_cents"] == 50000
-    assert report["free_to_spend_cents"] == 50000
+    assert report["lowest_projected_cash_cents"] == 450000
+    assert report["free_to_spend_cents"] == 450000
 
 
 def test_unfunded_future_savings_targets_do_not_create_future_arrears(tmp_path, monkeypatch):
