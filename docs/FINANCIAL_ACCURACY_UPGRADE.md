@@ -101,7 +101,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 4 — Consistent buffer and safe-to-spend semantics
 
 **Priority:** High  
-**Status:** Implementation on branch `feature/phase-4-household-buffer-semantics`; awaiting review and CI.
+**Status:** Implementation complete in PR #40; GitHub Actions run #178 passed 141 tests on Python 3.11, 3.12, and 3.13. Awaiting review/merge.
 
 - [x] Document one shared definition of the household buffer and safe-to-spend in this roadmap, `AGENTS.md`, and relevant calculation modules.
 - [x] Define a single priority rule for starting cash, expected income, bills, debt minimums, buffer protection, savings allocations, and safe-to-spend.
@@ -262,4 +262,4 @@ Record meaningful implementation updates here. Each entry should include date, p
 
 **Do not tell the household that money is safe to spend unless the forecast accounts for known obligations and the protected household cash buffer. Every important number should be explainable and testable.**
 
-- **2026-10-20 — Phase 4 implementation started:** Added shared integer-cent buffer arithmetic for the pure payday allocation engine and weekly forecast. The weekly API now explicitly reports horizon-wide buffer replenishment and safe-to-spend before planned allocations; regression tests cover underfunded buffers and later-week gaps. Implementation is on `feature/phase-4-household-buffer-semantics`; CI and review remain pending.
+- **2026-10-20 — Phase 4 implementation (PR #40, open):** Added shared integer-cent buffer arithmetic for the pure payday allocation engine and weekly forecast. The weekly API explicitly reports horizon-wide buffer replenishment and safe-to-spend before planned allocations; the dashboard shows safe-to-spend and forecast buffer gap. Regression tests cover underfunded buffers, allocation accounting, future-week gaps, and dashboard metrics. GitHub Actions run #178 passed 141 tests on Python 3.11, 3.12, and 3.13. PR #40 awaits review/merge; no deployment performed.
