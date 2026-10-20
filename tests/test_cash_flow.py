@@ -335,3 +335,88 @@ def test_weekly_forecast_defaults_to_configured_financial_week(tmp_path, monkeyp
     assert report["financial_week_start"] == "Monday"
     assert report["start_date"] == expected_start.isoformat()
     assert report["end_date"] == (expected_start + timedelta(days=6)).isoformat()
+
+def test_safe_surplus_allocation_is_reserved_and_can_be_cancelled(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 20000"
+        )
+        debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active)
+               VALUES ('Smallest card', 50000, 5000, 25, 19.9, 1)"""
+        ).lastrowid
+
+    before = client.get("/api/cash-flow/weekly").json()
+    assert before["free_to_spend_cents"] >= 10000
+    created = client.post(
+        "/api/surplus-allocations",
+        json={
+            "allocation_type": "debt",
+            "amount_cents": 10000,
+            "target_debt_id": debt_id,
+            "description": "Snowball payment",
+        },
+    )
+    assert created.status_code == 201
+    allocation_id = created.json()["id"]
+
+    after = client.get("/api/cash-flow/weekly").json()
+    assert after["planned_allocations_cents"] == 10000
+    assert after["free_to_spend_cents"] == before["free_to_spend_cents"] - 10000
+
+    cancelled = client.post(f"/api/surplus-allocations/{allocation_id}/cancel", json={})
+    assert cancelled.status_code == 200
+    released = client.get("/api/cash-flow/weekly").json()
+    assert released["planned_allocations_cents"] == 0
+
+
+def test_record_actual_debt_payment_updates_balance_and_transaction_ledger(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 20000"
+        )
+        debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active)
+               VALUES ('Smallest card', 50000, 5000, 25, 19.9, 1)"""
+        ).lastrowid
+
+    allocation = client.post(
+        "/api/surplus-allocations",
+        json={"allocation_type": "debt", "amount_cents": 10000, "target_debt_id": debt_id},
+    )
+    assert allocation.status_code == 201
+    allocation_id = allocation.json()["id"]
+
+    recorded = client.post(
+        f"/api/surplus-allocations/{allocation_id}/record-debt-payment",
+        json={"actual_amount_cents": 8000, "description": "Actual card payment"},
+    )
+    assert recorded.status_code == 200
+    assert recorded.json()["actual_amount_cents"] == 8000
+    with database.connect() as db:
+        debt = db.execute("SELECT balance_cents FROM credit_cards WHERE id = ?", (debt_id,)).fetchone()
+        transaction = db.execute(
+            "SELECT transaction_type, linked_obligation_type, linked_obligation_id, amount_cents FROM transactions WHERE id = ?",
+            (recorded.json()["transaction_id"],),
+        ).fetchone()
+    assert debt["balance_cents"] == 42000
+    assert transaction["transaction_type"] == "expense"
+    assert transaction["linked_obligation_type"] == "debt"
+    assert transaction["linked_obligation_id"] == debt_id
+    assert transaction["amount_cents"] == 8000
+
+def test_surplus_allocation_rejects_amount_above_safe_forecast(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 25000, buffer_target_cents = 20000"
+        )
+    response = client.post(
+        "/api/surplus-allocations",
+        json={"allocation_type": "buffer", "amount_cents": 10000},
+    )
+    assert response.status_code == 422
