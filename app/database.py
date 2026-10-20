@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 
 def base_database_path() -> Path:
@@ -185,6 +185,8 @@ def initialize_database() -> None:
                 unfunded_cents INTEGER NOT NULL CHECK(unfunded_cents >= 0),
                 due_date TEXT,
                 note TEXT,
+                savings_goal_id INTEGER REFERENCES savings_goals(id) ON DELETE SET NULL,
+                actual_transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL,
                 is_completed INTEGER NOT NULL DEFAULT 0 CHECK(is_completed IN (0, 1))
             );
 
@@ -474,5 +476,24 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_auto_weekly_plans "
             "ON payday_plans(is_auto_generated, period_start, period_end, status)"
+        )
+
+    if version < 14:
+        # Track savings-goal links and their actual transaction so checklist
+        # contributions update balances and weekly savings carryover exactly once.
+        item_columns = {row["name"] for row in db.execute("PRAGMA table_info(plan_items)")}
+        if "savings_goal_id" not in item_columns:
+            db.execute(
+                "ALTER TABLE plan_items ADD COLUMN savings_goal_id INTEGER "
+                "REFERENCES savings_goals(id) ON DELETE SET NULL"
+            )
+        if "actual_transaction_id" not in item_columns:
+            db.execute(
+                "ALTER TABLE plan_items ADD COLUMN actual_transaction_id INTEGER "
+                "REFERENCES transactions(id) ON DELETE SET NULL"
+            )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_plan_items_savings_goal "
+            "ON plan_items(savings_goal_id, actual_transaction_id)"
         )
 
