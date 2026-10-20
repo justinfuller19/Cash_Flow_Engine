@@ -31,7 +31,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 - [x] Track the effective financial-week start and last-confirmed timestamp; preserve history where needed for historical reports.
 - [x] Add a dashboard control: **“Set cash on hand as of [week start]”.** The same dated control is available in Household & income setup.
 - [x] Show the previous confirmed amount, effective date, and last-confirmed date in Household & income setup.
-- [ ] Apply transactions after the snapshot exactly once; do not reapply transactions already reflected in a confirmed balance. (Snapshot selection is wired into period forecasts; transaction-boundary regression coverage remains open.)
+- [x] Apply transactions after the snapshot exactly once; do not reapply transactions already reflected in a confirmed balance. Regression coverage verifies that a transaction before the snapshot is excluded from the selected week and a transaction after the snapshot is counted once.
 - [x] Ensure new snapshots do not silently rewrite historical transactions or prior reports; snapshots are versioned by effective week and prior snapshots are retained.
 - [ ] Optionally suggest a balance from the previous snapshot and known transactions; label it estimated and require explicit confirmation.
 - [x] Add first-run guidance for establishing the initial cash balance.
