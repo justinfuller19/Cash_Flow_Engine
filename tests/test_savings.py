@@ -130,3 +130,24 @@ def test_savings_page_uses_weekly_not_per_payday_language(tmp_path, monkeypatch)
     assert "Weekly savings amount" in response.text
     assert "Legacy per-payday amount" not in response.text
     assert "per payday" not in response.text
+
+
+
+def test_schema_migration_converts_legacy_undated_amount_to_weekly_target(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute("PRAGMA user_version = 15")
+        db.execute(
+            """INSERT INTO savings_goals
+               (name, target_amount_cents, current_balance_cents, contribution_per_period_cents,
+                weekly_target_cents, target_date)
+               VALUES ('Old general savings', 0, 0, 7500, 0, NULL)"""
+        )
+    database.initialize_database()
+    with database.connect() as db:
+        row = db.execute(
+            """SELECT contribution_per_period_cents, weekly_target_cents
+               FROM savings_goals WHERE name = 'Old general savings'"""
+        ).fetchone()
+    assert row["weekly_target_cents"] == 7500
+    assert row["contribution_per_period_cents"] == 0
