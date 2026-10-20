@@ -518,3 +518,39 @@ def test_dated_savings_goal_uses_weekly_target_and_carries_shortfall(tmp_path, m
     assert plan["arrears_cents"] == 6000
     assert plan["planned_this_week_cents"] == 16000
     assert plan["funded_this_week_cents"] <= plan["planned_this_week_cents"]
+
+
+def test_changing_household_buffer_recalculates_weekly_savings_funding(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    today = date.today()
+    start = today - timedelta(days=(today.weekday() - 4) % 7)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 50000, buffer_target_cents = 40000 WHERE id = 1"
+        )
+    created = client.post(
+        "/api/savings-goals",
+        json={
+            "name": "Holiday",
+            "target_amount_cents": 100000,
+            "current_balance_cents": 0,
+            "target_date": (start + timedelta(days=7)).isoformat(),
+        },
+    )
+    assert created.status_code == 201, created.text
+    params = {
+        "start_date": start.isoformat(),
+        "end_date": (start + timedelta(days=6)).isoformat(),
+        "forecast_weeks": 1,
+    }
+    before = client.get("/api/cash-flow/weekly", params=params).json()
+    assert before["funded_savings_cents"] == 10000
+
+    changed = client.patch(
+        "/api/household/settings",
+        json={"buffer_target_cents": 20000},
+    )
+    assert changed.status_code == 200, changed.text
+    after = client.get("/api/cash-flow/weekly", params=params).json()
+    assert after["funded_savings_cents"] == 30000
+    assert after["savings_plan"][0]["funded_this_week_cents"] == 30000
