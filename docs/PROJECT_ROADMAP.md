@@ -4,7 +4,7 @@ This document is the long-term implementation outline for CashFlow Engine. It de
 
 ## Product goal
 
-Build a reliable, self-hosted household cash-flow planner for Raspberry Pi OS. Given household income, bills, debt obligations, savings priorities, and a selected payday, it should produce a practical action plan that protects required cash buffers, funds obligations, supports savings goals, and directs remaining money toward debt payoff.
+Build a reliable, self-hosted household cash-flow manager for Raspberry Pi OS. It should continuously forecast household income, bills, required debt payments, savings goals, and one shared weekly spending buffer. The app should report how much money is safely available without causing any projected week in the forecast to fall below that buffer. The household—not the app—decides how much of that safe surplus goes to extra debt payments, buffer additions, savings goals, or remains unallocated. Friday is the default start of the configurable seven-day financial week.
 
 The app is a planning tool. It must not claim that money was transferred or a bill was paid unless a user explicitly records that action. Do not add automatic money movement as part of the early milestones.
 
