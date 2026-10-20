@@ -466,3 +466,55 @@ def test_old_buffer_allocations_do_not_reserve_new_financial_weeks(tmp_path, mon
         )
     report = client.get("/api/cash-flow/weekly").json()
     assert report["planned_allocations_cents"] == 0
+
+
+def test_dated_savings_goal_uses_weekly_target_and_carries_shortfall(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    today = date.today()
+    start = today - timedelta(days=(today.weekday() - 4) % 7)  # default Friday week
+    deadline = start + timedelta(days=28)  # five weekly targets including this week
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 10000 WHERE id = 1"
+        )
+
+    created = client.post(
+        "/api/savings-goals",
+        json={
+            "name": "Trip",
+            "target_amount_cents": 50000,
+            "current_balance_cents": 0,
+            "target_date": deadline.isoformat(),
+            "contribution_per_period_cents": 0,
+        },
+    )
+    assert created.status_code == 201, created.text
+    goal = created.json()
+    assert goal["weekly_target_cents"] == 10000
+    first = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": start.isoformat(), "end_date": (start + timedelta(days=6)).isoformat(), "forecast_weeks": 1},
+    ).json()
+    assert first["planned_savings_cents"] == 10000
+    assert first["savings_plan"][0]["arrears_cents"] == 0
+
+    allocation = client.post(
+        "/api/surplus-allocations",
+        json={"allocation_type": "savings", "amount_cents": 4000, "savings_goal_id": goal["id"]},
+    )
+    assert allocation.status_code == 201, allocation.text
+    recorded = client.post(
+        f"/api/surplus-allocations/{allocation.json()['id']}/record-savings-contribution",
+        json={"actual_amount_cents": 4000},
+    )
+    assert recorded.status_code == 200, recorded.text
+
+    second_start = start + timedelta(days=7)
+    second = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": second_start.isoformat(), "end_date": (second_start + timedelta(days=6)).isoformat(), "forecast_weeks": 1},
+    ).json()
+    plan = second["savings_plan"][0]
+    assert plan["arrears_cents"] == 6000
+    assert plan["planned_this_week_cents"] == 16000
+    assert plan["funded_this_week_cents"] <= plan["planned_this_week_cents"]
