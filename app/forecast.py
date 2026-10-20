@@ -1,10 +1,9 @@
 """Calendar recurrence helpers for payday and bill forecasting.
 
 Monthly schedules are anchored to calendar rules, not repeated day offsets.
-Business-day schedules exclude weekends and US federal holidays. If a scheduled
-date falls on a weekend/holiday, these rules select the previous eligible day
-for last-business-day schedules; other named schedules retain their calendar
-date unless their name explicitly says business day.
+Last-business-day schedules exclude weekends and commonly observed US bank
+holidays, including Good Friday. Other named schedules retain their calendar
+dates unless their name explicitly says business day.
 """
 from calendar import monthrange
 from datetime import date, timedelta
@@ -59,7 +58,7 @@ def _us_federal_holidays(year: int) -> set[date]:
         _nth_weekday(year, 1, 0, 3),   # Martin Luther King Jr. Day
         _nth_weekday(year, 2, 0, 3),   # Washington's Birthday
         _last_weekday(year, 5, 0),     # Memorial Day
-        _observed_fixed_holiday(date(year, 6, 19), 6, 19),
+        
         _observed_fixed_holiday(date(year, 7, 4), 7, 4),
         _nth_weekday(year, 9, 0, 1),   # Labor Day
         _nth_weekday(year, 10, 0, 2),  # Columbus Day
@@ -69,7 +68,8 @@ def _us_federal_holidays(year: int) -> set[date]:
         _easter_sunday(year) - timedelta(days=2),  # Good Friday (bank convention)
     }
     if year >= 2021:
-        holidays.add(_nth_weekday(year, 6, 0, 3))  # Juneteenth when observed
+        holidays.add(_observed_fixed_holiday(date(year, 6, 19), 6, 19))  # Juneteenth
+        holidays.add(_nth_weekday(year, 6, 0, 3))  # Juneteenth observed
     return holidays
 
 
