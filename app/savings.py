@@ -170,6 +170,7 @@ button:disabled{opacity:.55}.toggle{background:#475569;margin-top:10px}
 <div><button type="submit">Save goal</button></div>
 </form></section>
 <section class="card"><h2>Your goals</h2><ul id="goals" class="list"><li>Loading goals…</li></ul></section>
+<section class="card"><h2>This week's savings plan</h2><p class="muted">Weekly targets are based on deadlines, with missed amounts carried forward. Only the safe funded amount is recommended; no money moves automatically.</p><ul id="weekly-plan" class="list"><li>Loading weekly plan…</li></ul></section>
 </main>
 <script>
 const box=document.getElementById("status");
@@ -178,14 +179,23 @@ function cents(value){const n=Number(value);if(!Number.isFinite(n)||n<0)throw Er
 function dollars(value){return new Intl.NumberFormat(undefined,{style:"currency",currency:"USD"}).format(value/100);}
 async function api(url,options={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...options});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"Please check your entries.");return d;}
 function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;n.textContent=txt;return n;}
-async function refresh(){const goals=await api("/api/savings-goals");const list=document.getElementById("goals");list.replaceChildren();if(!goals.length){list.appendChild(el("li","muted","No savings goals saved yet."));return;}
+async function refresh(){const goals=await api("/api/savings-goals");const list=document.getElementById("goals");list.replaceChildren();if(!goals.length){list.appendChild(el("li","muted","No savings goals saved yet."));} 
 for(const g of goals){const li=el("li");li.appendChild(el("div","title",g.name+" · "+dollars(g.current_balance_cents)+" of "+dollars(g.target_amount_cents)));
 const pct=g.target_amount_cents===0?100:Math.min(100,Math.round(g.current_balance_cents/g.target_amount_cents*100));
 li.appendChild(el("div","detail",pct+"% saved · priority "+g.priority+(g.target_date?" · weekly target "+dollars(g.weekly_target_cents||0)+" · target "+g.target_date:" · legacy plan "+dollars(g.contribution_per_period_cents)+" per payday")+(g.active?"":" · inactive")));
 const track=el("div","progress");track.setAttribute("aria-label",pct+" percent saved");const fill=el("div","fill","");fill.style.width=pct+"%";track.appendChild(fill);li.appendChild(track);
 const edit=el("button","toggle","Edit goal");edit.type="button";edit.addEventListener("click",async()=>{const target=prompt("Target amount in dollars:",(g.target_amount_cents/100).toFixed(2));if(target===null)return;const current=prompt("Amount already saved in dollars:",(g.current_balance_cents/100).toFixed(2));if(current===null)return;const priority=prompt("Priority (lower is sooner):",String(g.priority));if(priority===null)return;const contribution=prompt("Legacy contribution per payday in dollars:",(g.contribution_per_period_cents/100).toFixed(2));if(contribution===null)return;const targetDate=prompt("Target date YYYY-MM-DD (leave blank to clear):",g.target_date||"");if(targetDate===null)return;try{await api("/api/savings-goals/"+g.id,{method:"PATCH",body:JSON.stringify({target_amount_cents:cents(target),current_balance_cents:cents(current),priority:Number(priority),contribution_per_period_cents:cents(contribution),target_date:targetDate||null})});await refresh();message("Savings goal updated.");}catch(e){message(e.message,true);}});li.appendChild(edit);
 const toggle=el("button","toggle",g.active?"Deactivate":"Reactivate");toggle.type="button";toggle.addEventListener("click",async()=>{toggle.disabled=true;try{await api("/api/savings-goals/"+g.id,{method:"PATCH",body:JSON.stringify({active:!g.active})});await refresh();message("Savings goal status updated.");}catch(e){message(e.message,true);toggle.disabled=false;}});li.appendChild(toggle);
-const remove=el("button","toggle","Delete goal");remove.type="button";remove.addEventListener("click",async()=>{if(!confirm("Permanently delete savings goal "+g.name+"?"))return;remove.disabled=true;try{await api("/api/savings-goals/"+g.id,{method:"DELETE"});await refresh();message("Savings goal deleted.");}catch(e){message(e.message,true);remove.disabled=false;}});li.appendChild(remove);list.appendChild(li);}}
+const remove=el("button","toggle","Delete goal");remove.type="button";remove.addEventListener("click",async()=>{if(!confirm("Permanently delete savings goal "+g.name+"?"))return;remove.disabled=true;try{await api("/api/savings-goals/"+g.id,{method:"DELETE"});await refresh();message("Savings goal deleted.");}catch(e){message(e.message,true);remove.disabled=false;}});li.appendChild(remove);list.appendChild(li);}
+const weeklyList=document.getElementById("weekly-plan");weeklyList.replaceChildren();
+const report=await api("/api/cash-flow/weekly");
+const plans=report.savings_plan||[];
+if(!plans.length){weeklyList.appendChild(el("li","muted","No active savings goals with target dates. Add a target date to enable automatic weekly targets and carryover."));}
+for(const p of plans){const li=el("li");li.appendChild(el("div","title",p.goal_name+" · weekly target "+dollars(p.weekly_target_cents)));
+li.appendChild(el("div","detail","This week: "+dollars(p.planned_this_week_cents)+" planned · "+dollars(p.funded_this_week_cents||0)+" safely funded · "+dollars(p.unfunded_this_week_cents||0)+" not currently affordable"));
+li.appendChild(el("div","detail","Carryover: "+dollars(p.arrears_cents)+" · remaining: "+dollars(p.remaining_cents)+" · needed weekly to deadline: "+dollars(p.required_weekly_to_deadline_cents)));
+if(p.deadline_warning){li.appendChild(el("div","detail","Warning: this goal is behind schedule or this week's full target is not safely affordable."));}
+weeklyList.appendChild(li);}}
 document.getElementById("goal-form").addEventListener("submit",async(e)=>{e.preventDefault();const f=e.currentTarget;const b=f.querySelector("button");b.disabled=true;try{await api("/api/savings-goals",{method:"POST",body:JSON.stringify({name:f.elements.name.value.trim(),target_amount_cents:cents(f.elements.target.value),current_balance_cents:cents(f.elements.current.value),target_date:f.elements.target_date.value||null,priority:Number(f.elements.priority.value),contribution_per_period_cents:cents(f.elements.contribution.value)})});f.reset();f.elements.current.value="0";f.elements.priority.value="100";f.elements.contribution.value="0";await refresh();message("Savings goal saved.");}catch(err){message(err.message,true);}finally{b.disabled=false;}});
 refresh().catch(e=>message("Could not load savings goals: "+e.message,true));
 </script></body></html>"""
