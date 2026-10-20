@@ -305,6 +305,7 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <label for="income-frequency">Pay frequency</label><select id="income-frequency" name="frequency" required>
 <option value="weekly">Weekly</option><option value="biweekly" selected>Every two weeks</option><option value="semimonthly">1st and 15th</option><option value="twice_monthly_last">15th and last calendar day</option><option value="first_third_friday">1st and 3rd Friday</option><option value="last_business_day">Last business day</option><option value="monthly">Monthly (same date)</option><option value="irregular">One-time / irregular</option></select>
 <label for="income-next">Next payday</label><input id="income-next" name="next_payday" type="date" required>
+<label for="income-end">Last payday (optional)</label><input id="income-end" name="end_date" type="date"><p class="muted">Leave blank if this income is expected to continue indefinitely.</p>
 <label><input id="income-active" name="active" type="checkbox" checked style="width:auto;margin-right:8px">This income is active</label>
 <button type="submit">Add income source</button></form>
 <ul id="income-list" class="list" aria-label="Saved income sources"><li class="empty">Loading income sources…</li></ul>
@@ -546,6 +547,7 @@ document.getElementById("income-form").addEventListener("submit", async (event) 
       net_amount_cents:centsFromInput(form.elements.amount.value),
       frequency:form.elements.frequency.value,
       next_payday:form.elements.next_payday.value,
+      end_date:form.elements.end_date.value || null,
       active:form.elements.active.checked
     })});
     const active = form.elements.active.checked;
