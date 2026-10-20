@@ -182,6 +182,7 @@ root.appendChild(el("div","item-title",dollars(weekly.free_to_spend_cents)+" saf
 root.appendChild(el("div","detail","After upcoming obligations, planned savings, existing allocations, and future weekly buffer protection."));
 root.appendChild(el("div","detail","Suggested debt snowball: "+(weekly.recommended_snowball_debt?weekly.recommended_snowball_debt.name:"Add a debt to get a recommendation")+" · Allocated so far "+dollars(weekly.planned_allocations_cents)));
 root.appendChild(el("div","detail","Starting cash "+dollars(weekly.starting_cash_cents)+" · expected income "+dollars(weekly.expected_income_cents)));
+if(weekly.starting_cash_is_stale)root.appendChild(el("div","detail",weekly.starting_cash_confirmed_at?"Warning: starting cash was last confirmed "+weekly.starting_cash_confirmed_at+". Please reconfirm it in Household & income.":"Warning: no starting-cash snapshot is confirmed yet. Set it in Household & income."));
 root.appendChild(el("div","detail","Bills still due "+dollars(weekly.bills_due_cents)+" · minimum debt payments "+dollars(weekly.minimum_debt_payments_cents)));
 root.appendChild(el("div","detail","You choose how much to allocate to debt, savings, the household buffer, or leave unallocated."));
 const categoryRoot=document.getElementById("weekly-category-spending");categoryRoot.replaceChildren();
