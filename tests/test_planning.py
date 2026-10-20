@@ -132,10 +132,12 @@ def test_plan_validation_and_planner_page(tmp_path, monkeypatch):
         },
     )
     assert response.status_code == 422
-    page = client.get("/planner")
-    assert page.status_code == 200
-    assert "Payday Planner" in page.text
-    assert "/api/plans/generate" in page.text
+    page = client.get("/planner", follow_redirects=False)
+    assert page.status_code == 307
+    assert page.headers["location"] == "/checklist"
+    checklist = client.get("/checklist")
+    assert checklist.status_code == 200
+    assert "generated automatically" in checklist.text
 
 
 def test_schema_v4_adds_contributions_and_plan_totals(tmp_path, monkeypatch):
@@ -196,10 +198,12 @@ def test_required_obligations_are_funded_before_underfunded_household_buffer():
     assert plan.total_available_cents == plan.allocated_cents + plan.unallocated_cents
 
 
-def test_planner_paginates_plan_items_and_saved_history():
+def test_old_planner_redirects_to_automatic_checklist():
     client = TestClient(app)
-    response = client.get("/planner")
-    assert response.status_code == 200
-    assert 'id="item-pagination"' in response.text
-    assert 'id="history-pagination"' in response.text
-    assert "const PAGE_SIZE=10" in response.text
+    response = client.get("/planner", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/checklist"
+    checklist = client.get("/checklist")
+    assert checklist.status_code == 200
+    assert 'id="checklist-pagination"' in checklist.text
+    assert "generated automatically" in checklist.text
