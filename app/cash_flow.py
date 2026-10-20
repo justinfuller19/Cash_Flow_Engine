@@ -488,7 +488,7 @@ def create_surplus_allocation(body: SurplusAllocationCreate):
         raise HTTPException(status_code=422, detail="A savings goal is only valid for savings allocations")
 
     # Planned allocations are already deducted from this look-ahead forecast.
-    report = weekly_cash_flow()
+    report = weekly_cash_flow(start_date=None, end_date=None, forecast_weeks=13)
     if body.amount_cents > report["free_to_spend_cents"]:
         raise HTTPException(
             status_code=422,
