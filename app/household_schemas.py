@@ -31,8 +31,10 @@ class PersonUpdate(BaseModel):
     @classmethod
     def reject_explicit_nulls(cls, value: Any) -> Any:
         """PATCH fields are optional, but null is not a valid replacement value."""
-        if isinstance(value, dict) and any(item is None for item in value.values()):
-            raise ValueError("PATCH fields cannot be null")
+        if isinstance(value, dict) and any(
+            item is None for key, item in value.items() if key != "end_date"
+        ):
+            raise ValueError("PATCH fields cannot be null, except end_date to clear the schedule end")
         return value
 
 
