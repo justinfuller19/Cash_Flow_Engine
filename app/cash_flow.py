@@ -143,7 +143,9 @@ def weekly_cash_flow(
                       actual_amount_cents, transaction_id
                FROM surplus_allocations
                WHERE status = 'planned'
-               ORDER BY allocation_date, id"""
+                 AND (allocation_type <> 'buffer' OR allocation_date >= ?)
+               ORDER BY allocation_date, id""",
+            (start.isoformat(),),
         ).fetchall()
         allocated_cents = sum(row["amount_cents"] for row in allocations)
         debt_target = db.execute(
@@ -550,6 +552,48 @@ def record_allocated_debt_payment(allocation_id: int, body: DebtPaymentRecord):
         db.execute(
             "UPDATE credit_cards SET balance_cents = MAX(0, balance_cents - ?) WHERE id = ?",
             (body.actual_amount_cents, debt["id"]),
+        )
+        db.execute(
+            """UPDATE surplus_allocations
+               SET status = 'recorded', actual_amount_cents = ?, transaction_id = ?
+               WHERE id = ?""",
+            (body.actual_amount_cents, transaction_id, allocation_id),
+        )
+    return {"allocation_id": allocation_id, "transaction_id": transaction_id,
+            "actual_amount_cents": body.actual_amount_cents, "status": "recorded"}
+
+
+@router.post("/api/surplus-allocations/{allocation_id}/record-savings-contribution")
+def record_allocated_savings_contribution(allocation_id: int, body: DebtPaymentRecord):
+    with database.connect() as db:
+        allocation = db.execute(
+            """SELECT * FROM surplus_allocations
+               WHERE id = ? AND allocation_type = 'savings' AND status = 'planned'""",
+            (allocation_id,),
+        ).fetchone()
+        if allocation is None:
+            raise HTTPException(status_code=404, detail="Planned savings allocation not found")
+        if body.actual_amount_cents > allocation["amount_cents"]:
+            raise HTTPException(status_code=422, detail="Actual contribution cannot exceed the allocated amount.")
+        goal = db.execute(
+            "SELECT id, name FROM savings_goals WHERE id = ? AND active = 1",
+            (allocation["savings_goal_id"],),
+        ).fetchone()
+        if goal is None:
+            raise HTTPException(status_code=404, detail="Target savings goal is no longer active")
+        cursor = db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, description, amount_cents, notes)
+               VALUES (?, 'savings contribution', 'expense', ?, ?, ?)""",
+            (body.transaction_date.isoformat(),
+             body.description.strip() or ("Contribution to " + goal["name"]),
+             body.actual_amount_cents,
+             "Recorded from surplus allocation #" + str(allocation_id)),
+        )
+        transaction_id = cursor.lastrowid
+        db.execute(
+            "UPDATE savings_goals SET current_balance_cents = current_balance_cents + ? WHERE id = ?",
+            (body.actual_amount_cents, goal["id"]),
         )
         db.execute(
             """UPDATE surplus_allocations
