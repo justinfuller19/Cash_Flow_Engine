@@ -79,7 +79,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 3 — Savings arrears in future weeks
 
 **Priority:** High  
-**Status:** Implementation complete in PR branch; awaiting GitHub Actions verification.
+**Status:** Implementation complete in PR #39; awaiting GitHub Actions verification.
 
 - [x] Separate regular weekly target, recorded contributions, outstanding arrears, catch-up amount, and remaining goal amount.
 - [x] Carry arrears that exist at the forecast start into future windows.
@@ -212,7 +212,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 
 - [x] Phase 1: Starting cash snapshots.
 - [x] Phase 2: Debt payment matching and remaining minimums.
-- [x] Phase 3: Savings arrears in future weeks (implementation and regression tests present in the PR branch; CI pending).
+- [x] Phase 3: Savings arrears in future weeks (PR #39 open; CI pending).
 - [ ] Phase 4: Consistent buffer and safe-to-spend semantics.
 
 **Exit criteria:** Core calculations agree across the engine, weekly forecast, API, and UI; exact-value regression tests pass; assumptions and shortfalls are explained.
@@ -235,7 +235,7 @@ Record meaningful implementation updates here. Each entry should include date, p
 - **2026-10-20 — Phase 1 complete (PRs #35 and #36, merged):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, dated confirmation controls, an advisory opening-balance estimate, and explicit confirmation in the weekly report. The estimate uses only recorded income and expenses before the current financial week, excludes transfers, and never saves automatically. Regression tests cover snapshot history/migration, transaction boundaries, multi-week safe-to-spend, stale warnings, transfer exclusion, and the confirmation workflow. GitHub Actions passed on Python 3.11, 3.12, and 3.13 for the merged implementation.
 - **2026-10-20 — Phase 2 first increment (PR #37, merged):** Weekly debt forecasts cap a scheduled minimum at the recorded balance, credit linked expense transactions within seven days of the due date, preserve partial minimums, and display over-minimum amounts as extra debt reduction. Regression coverage includes balances below minimums, multiple partial payments, overpayments, wrong debts/cycles, partial checklist minimums, and zero-balance debts.
 - **2026-10-20 — Phase 2 complete (PR #38, merged):** Surplus-allocation extra payments carry explicit debt links but remain excluded from minimum-payment matching. The schema-v18 review queue suggests matches for unlinked debt-like expenses and requires user confirmation; dismissal and reconsideration are supported. Follow-up review fixes also preserve legitimate manually categorized debt payments and remove a duplicate migration invocation.
-- **2026-10-20 — Phase 3 implementation (PR pending):** Weekly savings plans now expose regular target, recorded contributions, outstanding arrears, catch-up, and remaining goal amount separately. Forecasts carry existing arrears forward but reserve the catch-up amount only once across the horizon; regular targets continue each future week, and future unfunded targets do not create new arrears before those weeks occur. The savings page and weekly report explain these amounts. Added regression tests for exact multi-week safe-to-spend, recorded contributions reducing arrears, and underfunded future targets. Local tests could not run in this environment because GitHub network access is unavailable; GitHub Actions verification is pending.
+- **2026-10-20 — Phase 3 implementation (PR #39 open):** Weekly savings plans now expose regular target, recorded contributions, outstanding arrears, catch-up, and remaining goal amount separately. Forecasts carry existing arrears forward but reserve the catch-up amount only once across the horizon; regular targets continue each future week, and future unfunded targets do not create new arrears before those weeks occur. The savings page and weekly report explain these amounts. Added regression tests for exact multi-week safe-to-spend, recorded contributions reducing arrears, and underfunded future targets. Local tests could not run in this environment because GitHub network access is unavailable; GitHub Actions verification is pending.
 
 ## Implementation / release rules
 
