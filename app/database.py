@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 def base_database_path() -> Path:
@@ -192,6 +192,8 @@ def initialize_database() -> None:
                     CHECK(buffer_target_cents >= 0),
                 starting_cash_cents INTEGER NOT NULL DEFAULT 0
                     CHECK(starting_cash_cents >= 0),
+                financial_week_start TEXT NOT NULL DEFAULT 'Friday'
+                    CHECK(financial_week_start IN ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')),
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -370,3 +372,14 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
             "CREATE INDEX IF NOT EXISTS idx_email_notification_last_sent "
             "ON email_notification_log(last_sent_on)"
         )
+
+    if version < 10:
+        # Version 10 adds the configurable start day for the household's
+        # seven-day financial week. Existing households default to Friday.
+        settings_columns = {row["name"] for row in db.execute("PRAGMA table_info(household_settings)")}
+        if "financial_week_start" not in settings_columns:
+            db.execute(
+                "ALTER TABLE household_settings ADD COLUMN financial_week_start TEXT NOT NULL "
+                "DEFAULT 'Friday' CHECK(financial_week_start IN "
+                "('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'))"
+            )
