@@ -302,7 +302,7 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <label for="income-name">Income source</label><input id="income-name" name="name" maxlength="120" placeholder="e.g. Main paycheck" required>
 <label for="income-amount">Net amount per paycheck ($)</label><input id="income-amount" name="amount" type="number" min="0" step="0.01" inputmode="decimal" required>
 <label for="income-frequency">Pay frequency</label><select id="income-frequency" name="frequency" required>
-<option value="weekly">Weekly</option><option value="biweekly" selected>Every two weeks</option><option value="semimonthly">Twice a month</option><option value="monthly">Monthly</option><option value="irregular">Irregular</option></select>
+<option value="weekly">Weekly</option><option value="biweekly" selected>Every two weeks</option><option value="semimonthly">1st and 15th</option><option value="twice_monthly_last">15th and last calendar day</option><option value="first_third_friday">1st and 3rd Friday</option><option value="last_business_day">Last business day</option><option value="monthly">Monthly (same date)</option><option value="irregular">One-time / irregular</option></select>
 <label for="income-next">Next payday</label><input id="income-next" name="next_payday" type="date" required>
 <label><input id="income-active" name="active" type="checkbox" checked style="width:auto;margin-right:8px">This income is active</label>
 <button type="submit">Add income source</button></form>
