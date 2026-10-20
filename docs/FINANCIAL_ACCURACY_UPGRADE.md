@@ -54,11 +54,11 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 2 — Debt payment matching and remaining minimums
 
 **Priority:** Critical  
-**Status:** In progress — PR #37 implements balance-capped minimums and cycle-specific partial-payment reconciliation; matching suggestions and surplus-allocation payment linking remain.
+**Status:** Implementation complete in PR #38; awaiting CI/review. Covers balance-capped minimums, cycle-specific partial-payment reconciliation, surplus-payment debt links, and user-confirmed match suggestions.
 
 - [x] Support explicit debt-obligation links on recorded expense transactions through the transaction ledger.
-- [ ] Link payments recorded through surplus allocations to the intended debt/cycle without misclassifying an extra payment as a separate minimum payment.
-- [ ] Suggest matches only when supported by available data; require confirmation when ambiguous.
+- [x] Link payments recorded through surplus allocations to the intended debt while keeping extra principal reductions out of minimum-payment reconciliation.
+- [x] Suggest matches only when supported by amount/date/description/account/debt-status evidence; require explicit confirmation for all suggestions and support dismissal.
 - [x] Match qualifying linked payments to the correct debt and payment cycle, within the documented seven-day window.
 - [x] Cap the required minimum at the recorded outstanding balance: `min(stated_minimum, outstanding_balance)`.
 - [x] Subtract all qualifying payments credited to that cycle and floor the remaining minimum at zero.
@@ -234,7 +234,7 @@ Record meaningful implementation updates here. Each entry should include date, p
 - **2026-10-20 — Roadmap created:** Defined three milestones and eight phases. No application behavior changed by this documentation alone. Implementation remained pending at that point.
 - **2026-10-20 — Phase 1 complete (PRs #35 and #36, merged):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, dated confirmation controls, an advisory opening-balance estimate, and explicit confirmation in the weekly report. The estimate uses only recorded income and expenses before the current financial week, excludes transfers, and never saves automatically. Regression tests cover snapshot history/migration, transaction boundaries, multi-week safe-to-spend, stale warnings, transfer exclusion, and the confirmation workflow. GitHub Actions passed on Python 3.11, 3.12, and 3.13 for the merged implementation.
 - **2026-10-20 — Phase 2 first increment (PR #37, merged):** Weekly debt forecasts cap a scheduled minimum at the recorded balance, credit linked expense transactions within seven days of the due date, preserve partial minimums, and display over-minimum amounts as extra debt reduction. Regression coverage includes balances below minimums, multiple partial payments, overpayments, wrong debts/cycles, partial checklist minimums, and zero-balance debts.
-- **2026-10-20 — Phase 2 surplus-payment linking (this PR, CI pending):** Debt payments recorded from a surplus allocation now retain an explicit debt link for traceability. Their dedicated `debt payment` category keeps extra principal reductions out of minimum-payment reconciliation, so they do not accidentally satisfy a scheduled minimum. Added regression coverage for the debt link and separation from the minimum cycle. This is a partial step toward the full debt/cycle linkage acceptance criterion; suggested-match review/confirmation and dismissal remain outstanding. Tests have not yet been run in this editing environment.
+- **2026-10-20 — Phase 2 completion candidate (PR #38, CI pending):** Surplus-allocation extra payments now carry an explicit debt link but remain excluded from minimum-payment matching. Added a schema-v18 review queue for unlinked debt-like expenses near debt due dates. Suggestions use amount plausibility, due-date proximity, transaction description/category/account, active debt status, and debt-name evidence; named matches are distinguished from ambiguous candidates. No suggestion changes a transaction link until a user confirms it. Users can dismiss suggestions; dismissed candidates stay hidden unless the transaction data changes, and confirming one candidate stales competing candidates for the same transaction. The Transactions page exposes the review controls. Regression tests cover explicit debt links, non-auto-linking, ambiguity, confirmation, dismissal, and reconsideration after edits. GitHub Actions must pass before this phase is marked released.
 
 ## Implementation / release rules
 
