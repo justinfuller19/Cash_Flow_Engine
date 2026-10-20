@@ -435,6 +435,140 @@ def _weekly_cash_flow_for_window(
     }
 
 
+class SurplusAllocationCreate(BaseModel):
+    allocation_type: str = Field(pattern=r"^(debt|buffer|savings|unallocated)$")
+    amount_cents: int = Field(gt=0)
+    allocation_date: date = Field(default_factory=date.today)
+    target_debt_id: int | None = Field(default=None, gt=0)
+    savings_goal_id: int | None = Field(default=None, gt=0)
+    description: str = Field(default="", max_length=200)
+
+
+class DebtPaymentRecord(BaseModel):
+    actual_amount_cents: int = Field(gt=0)
+    transaction_date: date = Field(default_factory=date.today)
+    description: str = Field(default="Debt payment recorded", max_length=200)
+
+
+@router.get("/api/surplus-allocations")
+def list_surplus_allocations():
+    with database.connect() as db:
+        rows = db.execute(
+            """SELECT a.id, a.allocation_date, a.allocation_type, a.amount_cents,
+                      a.target_debt_id, c.name AS target_debt_name,
+                      a.savings_goal_id, g.name AS savings_goal_name,
+                      a.description, a.status, a.actual_amount_cents, a.transaction_id
+               FROM surplus_allocations a
+               LEFT JOIN credit_cards c ON c.id = a.target_debt_id
+               LEFT JOIN savings_goals g ON g.id = a.savings_goal_id
+               ORDER BY CASE a.status WHEN 'planned' THEN 0 ELSE 1 END, a.allocation_date DESC, a.id DESC
+               LIMIT 100"""
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@router.post("/api/surplus-allocations", status_code=status.HTTP_201_CREATED)
+def create_surplus_allocation(body: SurplusAllocationCreate):
+    target_debt_id = body.target_debt_id
+    if body.allocation_type == "debt" and target_debt_id is None:
+        with database.connect() as db:
+            target = db.execute(
+                "SELECT id FROM credit_cards WHERE active = 1 AND balance_cents > 0 ORDER BY balance_cents ASC, id ASC LIMIT 1"
+            ).fetchone()
+        if target is None:
+            raise HTTPException(status_code=422, detail="Add an active debt before allocating a snowball payment")
+        target_debt_id = target["id"]
+    if body.allocation_type != "debt" and target_debt_id is not None:
+        raise HTTPException(status_code=422, detail="A debt target is only valid for debt allocations")
+    if body.allocation_type == "savings" and body.savings_goal_id is None:
+        raise HTTPException(status_code=422, detail="Choose a savings goal for this allocation")
+    if body.allocation_type != "savings" and body.savings_goal_id is not None:
+        raise HTTPException(status_code=422, detail="A savings goal is only valid for savings allocations")
+
+    # Planned allocations are already deducted from this look-ahead forecast.
+    report = weekly_cash_flow()
+    if body.amount_cents > report["free_to_spend_cents"]:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Allocation exceeds safe available surplus ({report['free_to_spend_cents']} cents). Refresh the forecast and choose a smaller amount.",
+        )
+    with database.connect() as db:
+        if target_debt_id is not None and db.execute(
+            "SELECT id FROM credit_cards WHERE id = ? AND active = 1", (target_debt_id,)
+        ).fetchone() is None:
+            raise HTTPException(status_code=422, detail="Selected debt is not active")
+        if body.savings_goal_id is not None and db.execute(
+            "SELECT id FROM savings_goals WHERE id = ? AND active = 1", (body.savings_goal_id,)
+        ).fetchone() is None:
+            raise HTTPException(status_code=422, detail="Selected savings goal is not active")
+        cursor = db.execute(
+            """INSERT INTO surplus_allocations
+               (allocation_date, allocation_type, amount_cents, target_debt_id,
+                savings_goal_id, description)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (body.allocation_date.isoformat(), body.allocation_type, body.amount_cents,
+             target_debt_id, body.savings_goal_id, body.description.strip()),
+        )
+        row = db.execute(
+            "SELECT * FROM surplus_allocations WHERE id = ?", (cursor.lastrowid,)
+        ).fetchone()
+    return dict(row)
+
+
+@router.post("/api/surplus-allocations/{allocation_id}/record-debt-payment")
+def record_allocated_debt_payment(allocation_id: int, body: DebtPaymentRecord):
+    with database.connect() as db:
+        allocation = db.execute(
+            """SELECT * FROM surplus_allocations
+               WHERE id = ? AND allocation_type = 'debt' AND status = 'planned'""",
+            (allocation_id,),
+        ).fetchone()
+        if allocation is None:
+            raise HTTPException(status_code=404, detail="Planned debt allocation not found")
+        if body.actual_amount_cents > allocation["amount_cents"]:
+            raise HTTPException(status_code=422, detail="Actual payment cannot exceed the allocated amount. Refresh the forecast and create a new allocation for any additional payment.")
+        debt = db.execute(
+            "SELECT id, name, balance_cents FROM credit_cards WHERE id = ?",
+            (allocation["target_debt_id"],),
+        ).fetchone()
+        if debt is None:
+            raise HTTPException(status_code=404, detail="Target debt no longer exists")
+        cursor = db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, linked_obligation_type,
+                linked_obligation_id, description, amount_cents, notes)
+               VALUES (?, 'debt payment', 'expense', 'debt', ?, ?, ?, ?)""",
+            (body.transaction_date.isoformat(), debt["id"],
+             body.description.strip() or ("Payment toward " + debt["name"]),
+             body.actual_amount_cents, "Recorded from surplus allocation #" + str(allocation_id)),
+        )
+        transaction_id = cursor.lastrowid
+        db.execute(
+            "UPDATE credit_cards SET balance_cents = MAX(0, balance_cents - ?) WHERE id = ?",
+            (body.actual_amount_cents, debt["id"]),
+        )
+        db.execute(
+            """UPDATE surplus_allocations
+               SET status = 'recorded', actual_amount_cents = ?, transaction_id = ?
+               WHERE id = ?""",
+            (body.actual_amount_cents, transaction_id, allocation_id),
+        )
+    return {"allocation_id": allocation_id, "transaction_id": transaction_id,
+            "actual_amount_cents": body.actual_amount_cents, "status": "recorded"}
+
+
+@router.post("/api/surplus-allocations/{allocation_id}/cancel")
+def cancel_surplus_allocation(allocation_id: int):
+    with database.connect() as db:
+        cursor = db.execute(
+            "UPDATE surplus_allocations SET status = 'cancelled' WHERE id = ? AND status = 'planned'",
+            (allocation_id,),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Planned allocation not found")
+    return {"id": allocation_id, "status": "cancelled"}
+
+
 @router.get("/weekly", response_class=HTMLResponse)
 def weekly_report_page():
     return """<!doctype html>
