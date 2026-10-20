@@ -190,8 +190,9 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 - [ ] Weekly income scenario.
 - [ ] Biweekly income scenario.
 - [ ] Weekly and biweekly income in the same household.
-- [ ] Already-paid bill and partially paid debt minimum.
-- [ ] Debt balance below stated minimum.
+- [ ] Already-paid bill and partially paid debt minimum. (Partial debt checklist remainder is now covered by PR #37 tests; already-paid bill case remains.)
+- [x] Debt balance below stated minimum.
+- [x] Partial debt minimum remains on checklist; zero-balance active debt creates no $0 checklist item.
 - [ ] Savings goal with existing arrears.
 - [ ] Household below buffer target.
 - [ ] Low-income week and future-week shortfall.
@@ -232,7 +233,7 @@ Record meaningful implementation updates here. Each entry should include date, p
 
 - **2026-10-20 — Roadmap created:** Defined three milestones and eight phases. No application behavior changed by this documentation alone. Implementation remained pending at that point.
 - **2026-10-20 — Phase 1 complete (PRs #35 and #36, merged):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, dated confirmation controls, an advisory opening-balance estimate, and explicit confirmation in the weekly report. The estimate uses only recorded income and expenses before the current financial week, excludes transfers, and never saves automatically. Regression tests cover snapshot history/migration, transaction boundaries, multi-week safe-to-spend, stale warnings, transfer exclusion, and the confirmation workflow. GitHub Actions passed on Python 3.11, 3.12, and 3.13 for the merged implementation.
-- **2026-10-20 — Phase 2 first increment (PR #37, in progress):** Weekly debt forecasts now cap a scheduled minimum at the recorded balance, credit all linked expense transactions within seven days of the due date, preserve partial minimums, and display over-minimum amounts as extra debt reduction. Payments remain ordinary recorded expenses and are not double-counted as both a full minimum and the payment itself. Added regression cases for balances below minimums, multiple partial payments, overpayments, wrong debts, and wrong cycles. Surplus-allocation payment linking and suggested-match review remain outstanding. CI validation is pending.
+- **2026-10-20 — Phase 2 first increment (PR #37, in progress):** Weekly debt forecasts now cap a scheduled minimum at the recorded balance, credit all linked expense transactions within seven days of the due date, preserve partial minimums, and display over-minimum amounts as extra debt reduction. Payments remain ordinary recorded expenses and are not double-counted as both a full minimum and the payment itself. Added regression cases for balances below minimums, multiple partial payments, overpayments, wrong debts, and wrong cycles. Reviewer found that partial minimums disappeared from the automatic checklist and zero-balance active debts could create $0 checklist items; fixed the checklist criteria and added tests for both. Surplus-allocation payment linking and suggested-match review remain outstanding. CI validation is pending.
 
 ## Implementation / release rules
 
