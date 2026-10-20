@@ -539,6 +539,11 @@ def _weekly_cash_flow_for_window(
             "Transfers are listed for reference but do not change household cash totals.",
             "All monetary calculations use integer cents; this report never initiates payments or transfers.",
             "Starting cash is a confirmed household snapshot effective at the beginning of its financial week; snapshots are not automatically inferred from transactions.",
+            (
+                "WARNING: no confirmed starting-cash snapshot is available for this week. Set cash on hand in Household & income."
+                if starting_cash_confirmed_at is None
+                else "WARNING: starting cash was last confirmed more than 10 days ago. Reconfirm it in Household & income."
+            ) if starting_cash_is_stale else "Starting cash confirmation is current.",
         ],
     }
 
