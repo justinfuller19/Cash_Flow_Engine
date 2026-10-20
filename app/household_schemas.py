@@ -25,6 +25,7 @@ class PersonUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
     active: bool | None = None
+    end_date: date | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -75,6 +76,7 @@ class IncomeSourceCreate(BaseModel):
     frequency: IncomeFrequency
     next_payday: date
     active: bool = True
+    end_date: date | None = None
 
 
 class IncomeSourceOut(BaseModel):
@@ -85,6 +87,7 @@ class IncomeSourceOut(BaseModel):
     frequency: IncomeFrequency
     next_payday: date
     active: bool
+    end_date: date | None = None
     created_at: str
 
 
@@ -105,3 +108,28 @@ class IncomeSourceUpdate(BaseModel):
         if isinstance(value, dict) and any(item is None for item in value.values()):
             raise ValueError("PATCH fields cannot be null")
         return value
+
+
+class IncomeAmountOverrideCreate(BaseModel):
+    """Temporary paycheck amount valid for an inclusive date range."""
+
+    start_date: date
+    end_date: date
+    amount_cents: int = Field(ge=0)
+    reason: str = Field(default="", max_length=240)
+
+    @model_validator(mode="after")
+    def validate_date_range(self):
+        if self.end_date < self.start_date:
+            raise ValueError("end_date must be on or after start_date")
+        return self
+
+
+class IncomeAmountOverrideOut(BaseModel):
+    id: int
+    income_source_id: int
+    start_date: date
+    end_date: date
+    amount_cents: int
+    reason: str
+    created_at: str
