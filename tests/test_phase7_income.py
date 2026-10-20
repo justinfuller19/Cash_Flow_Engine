@@ -95,3 +95,55 @@ def test_overrides_reject_overlapping_ranges_and_invalid_dates(tmp_path, monkeyp
         "amount_cents": 30000,
     })
     assert invalid.status_code == 422
+
+
+
+def test_v19_migration_preserves_income_and_adds_override_storage(tmp_path, monkeypatch):
+    import sqlite3
+
+    path = tmp_path / "phase7-migration.db"
+    client = setup_client(tmp_path, monkeypatch)
+    person = client.post("/api/people", json={"name": "Member"}).json()
+    created = client.post("/api/income-sources", json={
+        "person_id": person["id"], "name": "Weekly pay",
+        "net_amount_cents": 123456, "frequency": "weekly",
+        "next_payday": "2026-10-23",
+    })
+    assert created.status_code == 201, created.text
+    income_id = created.json()["id"]
+
+    with sqlite3.connect(path) as db:
+        db.execute("DROP TABLE income_amount_overrides")
+        db.execute("ALTER TABLE income_sources RENAME TO income_sources_v20")
+        db.execute(
+            """CREATE TABLE income_sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+                name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 120),
+                net_amount_cents INTEGER NOT NULL CHECK(net_amount_cents >= 0),
+                frequency TEXT NOT NULL CHECK(frequency IN
+                    ('weekly', 'biweekly', 'semimonthly', 'twice_monthly_last',
+                     'first_third_friday', 'last_business_day', 'monthly', 'irregular')),
+                next_payday TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+        db.execute(
+            """INSERT INTO income_sources
+               (id, person_id, name, net_amount_cents, frequency, next_payday, active, created_at)
+               SELECT id, person_id, name, net_amount_cents, frequency, next_payday, active, created_at
+               FROM income_sources_v20"""
+        )
+        db.execute("DROP TABLE income_sources_v20")
+        db.execute("PRAGMA user_version = 19")
+
+    database.initialize_database()
+    with database.connect() as db:
+        row = db.execute("SELECT * FROM income_sources WHERE id = ?", (income_id,)).fetchone()
+        assert row["name"] == "Weekly pay"
+        assert row["net_amount_cents"] == 123456
+        assert row["next_payday"] == "2026-10-23"
+        assert row["end_date"] is None
+        assert db.execute("SELECT COUNT(*) FROM income_amount_overrides").fetchone()[0] == 0
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 20
