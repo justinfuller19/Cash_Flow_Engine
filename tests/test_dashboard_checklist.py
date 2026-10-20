@@ -47,7 +47,7 @@ def seed_planned_household(tmp_path, monkeypatch):
         "/api/savings-goals",
         json={
             "name": "Emergency fund", "target_amount_cents": 100000,
-            "current_balance_cents": 0, "contribution_per_period_cents": 10000,
+            "current_balance_cents": 0, "weekly_target_cents": 10000,
             "priority": 1,
         },
     )
