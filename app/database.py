@@ -224,39 +224,8 @@ def initialize_database() -> None:
             """
         )
         _apply_migrations(db)
-        if version < 19:
-        # Version 19 expands the allowed income recurrence rules. Rebuild the
-        # table to replace its CHECK constraint while preserving IDs, amounts,
-        # active flags, dates, timestamps, and all foreign-key relationships.
-        income_columns = {row["name"] for row in db.execute("PRAGMA table_info(income_sources)")}
-        if income_columns:
-            db.execute("PRAGMA foreign_keys = OFF")
-            db.execute("ALTER TABLE income_sources RENAME TO income_sources_phase18")
-            db.execute(
-                """CREATE TABLE income_sources (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
-                    name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 120),
-                    net_amount_cents INTEGER NOT NULL CHECK(net_amount_cents >= 0),
-                    frequency TEXT NOT NULL CHECK(frequency IN
-                        ('weekly', 'biweekly', 'semimonthly', 'twice_monthly_last',
-                         'first_third_friday', 'last_business_day', 'monthly', 'irregular')),
-                    next_payday TEXT NOT NULL,
-                    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )"""
-            )
-            db.execute(
-                """INSERT INTO income_sources
-                   (id, person_id, name, net_amount_cents, frequency, next_payday, active, created_at)
-                   SELECT id, person_id, name, net_amount_cents, frequency, next_payday, active, created_at
-                   FROM income_sources_phase18"""
-            )
-            db.execute("DROP TABLE income_sources_phase18")
-            db.execute("CREATE INDEX IF NOT EXISTS idx_income_person ON income_sources(person_id)")
-            db.execute("PRAGMA foreign_keys = ON")
+        db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
-    db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
 def _apply_migrations(db: sqlite3.Connection) -> None:
@@ -623,3 +592,32 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
             "CREATE INDEX IF NOT EXISTS idx_debt_match_suggestions_status "
             "ON debt_payment_match_suggestions(status, transaction_id)"
         )
+
+    if version < 19:
+        # Version 19 expands the allowed income recurrence rules. Rebuild the
+        # table to replace its CHECK constraint while preserving existing rows.
+        income_columns = {row["name"] for row in db.execute("PRAGMA table_info(income_sources)")}
+        if income_columns:
+            db.execute("ALTER TABLE income_sources RENAME TO income_sources_phase18")
+            db.execute(
+                """CREATE TABLE income_sources (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 120),
+                    net_amount_cents INTEGER NOT NULL CHECK(net_amount_cents >= 0),
+                    frequency TEXT NOT NULL CHECK(frequency IN
+                        ('weekly', 'biweekly', 'semimonthly', 'twice_monthly_last',
+                         'first_third_friday', 'last_business_day', 'monthly', 'irregular')),
+                    next_payday TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )"""
+            )
+            db.execute(
+                """INSERT INTO income_sources
+                   (id, person_id, name, net_amount_cents, frequency, next_payday, active, created_at)
+                   SELECT id, person_id, name, net_amount_cents, frequency, next_payday, active, created_at
+                   FROM income_sources_phase18"""
+            )
+            db.execute("DROP TABLE income_sources_phase18")
+            db.execute("CREATE INDEX IF NOT EXISTS idx_income_person ON income_sources(person_id)")
