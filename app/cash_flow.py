@@ -721,7 +721,7 @@ goalSelect.replaceChildren();for(const goal of goals.filter(x=>x.active)){const 
 const typeSelect=document.getElementById("allocation-type");
 function updateAllocationFields(){document.getElementById("debt-field").hidden=typeSelect.value!=="debt";document.getElementById("savings-field").hidden=typeSelect.value!=="savings";}
 typeSelect.onchange=updateAllocationFields;updateAllocationFields();
-renderList("allocations",allocations,"No allocations yet. Choose an amount above to reserve part of your safe surplus.",(li,a)=>{
+renderList("allocations",allocations.filter(a=>a.status!=="planned"||a.allocation_type!=="buffer"||a.allocation_date>=report.start_date),"No allocations yet. Choose an amount above to reserve part of your safe surplus.",(li,a)=>{
  const label={debt:"Debt snowball",buffer:"Household buffer",savings:"Savings goal",unallocated:"Leave unallocated"}[a.allocation_type]||a.allocation_type;
  li.appendChild(el("div","item-title",label+" · "+dollars(a.amount_cents)+" · "+a.status));
  li.appendChild(el("div","detail",(a.target_debt_name||a.savings_goal_name||a.description||"No note")+" · "+a.allocation_date+(a.actual_amount_cents!==null&&a.actual_amount_cents!==undefined?" · actually paid "+dollars(a.actual_amount_cents):"")));
@@ -730,6 +730,11 @@ renderList("allocations",allocations,"No allocations yet. Choose an amount above
    if(a.allocation_type==="debt"){
      const record=el("button","","Record actual debt payment");record.type="button";
      record.onclick=async()=>{const input=prompt("Enter the actual payment in dollars (up to "+(a.amount_cents/100).toFixed(2)+"):",(a.amount_cents/100).toFixed(2));if(input===null)return;const amount=Math.round(Number(input)*100);if(!Number.isFinite(amount)||amount<=0){message("Enter a valid positive payment amount.","error");return;}try{await post("/api/surplus-allocations/"+a.id+"/record-debt-payment",{actual_amount_cents:amount,transaction_date:iso(new Date()),description:"Extra debt snowball payment"});message("Actual debt payment recorded. The debt balance and forecast have been updated.");await load();}catch(e){message(e.message,"error");}};
+     actions.appendChild(record);
+   }
+   if(a.allocation_type==="savings"){
+     const record=el("button","","Record actual savings contribution");record.type="button";
+     record.onclick=async()=>{const input=prompt("Enter the actual contribution in dollars (up to "+(a.amount_cents/100).toFixed(2)+"):",(a.amount_cents/100).toFixed(2));if(input===null)return;const amount=Math.round(Number(input)*100);if(!Number.isFinite(amount)||amount<=0){message("Enter a valid positive contribution amount.","error");return;}try{await post("/api/surplus-allocations/"+a.id+"/record-savings-contribution",{actual_amount_cents:amount,transaction_date:iso(new Date()),description:"Savings goal contribution"});message("Savings contribution recorded. The goal balance and forecast have been updated.");await load();}catch(e){message(e.message,"error");}};
      actions.appendChild(record);
    }
    const cancel=el("button","","Cancel allocation");cancel.type="button";cancel.onclick=async()=>{try{await post("/api/surplus-allocations/"+a.id+"/cancel",{});message("Allocation cancelled and surplus released.");await load();}catch(e){message(e.message,"error");}};
