@@ -4,7 +4,7 @@ from calendar import monthrange
 from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from . import database
 from .engine import (
@@ -207,6 +207,11 @@ def delete_saved_plan(plan_id: int):
 
 @router.get("/planner", response_class=HTMLResponse)
 def planner_page():
+    return RedirectResponse(url="/checklist", status_code=307)
+
+
+@router.get("/planner-legacy", response_class=HTMLResponse)
+def legacy_planner_page():
     return """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Payday Planner · CashFlow Engine</title>
