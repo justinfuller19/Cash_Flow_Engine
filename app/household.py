@@ -58,7 +58,8 @@ def _read_settings(db) -> dict:
             activity = db.execute(
                 """SELECT COALESCE(SUM(amount_cents), 0) AS delta_cents, COUNT(*) AS transaction_count
                    FROM transactions
-                   WHERE transaction_date >= ? AND transaction_date < ?""",
+                   WHERE transaction_date >= ? AND transaction_date < ?
+                     AND transaction_type IN ('income', 'expense')""",
                 (snapshot["effective_week_start"], current_week.isoformat()),
             ).fetchone()
             result["suggested_cash_balance_cents"] = snapshot["balance_cents"] + activity["delta_cents"]
