@@ -11,7 +11,7 @@ router = APIRouter()
 
 def _read_settings(db) -> dict:
     row = db.execute(
-        "SELECT buffer_target_cents, starting_cash_cents, updated_at "
+        "SELECT buffer_target_cents, starting_cash_cents, financial_week_start, updated_at "
         "FROM household_settings WHERE id = 1"
     ).fetchone()
     if row is None:
