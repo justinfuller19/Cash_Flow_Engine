@@ -936,3 +936,81 @@ def test_horizon_buffer_gap_reports_shortfall_without_negative_safe_spend(tmp_pa
     assert report["horizon_buffer_replenishment_cents"] == 10000
     assert report["safe_to_spend_before_allocations_cents"] == 0
     assert report["free_to_spend_cents"] == 0
+
+
+def test_estimated_interest_is_opt_in_and_does_not_change_saved_balance(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                apr_percent, active, next_due_date)
+               VALUES ('Interest card', 500000, 0, 20, 19.9, 1, '2026-12-20')"""
+        ).lastrowid
+
+    params = {"start_date": "2026-10-19", "end_date": "2026-10-25", "forecast_weeks": 2}
+    off = client.get("/api/cash-flow/weekly", params=params).json()
+    assert off["estimated_interest_enabled"] is False
+    assert off["estimated_debt_interest_cents"] == 0
+    assert off["future_forecast"][0]["estimated_debt_interest_cents"] == 0
+    assert off["future_forecast"][0]["projected_debt_balances"] == []
+
+    on = client.get("/api/cash-flow/weekly", params={**params, "estimate_interest": "true"}).json()
+    assert on["estimated_interest_enabled"] is True
+    assert on["future_forecast"][0]["estimated_debt_interest_cents"] == 1908
+    assert on["estimated_debt_interest_cents"] == 1908
+    assert on["future_forecast"][0]["projected_debt_balances"][0]["projected_balance_cents"] == 501908
+    assert on["projected_cash_before_buffer_cents"] == off["projected_cash_before_buffer_cents"]
+    assert on["free_to_spend_cents"] == off["free_to_spend_cents"]
+    with database.connect() as db:
+        assert db.execute(
+            "SELECT balance_cents FROM credit_cards WHERE id = ?", (debt_id,)
+        ).fetchone()["balance_cents"] == 500000
+
+
+def test_estimated_interest_handles_zero_apr_and_zero_balance(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                apr_percent, active, next_due_date)
+               VALUES ('Zero APR', 100000, 0, 20, 0, 1, '2026-12-20')"""
+        )
+        db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                apr_percent, active, next_due_date)
+               VALUES ('Zero balance', 0, 0, 20, 29.9, 1, '2026-12-20')"""
+        )
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={
+            "start_date": "2026-10-19", "end_date": "2026-10-25",
+            "forecast_weeks": 2, "estimate_interest": "true",
+        },
+    ).json()
+    assert report["future_forecast"][0]["estimated_debt_interest_cents"] == 0
+    assert report["estimated_debt_interest_cents"] == 0
+
+
+def test_estimated_interest_uses_each_weeks_projected_balance(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                apr_percent, active, next_due_date)
+               VALUES ('Interest card', 100000, 0, 20, 10, 1, '2026-12-20')"""
+        )
+    params = {
+        "start_date": "2026-10-19", "end_date": "2026-10-25",
+        "forecast_weeks": 3, "estimate_interest": "true",
+    }
+    report = client.get("/api/cash-flow/weekly", params=params).json()
+    first, second = report["future_forecast"]
+    assert first["estimated_debt_interest_cents"] == 192
+    assert second["estimated_debt_interest_cents"] == 192
+    assert second["projected_debt_balances"][0]["projected_balance_cents"] == 100384
+    assert report["estimated_debt_interest_cents"] == 384
