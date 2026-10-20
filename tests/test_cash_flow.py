@@ -420,3 +420,49 @@ def test_surplus_allocation_rejects_amount_above_safe_forecast(tmp_path, monkeyp
         json={"allocation_type": "buffer", "amount_cents": 10000},
     )
     assert response.status_code == 422
+
+def test_record_actual_savings_contribution_updates_goal_and_ledger(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 20000"
+        )
+        goal_id = db.execute(
+            """INSERT INTO savings_goals
+               (name, target_amount_cents, current_balance_cents, contribution_per_period_cents)
+               VALUES ('Vacation', 100000, 10000, 0)"""
+        ).lastrowid
+
+    allocation = client.post(
+        "/api/surplus-allocations",
+        json={"allocation_type": "savings", "amount_cents": 12000, "savings_goal_id": goal_id},
+    )
+    assert allocation.status_code == 201
+    allocation_id = allocation.json()["id"]
+
+    recorded = client.post(
+        f"/api/surplus-allocations/{allocation_id}/record-savings-contribution",
+        json={"actual_amount_cents": 9000, "description": "Vacation savings"},
+    )
+    assert recorded.status_code == 200
+    with database.connect() as db:
+        goal = db.execute("SELECT current_balance_cents FROM savings_goals WHERE id = ?", (goal_id,)).fetchone()
+        transaction = db.execute("SELECT transaction_type, amount_cents FROM transactions WHERE id = ?", (recorded.json()["transaction_id"],)).fetchone()
+    assert goal["current_balance_cents"] == 19000
+    assert transaction["transaction_type"] == "expense"
+    assert transaction["amount_cents"] == 9000
+
+
+def test_old_buffer_allocations_do_not_reserve_new_financial_weeks(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 20000, financial_week_start = 'Friday'"
+        )
+        db.execute(
+            """INSERT INTO surplus_allocations
+               (allocation_date, allocation_type, amount_cents, description)
+               VALUES ('2020-01-03', 'buffer', 15000, 'Prior week spending buffer')"""
+        )
+    report = client.get("/api/cash-flow/weekly").json()
+    assert report["planned_allocations_cents"] == 0
