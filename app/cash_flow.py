@@ -77,9 +77,13 @@ def _take_matching_transactions(
         item for item in transactions
         if item["id"] not in used_ids
         and item["transaction_type"] == "expense"
-        # Surplus-allocation debt payments are linked for traceability but are
-        # extra principal reductions, not minimum-payment credits.
-        and not (link_type == "debt" and item["category"] == "debt payment")
+        # Surplus-allocation payments are extra principal, identified by the
+        # origin note rather than category alone (categories are user-editable).
+        and not (
+            link_type == "debt"
+            and item["category"] == "debt payment"
+            and "extra debt snowball payment" in (item.get("notes") or "").lower()
+        )
         and item["linked_obligation_type"] == link_type
         and item["linked_obligation_id"] == link_id
         and _within_window(date.fromisoformat(item["transaction_date"]), due_date, window_days)
@@ -253,7 +257,7 @@ def _weekly_cash_flow_for_window(
         # so they can mark a scheduled obligation as already covered.
         match_start = start - timedelta(days=31)
         transaction_rows = db.execute(
-            """SELECT id, transaction_date, transaction_type, category, description,
+            """SELECT id, transaction_date, transaction_type, category, description, notes,
                       amount_cents, linked_obligation_type, linked_obligation_id
                FROM transactions
                WHERE transaction_date >= ? AND transaction_date <= ?
