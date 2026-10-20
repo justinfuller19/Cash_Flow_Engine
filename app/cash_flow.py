@@ -2,8 +2,9 @@
 from calendar import monthrange
 from datetime import date, timedelta
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
 
 from . import database
 from .forecast import occurrences_between
@@ -135,6 +136,27 @@ def weekly_cash_flow(
     report["future_buffer_reservation_cents"] = max(
         0, report["free_to_spend_cents"] - safe_to_spend
     )
+    with database.connect() as db:
+        allocations = db.execute(
+            """SELECT id, allocation_date, allocation_type, amount_cents,
+                      target_debt_id, savings_goal_id, description, status,
+                      actual_amount_cents, transaction_id
+               FROM surplus_allocations
+               WHERE status = 'planned'
+               ORDER BY allocation_date, id"""
+        ).fetchall()
+        allocated_cents = sum(row["amount_cents"] for row in allocations)
+        debt_target = db.execute(
+            """SELECT id, name, balance_cents FROM credit_cards
+               WHERE active = 1 AND balance_cents > 0
+               ORDER BY balance_cents ASC, id ASC LIMIT 1"""
+        ).fetchone()
+    safe_before_allocations = safe_to_spend
+    safe_to_spend = max(0, safe_to_spend - allocated_cents)
+    report["safe_surplus_before_allocations_cents"] = safe_before_allocations
+    report["planned_allocations_cents"] = allocated_cents
+    report["surplus_allocations"] = [dict(row) for row in allocations]
+    report["recommended_snowball_debt"] = dict(debt_target) if debt_target else None
     report["free_to_spend_cents"] = safe_to_spend
     report["extra_debt_payoff_capacity_cents"] = safe_to_spend
     report["forecast_weeks"] = forecast_weeks
@@ -157,7 +179,7 @@ def _weekly_cash_flow_for_window(
     """Calculate one period without lookahead, optionally carrying prior cash."""
     with database.connect() as db:
         settings = db.execute(
-            "SELECT starting_cash_cents, buffer_target_cents FROM household_settings WHERE id = 1"
+            "SELECT starting_cash_cents, buffer_target_cents, financial_week_start FROM household_settings WHERE id = 1"
         ).fetchone()
         starting_cash = (
             starting_cash_override
