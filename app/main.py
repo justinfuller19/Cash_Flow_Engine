@@ -222,10 +222,13 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <p class="muted">Start by adding the people in your household and their take-home pay. Amounts are saved as cents in your local SQLite database.</p></header>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div class="layout">
-<section class="card"><h2>Household cash settings</h2><p class="muted">One shared cash buffer target for the whole household, restored after bills and minimum debt payments, plus the household's current available cash balance.</p>
+<section class="card"><h2>Household cash settings</h2><p class="muted">One shared cash buffer target for the whole household. Confirm cash on hand at the beginning of a financial week; transactions recorded during that week are then reflected in the forecast separately.</p>
+<p id="cash-confirmation-status" class="muted" role="status">Loading cash confirmation…</p>
 <form id="settings-form">
 <label for="settings-buffer">Cash buffer target ($)</label><input id="settings-buffer" name="buffer_target" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
-<label for="settings-cash">Starting cash balance ($)</label><input id="settings-cash" name="starting_cash" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
+<label for="settings-cash">Cash on hand at week start ($)</label><input id="settings-cash" name="starting_cash" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
+<label for="settings-cash-week">Effective financial week starts</label><input id="settings-cash-week" name="starting_cash_effective_week" type="date" required>
+<p class="muted">Choose the first day of the financial week. Confirmed snapshots are saved with their effective date so older weekly reports can use the matching balance. Confirm again if the balance is more than 10 days old.</p>
 <button type="submit">Save household settings</button></form>
 </section>
 <section class="card"><h2>Household members</h2><p class="muted">Add the people in your household. Income sources are linked to a member below.</p>
@@ -392,6 +395,22 @@ async function refresh() {
     const settings = await api("/api/household/settings");
     document.getElementById("settings-buffer").value = (settings.buffer_target_cents / 100).toFixed(2);
     document.getElementById("settings-cash").value = (settings.starting_cash_cents / 100).toFixed(2);
+    const weekInput = document.getElementById("settings-cash-week");
+    const today = new Date();
+    const weekdays = {Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6, Sunday:0};
+    const targetDay = weekdays[settings.financial_week_start || "Friday"];
+    const delta = (today.getDay() - targetDay + 7) % 7;
+    today.setDate(today.getDate() - delta);
+    const currentWeek = today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+    weekInput.value = settings.starting_cash_effective_week || currentWeek;
+    const confirmation = document.getElementById("cash-confirmation-status");
+    if (settings.starting_cash_confirmed_at) {
+      confirmation.textContent = "Last confirmed "+settings.starting_cash_confirmed_at+" · effective week "+settings.starting_cash_effective_week+" · balance "+(settings.starting_cash_cents/100).toLocaleString(undefined,{style:"currency",currency:"USD"})+(settings.starting_cash_is_stale?" · OUT OF DATE — please confirm the current balance.":".");
+      confirmation.style.color = settings.starting_cash_is_stale ? "#b91c1c" : "#166534";
+    } else {
+      confirmation.textContent = "No cash balance has been confirmed yet. Set the amount and effective week to establish your first snapshot.";
+      confirmation.style.color = "#b91c1c";
+    }
   } catch (error) { showStatus("Could not load household settings: " + error.message, true); }
 }
 document.getElementById("settings-form").addEventListener("submit", async (event) => {
@@ -402,10 +421,11 @@ document.getElementById("settings-form").addEventListener("submit", async (event
   try {
     await api("/api/household/settings", {method:"PATCH", body:JSON.stringify({
       buffer_target_cents:centsFromInput(form.elements.buffer_target.value),
-      starting_cash_cents:centsFromInput(form.elements.starting_cash.value)
+      starting_cash_cents:centsFromInput(form.elements.starting_cash.value),
+      starting_cash_effective_week:form.elements.starting_cash_effective_week.value
     })});
     await refresh();
-    showStatus("Household settings saved.");
+    showStatus("Household settings saved. Cash snapshot recorded for the selected financial week.");
   } catch (error) { showStatus(error.message, true); }
   finally { button.disabled = false; }
 });
