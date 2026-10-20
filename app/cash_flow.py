@@ -535,12 +535,14 @@ def record_allocated_debt_payment(allocation_id: int, body: DebtPaymentRecord):
             raise HTTPException(status_code=404, detail="Target debt no longer exists")
         cursor = db.execute(
             """INSERT INTO transactions
-               (transaction_date, category, transaction_type, linked_obligation_type,
-                linked_obligation_id, description, amount_cents, notes)
-               VALUES (?, 'debt payment', 'expense', 'debt', ?, ?, ?, ?)""",
-            (body.transaction_date.isoformat(), debt["id"],
-             body.description.strip() or ("Payment toward " + debt["name"]),
-             body.actual_amount_cents, "Recorded from surplus allocation #" + str(allocation_id)),
+               (transaction_date, category, transaction_type, description, amount_cents, notes)
+               VALUES (?, 'debt payment', 'expense', ?, ?, ?)""",
+            (body.transaction_date.isoformat(),
+             body.description.strip() or ("Extra payment toward " + debt["name"]),
+             body.actual_amount_cents,
+             "Extra debt snowball payment for " + debt["name"] +
+             "; recorded from surplus allocation #" + str(allocation_id) +
+             ". Kept separate from minimum-payment matching."),
         )
         transaction_id = cursor.lastrowid
         db.execute(
