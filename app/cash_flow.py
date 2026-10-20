@@ -64,6 +64,34 @@ def _take_matching_transaction(
     return match
 
 
+def _take_matching_transactions(
+    transactions: list[dict],
+    used_ids: set[int],
+    link_type: str,
+    link_id: int,
+    due_date: date,
+    window_days: int,
+) -> list[dict]:
+    """Consume all linked payments eligible for one scheduled obligation cycle."""
+    candidates = [
+        item for item in transactions
+        if item["id"] not in used_ids
+        and item["transaction_type"] == "expense"
+        and item["linked_obligation_type"] == link_type
+        and item["linked_obligation_id"] == link_id
+        and _within_window(date.fromisoformat(item["transaction_date"]), due_date, window_days)
+    ]
+    candidates.sort(
+        key=lambda item: (
+            abs((date.fromisoformat(item["transaction_date"]) - due_date).days),
+            item["transaction_date"],
+            item["id"],
+        )
+    )
+    used_ids.update(item["id"] for item in candidates)
+    return candidates
+
+
 @router.get("/api/cash-flow/weekly")
 def weekly_cash_flow(
     start_date: date | None = Query(default=None),
@@ -335,7 +363,8 @@ def _weekly_cash_flow_for_window(
 
         debts = []
         rows = db.execute(
-            """SELECT id, name, minimum_payment_cents, next_due_date, due_day_of_month
+            """SELECT id, name, balance_cents, minimum_payment_cents,
+                      next_due_date, due_day_of_month
                FROM credit_cards WHERE active = 1 ORDER BY id"""
         ).fetchall()
         for row in rows:
@@ -344,16 +373,31 @@ def _weekly_cash_flow_for_window(
                 occurrences_between(anchor, "monthly", start, end)
                 if anchor else _monthly_due_dates(row["due_day_of_month"], start, end)
             )
+            capped_minimum = min(row["minimum_payment_cents"], row["balance_cents"])
             for due in due_dates:
-                match = _take_matching_transaction(
+                matches = _take_matching_transactions(
                     all_transactions, used_transactions, "debt", row["id"], due, 7,
                 )
+                qualifying_paid = sum(abs(item["amount_cents"]) for item in matches)
+                paid_toward_minimum = min(capped_minimum, qualifying_paid)
+                remaining_minimum = max(0, capped_minimum - paid_toward_minimum)
                 debts.append({
                     "id": row["id"], "name": row["name"], "due_date": due.isoformat(),
-                    "amount_cents": row["minimum_payment_cents"],
-                    "status": "recorded" if match else "due",
-                    "covered_by_transaction_id": match["id"] if match else None,
-                    "transaction_date": match["transaction_date"] if match else None,
+                    "original_minimum_payment_cents": row["minimum_payment_cents"],
+                    "balance_capped_minimum_cents": capped_minimum,
+                    "qualifying_payments_cents": qualifying_paid,
+                    "paid_toward_minimum_cents": paid_toward_minimum,
+                    "extra_payment_cents": max(0, qualifying_paid - capped_minimum),
+                    "amount_cents": remaining_minimum,
+                    "status": (
+                        "recorded" if remaining_minimum == 0 and qualifying_paid > 0
+                        else "partial" if qualifying_paid > 0
+                        else "due"
+                    ),
+                    "covered_by_transaction_ids": [item["id"] for item in matches],
+                    "covered_by_transaction_id": matches[0]["id"] if matches else None,
+                    "transaction_date": matches[0]["transaction_date"] if len(matches) == 1 else None,
+                    "transaction_dates": [item["transaction_date"] for item in matches],
                 })
         debts.sort(key=lambda item: (item["due_date"], item["name"]))
 
@@ -403,7 +447,7 @@ def _weekly_cash_flow_for_window(
     ]
 
     uncovered_bills = [item for item in bills if item["status"] == "due"]
-    uncovered_debts = [item for item in debts if item["status"] == "due"]
+    uncovered_debts = [item for item in debts if item["amount_cents"] > 0]
     expected_income_cents = sum(item["amount_cents"] for item in expected_income)
     bills_due_cents = sum(item["amount_cents"] for item in uncovered_bills)
     minimum_debt_cents = sum(item["amount_cents"] for item in uncovered_debts)
@@ -507,7 +551,10 @@ def _weekly_cash_flow_for_window(
         "minimum_debt_payments": debts,
         "minimum_debt_payments_cents": minimum_debt_cents,
         "debt_payments_covered_by_transactions_cents": sum(
-            item["amount_cents"] for item in debts if item["status"] == "recorded"
+            item["paid_toward_minimum_cents"] for item in debts
+        ),
+        "debt_extra_payments_by_transactions_cents": sum(
+            item["extra_payment_cents"] for item in debts
         ),
         "transactions": [
             {
@@ -537,6 +584,8 @@ def _weekly_cash_flow_for_window(
             "Only active scheduled income, bills, debts, and savings goals are included.",
             "Link a recorded transaction to the scheduled item it paid or received to prevent duplicate counting.",
             "Linked transactions match scheduled occurrences within seven days, or the bill's larger flexible window.",
+            "Linked debt payments reduce that cycle's minimum by the amount paid; payments above the minimum are shown as extra debt reduction.",
+            "Debt minimums are capped at the recorded outstanding balance. Payment matching is a planning assumption and may differ from lender payment-application rules.",
             "Transfers are listed for reference but do not change household cash totals.",
             "All monetary calculations use integer cents; this report never initiates payments or transfers.",
             "Starting cash is a confirmed household snapshot effective at the beginning of its financial week; snapshots are not automatically inferred from transactions.",
@@ -822,7 +871,7 @@ else {statusBox.hidden=true;}
 renderList("income",report.expected_income,"No scheduled income remains expected in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date));});
 const billRows=report.bills.map(x=>({...x,kind:"bill"}));
 renderList("bills",billRows,"No bills due in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.due_date+" · "+x.status+(x.transaction_date?" · recorded "+x.transaction_date:"")));});
-renderList("debts",report.minimum_debt_payments,"No minimum debt payments due in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.due_date+" · "+x.status+(x.transaction_date?" · recorded "+x.transaction_date:"")));});
+renderList("debts",report.minimum_debt_payments,"No minimum debt payments due in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)+" remaining"));const detail=[x.due_date,x.status];if(x.qualifying_payments_cents)detail.push(dollars(x.paid_toward_minimum_cents)+" toward minimum");if(x.extra_payment_cents)detail.push(dollars(x.extra_payment_cents)+" extra");if(x.transaction_dates&&x.transaction_dates.length)detail.push("recorded "+x.transaction_dates.join(", "));li.appendChild(el("div","detail",detail.join(" · ")));});
 renderList("transactions",report.transactions,"No transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.description+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.type+" · "+x.category+(x.linked_obligation_type?" · linked "+x.linked_obligation_type:"")));});
 renderList("category-spending",report.category_spending,"No expense transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(x.amount_cents)));});
 const savings=document.getElementById("savings");savings.replaceChildren();savings.appendChild(el("p","", "Planned: "+dollars(report.planned_savings_cents)));savings.appendChild(el("p","", "Funded after obligations and buffer: "+dollars(report.funded_savings_cents)));savings.appendChild(el("p","", "Not covered by this forecast: "+dollars(report.savings_shortfall_cents)));savings.appendChild(el("p","muted","Contributions are estimated from active savings goals and distinct scheduled payday dates."));
