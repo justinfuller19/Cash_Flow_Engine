@@ -25,7 +25,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 1 — Starting cash snapshots
 
 **Priority:** Critical  
-**Status:** In progress — PR #35 merged; finishing estimated-balance guidance and weekly-report confirmation in the follow-up PR.
+**Status:** Complete — PR #35 and PR #36 merged.
 
 - [x] Define starting cash as a confirmed household balance effective at the start of a specified financial week.
 - [x] Track the effective financial-week start and last-confirmed timestamp; preserve history where needed for historical reports.
@@ -54,19 +54,20 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 2 — Debt payment matching and remaining minimums
 
 **Priority:** Critical  
-**Status:** Not started
+**Status:** In progress — PR #37 implements balance-capped minimums and cycle-specific partial-payment reconciliation; matching suggestions and surplus-allocation payment linking remain.
 
-- [ ] Offer an explicit debt-obligation link when recording debt payments or extra payments through surplus allocations.
+- [x] Support explicit debt-obligation links on recorded expense transactions through the transaction ledger.
+- [ ] Link payments recorded through surplus allocations to the intended debt/cycle without misclassifying an extra payment as a separate minimum payment.
 - [ ] Suggest matches only when supported by available data; require confirmation when ambiguous.
-- [ ] Match qualifying payments to the correct debt and payment cycle.
-- [ ] Cap the initial required minimum at the outstanding balance: `min(stated_minimum, outstanding_balance)`.
-- [ ] Subtract qualifying payments credited to that cycle and floor the remaining minimum at zero.
-- [ ] Keep amounts above the minimum visible as extra debt reduction.
-- [ ] Ensure payments are not also counted as separate forecast expenses or credited to multiple debts/cycles.
-- [ ] Align pure-engine and weekly-path minimum-payment logic.
-- [ ] Document that app-side matching is a planning assumption and may differ from lender payment-application rules.
-- [ ] Test balances below minimums, partial payments, overpayments, wrong debt, and wrong cycle.
-- [ ] Update dashboard and weekly API notes to explain remaining minimums and qualifying payments.
+- [x] Match qualifying linked payments to the correct debt and payment cycle, within the documented seven-day window.
+- [x] Cap the required minimum at the recorded outstanding balance: `min(stated_minimum, outstanding_balance)`.
+- [x] Subtract all qualifying payments credited to that cycle and floor the remaining minimum at zero.
+- [x] Keep amounts above the minimum visible as extra debt reduction.
+- [x] Count each linked payment as a recorded expense once, reduce only its linked cycle, and prevent it from covering another debt or cycle.
+- [x] Align weekly-path minimum caps with the pure engine's existing balance-capped minimum logic.
+- [x] Document that app-side matching is a planning assumption and may differ from lender payment-application rules.
+- [x] Test balances below minimums, multiple partial payments, overpayments, wrong debt, and wrong cycle.
+- [x] Update weekly report details and API notes to explain remaining minimums, credited payments, and excess payments.
 
 **Acceptance criteria**
 
@@ -189,8 +190,9 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 - [ ] Weekly income scenario.
 - [ ] Biweekly income scenario.
 - [ ] Weekly and biweekly income in the same household.
-- [ ] Already-paid bill and partially paid debt minimum.
-- [ ] Debt balance below stated minimum.
+- [ ] Already-paid bill and partially paid debt minimum. (Partial debt checklist remainder is now covered by PR #37 tests; already-paid bill case remains.)
+- [x] Debt balance below stated minimum.
+- [x] Partial debt minimum remains on checklist; zero-balance active debt creates no $0 checklist item.
 - [ ] Savings goal with existing arrears.
 - [ ] Household below buffer target.
 - [ ] Low-income week and future-week shortfall.
@@ -208,7 +210,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 
 ## Milestone A — Trustworthy weekly cash flow
 
-- [ ] Phase 1: Starting cash snapshots.
+- [x] Phase 1: Starting cash snapshots.
 - [ ] Phase 2: Debt payment matching and remaining minimums.
 - [ ] Phase 3: Savings arrears in future weeks.
 - [ ] Phase 4: Consistent buffer and safe-to-spend semantics.
@@ -230,7 +232,8 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 Record meaningful implementation updates here. Each entry should include date, phase, PR/commit reference, tests run, and remaining work.
 
 - **2026-10-20 — Roadmap created:** Defined three milestones and eight phases. No application behavior changed by this documentation alone. Implementation remained pending at that point.
-- **2026-10-20 — Phase 1 implementation (PR #35, merged):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, a dated Household & income control, and regression tests for snapshot persistence, history, migration, transaction boundaries, multi-week safe-to-spend, and stale warnings. GitHub Actions passed the full pytest suite on Python 3.11, 3.12, and 3.13 after an initial run exposed that the new snapshot history also needed to be cleared by the existing household-data reset; that reset path is now covered by the existing suite. After the reset fix, the dashboard control and centralized freshness threshold were added; the latest GitHub Actions run passed the full pytest suite on Python 3.11, 3.12, and 3.13. Estimated balance suggestions and an edit control embedded directly in the weekly report remain open. Review follow-up: clarified forecast anchoring in the PR description and rejected future-dated snapshots because future balances cannot yet be confirmed. PR #35 was merged. The follow-up adds a transaction-based estimate for the next financial-week opening and a cash-confirmation control on the weekly report. The estimate is advisory, never saved automatically, and only rolls forward recorded transactions before the current week's start so it does not double-count current-week activity. Review identified and fixed a transfer-classification issue: the estimate now includes only income and expense transactions, excluding cash-neutral transfers from both the balance delta and transaction count; a regression test covers this. GitHub Actions passed the full pytest suite on Python 3.11, 3.12, and 3.13 for the implementation commit. The PR remains open and nothing has been deployed.
+- **2026-10-20 — Phase 1 complete (PRs #35 and #36, merged):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, dated confirmation controls, an advisory opening-balance estimate, and explicit confirmation in the weekly report. The estimate uses only recorded income and expenses before the current financial week, excludes transfers, and never saves automatically. Regression tests cover snapshot history/migration, transaction boundaries, multi-week safe-to-spend, stale warnings, transfer exclusion, and the confirmation workflow. GitHub Actions passed on Python 3.11, 3.12, and 3.13 for the merged implementation.
+- **2026-10-20 — Phase 2 first increment (PR #37, in progress):** Weekly debt forecasts now cap a scheduled minimum at the recorded balance, credit all linked expense transactions within seven days of the due date, preserve partial minimums, and display over-minimum amounts as extra debt reduction. Payments remain ordinary recorded expenses and are not double-counted as both a full minimum and the payment itself. Added regression cases for balances below minimums, multiple partial payments, overpayments, wrong debts, and wrong cycles. Reviewer found that partial minimums disappeared from the automatic checklist and zero-balance active debts could create $0 checklist items; fixed the checklist criteria and added tests for both. Surplus-allocation payment linking and suggested-match review remain outstanding. CI validation is pending.
 
 ## Implementation / release rules
 

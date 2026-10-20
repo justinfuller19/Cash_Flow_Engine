@@ -176,3 +176,39 @@ def test_only_one_active_automatic_plan_per_financial_week(tmp_path, monkeypatch
             pass
         else:
             raise AssertionError("Database allowed duplicate active automatic plans for one week")
+
+
+def test_checklist_keeps_remaining_partial_debt_minimum(tmp_path, monkeypatch):
+    client, _, today = seed_planned_household(tmp_path, monkeypatch)
+    with database.connect() as db:
+        debt = db.execute("SELECT id FROM credit_cards WHERE name = 'Card'").fetchone()
+    payment = client.post("/api/transactions", json={
+        "transaction_date": today.isoformat(),
+        "transaction_type": "expense",
+        "linked_obligation_type": "debt",
+        "linked_obligation_id": debt["id"],
+        "category": "other",
+        "description": "Partial minimum payment",
+        "amount_cents": -2000,
+    })
+    assert payment.status_code == 201, payment.text
+
+    checklist = client.get("/api/checklist")
+    assert checklist.status_code == 200, checklist.text
+    debt_items = [item for item in checklist.json() if item["category"] == "debt"]
+    assert len(debt_items) == 1
+    assert debt_items[0]["requested_cents"] == 3000
+    assert debt_items[0]["funded_cents"] == 3000
+
+
+def test_checklist_skips_zero_balance_active_debt(tmp_path, monkeypatch):
+    client, _, _ = seed_planned_household(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute("UPDATE credit_cards SET balance_cents = 0 WHERE name = 'Card'")
+
+    checklist = client.get("/api/checklist")
+    assert checklist.status_code == 200, checklist.text
+    assert not any(
+        item["category"] == "debt" and item["name"] == "Pay minimum: Card"
+        for item in checklist.json()
+    )
