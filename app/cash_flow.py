@@ -410,7 +410,13 @@ def _weekly_cash_flow_for_window(
             saved_before = sum(amount for day, amount in history if day < start)
             saved_this_week = sum(amount for day, amount in history if start <= day <= end)
             arrears = max(0, weekly_target * elapsed_weeks - saved_before) if include_savings_carryover else 0
-            due_this_week = min(remaining, max(0, weekly_target + arrears - saved_this_week))
+            # Once a deadline has passed, stop projecting new weekly deposits;
+            # keep the remaining balance visible as overdue instead of reserving
+            # savings indefinitely into the future.
+            due_this_week = (
+                min(remaining, max(0, weekly_target + arrears - saved_this_week))
+                if target_date >= start else 0
+            )
             weeks_remaining = max(1, ((target_date - start).days // 7) + 1) if target_date >= start else 0
             required_weekly = (remaining + weeks_remaining - 1) // weeks_remaining if weeks_remaining else remaining
             savings_plan.append({
