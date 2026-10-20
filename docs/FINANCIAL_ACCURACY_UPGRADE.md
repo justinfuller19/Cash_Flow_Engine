@@ -29,6 +29,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 
 - [x] Define starting cash as a confirmed household balance effective at the start of a specified financial week.
 - [x] Track the effective financial-week start and last-confirmed timestamp; preserve history where needed for historical reports.
+- [x] Reject future-dated cash confirmations; a snapshot can confirm only the current or a past financial week.
 - [x] Add a dashboard control: **“Set cash on hand as of [week start]”.** The same dated control is available in Household & income setup.
 - [x] Show the previous confirmed amount, effective date, and last-confirmed date in Household & income setup.
 - [x] Apply transactions after the snapshot exactly once; do not reapply transactions already reflected in a confirmed balance. Regression coverage verifies that a transaction before the snapshot is excluded from the selected week and a transaction after the snapshot is counted once.
@@ -45,6 +46,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 
 - A user can set a dated cash snapshot and see when it was last confirmed.
 - Each post-snapshot transaction affects the forecast exactly once.
+- Future forecast weeks carry forward the prior projected ending cash; future-dated balances are not treated as confirmed snapshots.
 - Suggested balances never overwrite confirmed balances without explicit action.
 - Stale balances produce a visible reminder.
 - Tests assert exact values and historical behavior.
@@ -228,7 +230,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 Record meaningful implementation updates here. Each entry should include date, phase, PR/commit reference, tests run, and remaining work.
 
 - **2026-10-20 — Roadmap created:** Defined three milestones and eight phases. No application behavior changed by this documentation alone. Implementation remained pending at that point.
-- **2026-10-20 — Phase 1 implementation started (PR #35):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, a dated Household & income control, and regression tests for snapshot persistence, history, migration, transaction boundaries, multi-week safe-to-spend, and stale warnings. GitHub Actions passed the full pytest suite on Python 3.11, 3.12, and 3.13 after an initial run exposed that the new snapshot history also needed to be cleared by the existing household-data reset; that reset path is now covered by the existing suite. After the reset fix, the dashboard control and centralized freshness threshold were added; the latest GitHub Actions run passed the full pytest suite on Python 3.11, 3.12, and 3.13. Estimated balance suggestions and an edit control embedded directly in the weekly report remain open. This PR is not merged or deployed.
+- **2026-10-20 — Phase 1 implementation started (PR #35):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, a dated Household & income control, and regression tests for snapshot persistence, history, migration, transaction boundaries, multi-week safe-to-spend, and stale warnings. GitHub Actions passed the full pytest suite on Python 3.11, 3.12, and 3.13 after an initial run exposed that the new snapshot history also needed to be cleared by the existing household-data reset; that reset path is now covered by the existing suite. After the reset fix, the dashboard control and centralized freshness threshold were added; the latest GitHub Actions run passed the full pytest suite on Python 3.11, 3.12, and 3.13. Estimated balance suggestions and an edit control embedded directly in the weekly report remain open. Review follow-up: clarified forecast anchoring in the PR description and rejected future-dated snapshots because future balances cannot yet be confirmed. This PR is not merged or deployed.
 
 ## Implementation / release rules
 
