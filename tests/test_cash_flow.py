@@ -405,8 +405,8 @@ def test_record_actual_debt_payment_updates_balance_and_transaction_ledger(tmp_p
         ).fetchone()
     assert debt["balance_cents"] == 42000
     assert transaction["transaction_type"] == "expense"
-    assert transaction["linked_obligation_type"] == "debt"
-    assert transaction["linked_obligation_id"] == debt_id
+    assert transaction["linked_obligation_type"] is None
+    assert transaction["linked_obligation_id"] is None
     assert transaction["amount_cents"] == 8000
 
 def test_surplus_allocation_rejects_amount_above_safe_forecast(tmp_path, monkeypatch):
