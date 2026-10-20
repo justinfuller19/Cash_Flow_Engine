@@ -539,12 +539,13 @@ def _weekly_cash_flow_for_window(
         if has_deadline and target_date < start:
             due_this_week = 0
         else:
-            if savings_arrears_override is None:
-                due_this_week = max(0, weekly_target + arrears - saved_this_week)
-            else:
-                # The outstanding arrears remain visible, but catch-up already
-                # reserved in an earlier forecast week is not reserved again.
-                due_this_week = max(0, weekly_target + catch_up_due - saved_this_week)
+            # The outstanding arrears remain visible, but catch-up already
+            # reserved in an earlier forecast week is not reserved again.
+            # Recorded contributions pay arrears first; only any excess reduces
+            # this week's regular target.
+            due_this_week = max(
+                0, weekly_target + catch_up_due - max(0, saved_this_week - arrears)
+            )
             if goal["target_amount_cents"] > 0:
                 due_this_week = min(remaining, due_this_week)
 
