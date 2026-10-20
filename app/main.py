@@ -727,7 +727,7 @@ def update_income_source(income_id: int, body: IncomeSourceUpdate):
             )
             row = db.execute(
                 """SELECT id, person_id, name, net_amount_cents, frequency,
-                          next_payday, active, created_at
+                          next_payday, active, end_date, created_at
                    FROM income_sources WHERE id = ?""",
                 (income_id,),
             ).fetchone()
