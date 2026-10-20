@@ -335,8 +335,7 @@ def _weekly_cash_flow_for_window(
 
         goals = db.execute(
             """SELECT id, name, target_amount_cents, current_balance_cents, target_date,
-                      contribution_per_period_cents, weekly_target_cents, schedule_start_date,
-                      created_at, priority
+                      weekly_target_cents, schedule_start_date, created_at, priority
                FROM savings_goals WHERE active = 1
                ORDER BY priority, name COLLATE NOCASE, id"""
         ).fetchall()
@@ -385,10 +384,10 @@ def _weekly_cash_flow_for_window(
     bills_due_cents = sum(item["amount_cents"] for item in uncovered_bills)
     minimum_debt_cents = sum(item["amount_cents"] for item in uncovered_debts)
 
-    # Dated savings goals are budgeted weekly, independently of paydays. Any
-    # missed prior weekly targets carry forward; recorded contributions reduce
-    # arrears. Goals without a deadline retain the legacy per-payday behavior.
-    payday_dates = {item["date"] for item in income_occurrences}
+    # Every active savings goal is budgeted per financial week, independently
+    # of paydays. Dated goals derive their weekly target from the deadline;
+    # undated goals use the user-entered weekly amount for ongoing savings.
+    # Missed weekly targets carry forward, and recorded contributions reduce arrears.
     savings_plan = []
     planned_savings = 0
     history_by_goal: dict[int, list[tuple[date, int]]] = {}
@@ -397,41 +396,50 @@ def _weekly_cash_flow_for_window(
             (date.fromisoformat(entry["transaction_date"]), entry["amount_cents"])
         )
     for goal in goals:
+        has_deadline = bool(goal["target_date"])
         remaining = max(0, goal["target_amount_cents"] - goal["current_balance_cents"])
-        if goal["target_date"]:
-            target_date = date.fromisoformat(goal["target_date"])
-            schedule_start = date.fromisoformat(goal["schedule_start_date"] or goal["created_at"][:10])
-            weekly_target = goal["weekly_target_cents"] or 0
-            if weekly_target == 0 and remaining > 0 and target_date >= start:
-                weeks_left = max(1, ((target_date - start).days // 7) + 1)
-                weekly_target = (remaining + weeks_left - 1) // weeks_left
-            elapsed_weeks = max(0, (start - schedule_start).days // 7)
-            history = history_by_goal.get(goal["id"], [])
-            saved_before = sum(amount for day, amount in history if day < start)
-            saved_this_week = sum(amount for day, amount in history if start <= day <= end)
-            arrears = max(0, weekly_target * elapsed_weeks - saved_before) if include_savings_carryover else 0
-            # Once a deadline has passed, stop projecting new weekly deposits;
-            # keep the remaining balance visible as overdue instead of reserving
-            # savings indefinitely into the future.
-            due_this_week = (
-                min(remaining, max(0, weekly_target + arrears - saved_this_week))
-                if target_date >= start else 0
-            )
+        target_date = date.fromisoformat(goal["target_date"]) if has_deadline else None
+        schedule_start = date.fromisoformat(goal["schedule_start_date"] or goal["created_at"][:10])
+        weekly_target = goal["weekly_target_cents"] or 0
+        if has_deadline and weekly_target == 0 and remaining > 0 and target_date >= start:
+            weeks_left = max(1, ((target_date - start).days // 7) + 1)
+            weekly_target = (remaining + weeks_left - 1) // weeks_left
+        elapsed_weeks = max(0, (start - schedule_start).days // 7)
+        history = history_by_goal.get(goal["id"], [])
+        saved_before = sum(amount for day, amount in history if day < start)
+        saved_this_week = sum(amount for day, amount in history if start <= day <= end)
+        arrears = max(0, weekly_target * elapsed_weeks - saved_before) if include_savings_carryover else 0
+
+        # A goal with a date stops reserving new weekly deposits after its
+        # deadline. An undated goal with a positive amount stops once funded;
+        # amount=0 means ongoing general savings with no finish line.
+        if has_deadline and target_date < start:
+            due_this_week = 0
+        else:
+            due_this_week = max(0, weekly_target + arrears - saved_this_week)
+            if goal["target_amount_cents"] > 0:
+                due_this_week = min(remaining, due_this_week)
+
+        if has_deadline:
             weeks_remaining = max(1, ((target_date - start).days // 7) + 1) if target_date >= start else 0
             required_weekly = (remaining + weeks_remaining - 1) // weeks_remaining if weeks_remaining else remaining
-            savings_plan.append({
-                "goal_id": goal["id"], "goal_name": goal["name"],
-                "weekly_target_cents": weekly_target, "arrears_cents": arrears,
-                "planned_this_week_cents": due_this_week,
-                "recorded_this_week_cents": saved_this_week,
-                "remaining_cents": remaining,
-                "target_date": goal["target_date"],
-                "required_weekly_to_deadline_cents": required_weekly,
-                "behind_schedule": bool(target_date < start or required_weekly > weekly_target),
-            })
-            planned_savings += due_this_week
+            behind_schedule = bool(target_date < start or required_weekly > weekly_target)
         else:
-            planned_savings += goal["contribution_per_period_cents"] * len(payday_dates)
+            required_weekly = None
+            behind_schedule = False
+
+        savings_plan.append({
+            "goal_id": goal["id"], "goal_name": goal["name"],
+            "weekly_target_cents": weekly_target, "arrears_cents": arrears,
+            "planned_this_week_cents": due_this_week,
+            "recorded_this_week_cents": saved_this_week,
+            "remaining_cents": remaining if goal["target_amount_cents"] > 0 else None,
+            "target_date": goal["target_date"],
+            "required_weekly_to_deadline_cents": required_weekly,
+            "behind_schedule": behind_schedule,
+        })
+        planned_savings += due_this_week
+
     projected_cash = (
         starting_cash + expected_income_cents + transaction_income
         - bills_due_cents - minimum_debt_cents - transaction_expenses
@@ -498,7 +506,7 @@ def _weekly_cash_flow_for_window(
         "free_to_spend_cents": free_to_spend,
         "extra_debt_payoff_capacity_cents": free_to_spend,
         "notes": [
-            "Dated savings goals use weekly targets and carry forward missed amounts based on recorded contributions.",
+            "All savings goals use weekly targets and carry forward missed amounts based on recorded contributions. Goals without a target date are ongoing weekly savings.",
             "Only active scheduled income, bills, debts, and savings goals are included.",
             "Link a recorded transaction to the scheduled item it paid or received to prevent duplicate counting.",
             "Linked transactions match scheduled occurrences within seven days, or the bill's larger flexible window.",
