@@ -104,6 +104,11 @@ def _refresh_debt_payment_suggestions(db) -> None:
         named = [item for item in due_debts if item[2]]
         candidates = named if named else due_debts
         for debt, due_date, name_match in candidates:
+            # Reject implausible amounts while allowing partial payments and
+            # over-minimum payments; amount alone never confirms a match.
+            expected_minimum = min(debt["minimum_payment_cents"], debt["balance_cents"])
+            if amount > max(debt["balance_cents"] + expected_minimum, expected_minimum * 2):
+                continue
             # Generic payment descriptions can be relevant but are deliberately
             # lower confidence when more than one debt could fit.
             category_signal = category in {"debt", "debt payment", "loan", "credit card"}
