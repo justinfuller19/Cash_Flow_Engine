@@ -159,6 +159,8 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 <div><label for="dashboard-cash-week">Effective week starts</label><input id="dashboard-cash-week" name="effective_week" type="date" required style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit"></div>
 <div><button type="submit">Confirm cash balance</button></div>
 </form>
+<p id="dashboard-cash-snapshot-estimate" class="muted" role="status">Checking whether an estimate is available…</p>
+<button id="dashboard-cash-use-estimate" type="button" hidden>Use estimated balance (not saved)</button>
 <p id="dashboard-cash-snapshot-status" class="muted" role="status">Loading cash confirmation…</p>
 </div>
 <div class="grid">
@@ -213,9 +215,20 @@ async function loadCashSnapshotControl(){
   const today=new Date();const targetDay=weekdays[settings.financial_week_start||"Friday"];
   today.setDate(today.getDate()-((today.getDay()-targetDay+7)%7));
   const currentWeek=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
-  amount.value=(settings.starting_cash_cents/100).toFixed(2);
-  week.value=settings.starting_cash_effective_week||currentWeek;
+  week.value=currentWeek;
+  amount.value=settings.starting_cash_effective_week===currentWeek?(settings.starting_cash_cents/100).toFixed(2):"";
   const status=document.getElementById("dashboard-cash-snapshot-status");
+  const estimate=document.getElementById("dashboard-cash-snapshot-estimate");
+  const useEstimate=document.getElementById("dashboard-cash-use-estimate");
+  if(settings.suggested_cash_balance_cents!==null&&settings.suggested_cash_balance_cents!==undefined){
+    estimate.textContent="Estimate for the week starting "+settings.suggested_cash_effective_week+": "+(settings.suggested_cash_balance_cents/100).toLocaleString(undefined,{style:"currency",currency:"USD"})+" based on "+settings.suggested_cash_transaction_count+" recorded transaction(s) since the snapshot dated "+settings.suggested_cash_based_on_effective_week+". This estimate only uses recorded transactions; verify it against actual cash.";
+    useEstimate.hidden=false;
+    useEstimate.onclick=()=>{amount.value=(settings.suggested_cash_balance_cents/100).toFixed(2);week.value=settings.suggested_cash_effective_week;status.textContent="Estimate copied into the form only. Check actual cash, then choose Confirm cash balance to save it.";status.style.color="#9a3412";};
+  }else{
+    estimate.textContent=settings.starting_cash_effective_week===currentWeek?"A confirmed snapshot already exists for the current financial week. Recorded transactions in this week remain separate from that starting balance.":"No estimate is available yet. Confirm a cash balance for this week, or record the transactions since your previous snapshot.";
+    useEstimate.hidden=true;
+    useEstimate.onclick=null;
+  }
   if(settings.starting_cash_confirmed_at){
     status.textContent="Last confirmed "+settings.starting_cash_confirmed_at+" · effective week "+settings.starting_cash_effective_week+(settings.starting_cash_is_stale?" · OUT OF DATE — please confirm the current balance.":".");
     status.style.color=settings.starting_cash_is_stale?"#b91c1c":"#166534";

@@ -753,6 +753,17 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 <div class="field"><label for="end">End date</label><input id="end" type="date" required></div><button id="refresh" type="button">Update report</button></div>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
+<section class="card"><h2>Confirm starting cash</h2>
+<p class="muted">Confirm the household cash balance at the start of the current financial week. An estimate is based only on recorded transactions since the previous snapshot; verify it against actual cash. Confirming a balance does not change or delete transactions.</p>
+<p id="weekly-cash-estimate" class="muted" role="status">Checking whether an estimate is available…</p>
+<button id="weekly-cash-use-estimate" type="button" hidden>Use estimated balance (not saved)</button>
+<form id="weekly-cash-form" class="toolbar">
+<div class="field"><label for="weekly-cash-amount">Cash on hand ($)</label><input id="weekly-cash-amount" type="number" min="0" step="0.01" required></div>
+<div class="field"><label for="weekly-cash-week">Effective week starts</label><input id="weekly-cash-week" type="date" required></div>
+<button type="submit">Confirm cash balance</button>
+</form>
+<p id="weekly-cash-status" class="muted" role="status">Loading cash confirmation…</p>
+</section>
 <section class="card"><h2>Allocate safe available money</h2>
 <p class="muted">The forecast reports the amount you can allocate without dropping below the household buffer in any forecast week. You decide where it goes; planned allocations reduce what remains available. The default debt suggestion follows the snowball method.</p>
 <p id="snowball-suggestion" class="muted">Loading debt recommendation…</p>
@@ -859,9 +870,52 @@ renderList("future-forecast",report.future_forecast,"No future weeks included in
 }
 function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function alignToWeekStart(dayName){const index={Monday:0,Tuesday:1,Wednesday:2,Thursday:3,Friday:4,Saturday:5,Sunday:6}[dayName]??4;const today=new Date();today.setHours(12,0,0,0);today.setDate(today.getDate()-((today.getDay()+6-index)%7));document.getElementById("start").value=iso(today);const end=new Date(today);end.setDate(end.getDate()+6);document.getElementById("end").value=iso(end);}
-async function initializeWeekSettings(){const settings=await api("/api/household/settings");const select=document.getElementById("week-start");select.value=settings.financial_week_start||"Friday";alignToWeekStart(select.value);}
+async function initializeWeekSettings(){const settings=await api("/api/household/settings");const select=document.getElementById("week-start");select.value=settings.financial_week_start||"Friday";alignToWeekStart(select.value);await loadWeeklyCashControl(settings);}
+
+async function loadWeeklyCashControl(existingSettings){
+ const settings=existingSettings||await api("/api/household/settings");
+ const start=document.getElementById("start").value;
+ const weekInput=document.getElementById("weekly-cash-week");
+ const amountInput=document.getElementById("weekly-cash-amount");
+ const estimate=document.getElementById("weekly-cash-estimate");
+ const useEstimate=document.getElementById("weekly-cash-use-estimate");
+ weekInput.value=start;
+ weekInput.max=start;
+ amountInput.value=settings.starting_cash_effective_week===start?(settings.starting_cash_cents/100).toFixed(2):"";
+ if(settings.suggested_cash_balance_cents!==null&&settings.suggested_cash_balance_cents!==undefined&&settings.suggested_cash_effective_week===start){
+  estimate.textContent="Estimated opening balance for "+start+": "+dollars(settings.suggested_cash_balance_cents)+" based on "+settings.suggested_cash_transaction_count+" recorded transaction(s) since the confirmed snapshot dated "+settings.suggested_cash_based_on_effective_week+". This is not a confirmed balance; compare it with actual cash.";
+  useEstimate.hidden=false;
+  useEstimate.onclick=()=>{if(weekInput.value!==settings.suggested_cash_effective_week){message("This estimate only applies to the current financial week.","error");return;}amountInput.value=(settings.suggested_cash_balance_cents/100).toFixed(2);message("Estimate copied into the form only. Verify actual cash, then choose Confirm cash balance to save it.");};
+ }else{
+  estimate.textContent=settings.starting_cash_effective_week===start?"A confirmed snapshot already exists for this week. Transactions recorded during this week remain separate forecast activity.":"No estimate is available for this week. Confirm the actual opening balance if known.";
+  useEstimate.hidden=true;
+  useEstimate.onclick=null;
+ }
+ const status=document.getElementById("weekly-cash-status");
+ status.textContent=settings.starting_cash_confirmed_at?"Last confirmed "+settings.starting_cash_confirmed_at+" · effective week "+settings.starting_cash_effective_week+(settings.starting_cash_is_stale?" · OUT OF DATE — please reconfirm.":"."):"No confirmed cash snapshot is available yet.";
+}
+
+document.getElementById("weekly-cash-form").addEventListener("submit",async event=>{
+ event.preventDefault();
+ const form=event.currentTarget;
+ const button=form.querySelector("button[type=submit]");
+ const status=document.getElementById("weekly-cash-status");
+ button.disabled=true;
+ try{
+  const amount=Number(document.getElementById("weekly-cash-amount").value);
+  const effectiveWeek=document.getElementById("weekly-cash-week").value;
+  if(!Number.isFinite(amount)||amount<0)throw Error("Enter a cash balance of zero or more.");
+  const response=await fetch("/api/household/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({starting_cash_cents:Math.round((amount+Number.EPSILON)*100),starting_cash_effective_week:effectiveWeek})});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw Error(data.detail||"Could not confirm the cash balance.");
+  status.textContent="Cash balance confirmed for the week starting "+data.starting_cash_effective_week+".";
+  await load();
+  await loadWeeklyCashControl();
+ }catch(error){status.textContent=error.message;message(error.message,"error");}
+ finally{button.disabled=false;}
+});
 document.getElementById("week-start").addEventListener("change",()=>alignToWeekStart(document.getElementById("week-start").value));
-document.getElementById("save-week-start").addEventListener("click",async()=>{try{const value=document.getElementById("week-start").value;const response=await fetch("/api/household/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({financial_week_start:value})});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.detail||"Could not save week start.");alignToWeekStart(value);message("Financial week start saved as "+value+".");await load();}catch(e){message(e.message,"error");}});
+document.getElementById("save-week-start").addEventListener("click",async()=>{try{const value=document.getElementById("week-start").value;const response=await fetch("/api/household/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({financial_week_start:value})});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.detail||"Could not save week start.");alignToWeekStart(value);message("Financial week start saved as "+value+".");await load();await loadWeeklyCashControl();}catch(e){message(e.message,"error");}});
 document.getElementById("allocation-form").addEventListener("submit",async event=>{event.preventDefault();try{const type=document.getElementById("allocation-type").value;const amount=Math.round(Number(document.getElementById("allocation-amount").value)*100);if(!Number.isFinite(amount)||amount<=0)throw Error("Enter a valid positive amount.");const body={allocation_type:type,amount_cents:amount,allocation_date:iso(new Date()),description:document.getElementById("allocation-description").value};if(type==="debt")body.target_debt_id=Number(document.getElementById("allocation-debt").value);if(type==="savings")body.savings_goal_id=Number(document.getElementById("allocation-savings").value);await post("/api/surplus-allocations",body);document.getElementById("allocation-amount").value="";document.getElementById("allocation-description").value="";message("Allocation saved. The remaining safe surplus has been recalculated.");await load();}catch(e){message(e.message,"error");}});
 document.getElementById("refresh").addEventListener("click",()=>load().catch(e=>message(e.message,"error")));
 initializeWeekSettings().then(load).catch(e=>message(e.message,"error"));

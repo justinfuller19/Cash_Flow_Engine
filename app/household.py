@@ -49,10 +49,36 @@ def _read_settings(db) -> dict:
             result["starting_cash_is_stale"] = (date.today() - confirmed_date).days > CASH_SNAPSHOT_STALE_DAYS
         except (TypeError, ValueError):
             result["starting_cash_is_stale"] = True
+
+        # Suggest a balance for the current week's opening only when the latest
+        # confirmed snapshot is older than this week. Transactions on/after that
+        # snapshot and before the current week are applied once; transactions
+        # within the current week remain separate forecast activity.
+        if date.fromisoformat(snapshot["effective_week_start"]) < current_week:
+            activity = db.execute(
+                """SELECT COALESCE(SUM(amount_cents), 0) AS delta_cents, COUNT(*) AS transaction_count
+                   FROM transactions
+                   WHERE transaction_date >= ? AND transaction_date < ?
+                     AND transaction_type IN ('income', 'expense')""",
+                (snapshot["effective_week_start"], current_week.isoformat()),
+            ).fetchone()
+            result["suggested_cash_balance_cents"] = snapshot["balance_cents"] + activity["delta_cents"]
+            result["suggested_cash_effective_week"] = current_week
+            result["suggested_cash_transaction_count"] = activity["transaction_count"]
+            result["suggested_cash_based_on_effective_week"] = snapshot["effective_week_start"]
+        else:
+            result["suggested_cash_balance_cents"] = None
+            result["suggested_cash_effective_week"] = None
+            result["suggested_cash_transaction_count"] = 0
+            result["suggested_cash_based_on_effective_week"] = None
     else:
         result["starting_cash_effective_week"] = None
         result["starting_cash_confirmed_at"] = None
         result["starting_cash_is_stale"] = True
+        result["suggested_cash_balance_cents"] = None
+        result["suggested_cash_effective_week"] = None
+        result["suggested_cash_transaction_count"] = 0
+        result["suggested_cash_based_on_effective_week"] = None
     return result
 
 

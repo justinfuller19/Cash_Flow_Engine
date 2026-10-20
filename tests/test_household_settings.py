@@ -19,6 +19,7 @@ def test_fresh_database_has_zeroed_household_settings(tmp_path, monkeypatch):
     settings = client.get("/api/household/settings").json()
     assert settings["buffer_target_cents"] == 0
     assert settings["starting_cash_cents"] == 0
+    assert settings["suggested_cash_balance_cents"] is None
 
 
 def test_update_household_settings(tmp_path, monkeypatch):
@@ -325,3 +326,83 @@ def test_cash_snapshot_rejects_future_financial_week(tmp_path, monkeypatch):
     assert "current or a past financial week" in response.json()["detail"]
     with database.connect() as db:
         assert db.execute("SELECT COUNT(*) FROM cash_balance_snapshots").fetchone()[0] == 0
+
+
+
+def test_suggested_cash_balance_uses_only_transactions_before_current_week(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    current_week = _current_week_start()
+    prior_week = current_week - timedelta(days=7)
+    saved = client.patch(
+        "/api/household/settings",
+        json={
+            "starting_cash_cents": 100000,
+            "starting_cash_effective_week": prior_week.isoformat(),
+        },
+    )
+    assert saved.status_code == 200
+
+    before_snapshot = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": (prior_week - timedelta(days=1)).isoformat(),
+            "category": "groceries",
+            "transaction_type": "expense",
+            "description": "Before confirmed snapshot",
+            "amount_cents": -7000,
+        },
+    )
+    on_snapshot_day = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": prior_week.isoformat(),
+            "category": "groceries",
+            "transaction_type": "expense",
+            "description": "After opening snapshot",
+            "amount_cents": -1000,
+        },
+    )
+    later_transaction = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": (current_week - timedelta(days=1)).isoformat(),
+            "category": "groceries",
+            "transaction_type": "expense",
+            "description": "Before current week",
+            "amount_cents": -1500,
+        },
+    )
+    assert before_snapshot.status_code == 201
+    assert on_snapshot_day.status_code == 201
+    assert later_transaction.status_code == 201
+
+    transfer = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": (prior_week + timedelta(days=2)).isoformat(),
+            "category": "account transfer",
+            "transaction_type": "transfer",
+            "description": "Move between household accounts",
+            "amount_cents": 30000,
+        },
+    )
+    assert transfer.status_code == 201
+
+    settings = client.get("/api/household/settings").json()
+    assert settings["suggested_cash_balance_cents"] == 97500
+    assert settings["suggested_cash_effective_week"] == current_week.isoformat()
+    assert settings["suggested_cash_based_on_effective_week"] == prior_week.isoformat()
+    # Only income and expense change the estimate; transfers between household
+    # accounts are cash-neutral and excluded from both the amount and count.
+    assert settings["suggested_cash_transaction_count"] == 2
+    # The estimate is advisory and must not mutate the confirmed historical snapshot.
+    assert settings["starting_cash_cents"] == 100000
+
+
+def test_weekly_report_exposes_cash_confirmation_control(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    response = client.get("/weekly")
+    assert response.status_code == 200
+    assert 'id="weekly-cash-form"' in response.text
+    assert 'id="weekly-cash-use-estimate"' in response.text
+    assert "Use estimated balance (not saved)" in response.text
