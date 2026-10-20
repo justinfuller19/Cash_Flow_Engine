@@ -1,5 +1,6 @@
 """Savings goal API and browser management page."""
 import sqlite3
+from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import HTMLResponse
@@ -8,6 +9,21 @@ from . import database
 from .savings_schemas import SavingsGoalCreate, SavingsGoalOut, SavingsGoalUpdate
 
 router = APIRouter()
+
+def _financial_week_start(today: date | None = None) -> date:
+    today = today or date.today()
+    with database.connect() as db:
+        row = db.execute("SELECT financial_week_start FROM household_settings WHERE id = 1").fetchone()
+    weekday = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
+               "Friday": 4, "Saturday": 5, "Sunday": 6}.get(row[0] if row else "Friday", 4)
+    return today - timedelta(days=(today.weekday() - weekday) % 7)
+
+
+def _weekly_target(remaining_cents: int, target_date: date | None, schedule_start: date) -> int:
+    if remaining_cents <= 0 or target_date is None or target_date < schedule_start:
+        return 0
+    weeks = max(1, ((target_date - schedule_start).days // 7) + 1)
+    return (remaining_cents + weeks - 1) // weeks
 
 
 def _goal_out(row) -> dict:
@@ -21,7 +37,7 @@ def list_savings_goals():
     with database.connect() as db:
         rows = db.execute(
             """SELECT id, name, target_amount_cents, current_balance_cents,
-                      target_date, priority, contribution_per_period_cents, active, created_at
+                      target_date, priority, contribution_per_period_cents, weekly_target_cents, schedule_start_date, active, created_at
                FROM savings_goals ORDER BY priority, name COLLATE NOCASE, id"""
         ).fetchall()
     return [_goal_out(row) for row in rows]
@@ -36,19 +52,25 @@ def create_savings_goal(body: SavingsGoalCreate):
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="name cannot be blank")
+    schedule_start = _financial_week_start()
+    weekly_target = _weekly_target(
+        max(0, body.target_amount_cents - body.current_balance_cents), body.target_date, schedule_start
+    )
     try:
         with database.connect() as db:
             cursor = db.execute(
                 """INSERT INTO savings_goals
-                   (name, target_amount_cents, current_balance_cents, target_date, priority, contribution_per_period_cents, active)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (name, target_amount_cents, current_balance_cents, target_date, priority,
+                    contribution_per_period_cents, weekly_target_cents, schedule_start_date, active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (name, body.target_amount_cents, body.current_balance_cents,
                  body.target_date.isoformat() if body.target_date else None,
-                 body.priority, body.contribution_per_period_cents, int(body.active)),
+                 body.priority, body.contribution_per_period_cents, weekly_target,
+                 schedule_start.isoformat(), int(body.active)),
             )
             row = db.execute(
                 """SELECT id, name, target_amount_cents, current_balance_cents,
-                          target_date, priority, contribution_per_period_cents, active, created_at
+                          target_date, priority, contribution_per_period_cents, weekly_target_cents, schedule_start_date, active, created_at
                    FROM savings_goals WHERE id = ?""", (cursor.lastrowid,)
             ).fetchone()
     except sqlite3.IntegrityError as exc:
@@ -65,17 +87,30 @@ def update_savings_goal(goal_id: int, body: SavingsGoalUpdate):
             raise HTTPException(status_code=422, detail="name cannot be blank")
     if "target_date" in updates and updates["target_date"] is not None:
         updates["target_date"] = updates["target_date"].isoformat()
+    if "schedule_start_date" in updates and updates["schedule_start_date"] is not None:
+        updates["schedule_start_date"] = updates["schedule_start_date"].isoformat()
     if "active" in updates:
         updates["active"] = int(updates["active"])
     if not updates:
         raise HTTPException(status_code=422, detail="no fields to update")
-    allowed = {"name", "target_amount_cents", "current_balance_cents", "target_date", "priority", "contribution_per_period_cents", "active"}
+    allowed = {"name", "target_amount_cents", "current_balance_cents", "target_date", "priority", "contribution_per_period_cents", "weekly_target_cents", "schedule_start_date", "active"}
     if not set(updates) <= allowed:
         raise HTTPException(status_code=422, detail="unsupported field")
     try:
         with database.connect() as db:
-            if db.execute("SELECT id FROM savings_goals WHERE id = ?", (goal_id,)).fetchone() is None:
+            existing = db.execute("SELECT * FROM savings_goals WHERE id = ?", (goal_id,)).fetchone()
+            if existing is None:
                 raise HTTPException(status_code=404, detail="Savings goal not found")
+            if any(key in updates for key in ("target_amount_cents", "current_balance_cents", "target_date")):
+                target_amount = updates.get("target_amount_cents", existing["target_amount_cents"])
+                current_balance = updates.get("current_balance_cents", existing["current_balance_cents"])
+                target_value = updates.get("target_date", existing["target_date"])
+                target_date = date.fromisoformat(target_value) if target_value else None
+                schedule_start = _financial_week_start()
+                updates["schedule_start_date"] = schedule_start.isoformat()
+                updates["weekly_target_cents"] = _weekly_target(
+                    max(0, target_amount - current_balance), target_date, schedule_start
+                )
             assignments = ", ".join(f"{key} = ?" for key in updates)
             db.execute(
                 f"UPDATE savings_goals SET {assignments} WHERE id = ?",
@@ -130,7 +165,7 @@ button:disabled{opacity:.55}.toggle{background:#475569;margin-top:10px}
 <div><label for="goal-current">Already saved ($)</label><input id="goal-current" name="current" type="number" min="0" step="0.01" value="0" required></div>
 <div><label for="goal-date">Target date (optional)</label><input id="goal-date" name="target_date" type="date"></div>
 <div><label for="goal-priority">Priority (lower is sooner)</label><input id="goal-priority" name="priority" type="number" min="0" max="10000" step="1" value="100" required></div>
-<div><label for="goal-contribution">Planned contribution per payday ($)</label><input id="goal-contribution" name="contribution" type="number" min="0" step="0.01" value="0" required></div>
+<div><label for="goal-contribution">Legacy per-payday amount ($)</label><input id="goal-contribution" name="contribution" type="number" min="0" step="0.01" value="0" required><small class="muted">For goals with a target date, the app calculates a weekly target automatically.</small></div>
 <div><button type="submit">Save goal</button></div>
 </form></section>
 <section class="card"><h2>Your goals</h2><ul id="goals" class="list"><li>Loading goals…</li></ul></section>
@@ -145,9 +180,9 @@ function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=
 async function refresh(){const goals=await api("/api/savings-goals");const list=document.getElementById("goals");list.replaceChildren();if(!goals.length){list.appendChild(el("li","muted","No savings goals saved yet."));return;}
 for(const g of goals){const li=el("li");li.appendChild(el("div","title",g.name+" · "+dollars(g.current_balance_cents)+" of "+dollars(g.target_amount_cents)));
 const pct=g.target_amount_cents===0?100:Math.min(100,Math.round(g.current_balance_cents/g.target_amount_cents*100));
-li.appendChild(el("div","detail",pct+"% saved · priority "+g.priority+" · plan "+dollars(g.contribution_per_period_cents)+" per payday"+(g.target_date?" · target "+g.target_date:"")+(g.active?"":" · inactive")));
+li.appendChild(el("div","detail",pct+"% saved · priority "+g.priority+(g.target_date?" · weekly target "+dollars(g.weekly_target_cents||0)+" · target "+g.target_date:" · legacy plan "+dollars(g.contribution_per_period_cents)+" per payday")+(g.active?"":" · inactive")));
 const track=el("div","progress");track.setAttribute("aria-label",pct+" percent saved");const fill=el("div","fill","");fill.style.width=pct+"%";track.appendChild(fill);li.appendChild(track);
-const edit=el("button","toggle","Edit goal");edit.type="button";edit.addEventListener("click",async()=>{const target=prompt("Target amount in dollars:",(g.target_amount_cents/100).toFixed(2));if(target===null)return;const current=prompt("Amount already saved in dollars:",(g.current_balance_cents/100).toFixed(2));if(current===null)return;const priority=prompt("Priority (lower is sooner):",String(g.priority));if(priority===null)return;const contribution=prompt("Planned contribution per payday in dollars:",(g.contribution_per_period_cents/100).toFixed(2));if(contribution===null)return;const targetDate=prompt("Target date YYYY-MM-DD (leave blank to clear):",g.target_date||"");if(targetDate===null)return;try{await api("/api/savings-goals/"+g.id,{method:"PATCH",body:JSON.stringify({target_amount_cents:cents(target),current_balance_cents:cents(current),priority:Number(priority),contribution_per_period_cents:cents(contribution),target_date:targetDate||null})});await refresh();message("Savings goal updated.");}catch(e){message(e.message,true);}});li.appendChild(edit);
+const edit=el("button","toggle","Edit goal");edit.type="button";edit.addEventListener("click",async()=>{const target=prompt("Target amount in dollars:",(g.target_amount_cents/100).toFixed(2));if(target===null)return;const current=prompt("Amount already saved in dollars:",(g.current_balance_cents/100).toFixed(2));if(current===null)return;const priority=prompt("Priority (lower is sooner):",String(g.priority));if(priority===null)return;const contribution=prompt("Legacy contribution per payday in dollars:",(g.contribution_per_period_cents/100).toFixed(2));if(contribution===null)return;const targetDate=prompt("Target date YYYY-MM-DD (leave blank to clear):",g.target_date||"");if(targetDate===null)return;try{await api("/api/savings-goals/"+g.id,{method:"PATCH",body:JSON.stringify({target_amount_cents:cents(target),current_balance_cents:cents(current),priority:Number(priority),contribution_per_period_cents:cents(contribution),target_date:targetDate||null})});await refresh();message("Savings goal updated.");}catch(e){message(e.message,true);}});li.appendChild(edit);
 const toggle=el("button","toggle",g.active?"Deactivate":"Reactivate");toggle.type="button";toggle.addEventListener("click",async()=>{toggle.disabled=true;try{await api("/api/savings-goals/"+g.id,{method:"PATCH",body:JSON.stringify({active:!g.active})});await refresh();message("Savings goal status updated.");}catch(e){message(e.message,true);toggle.disabled=false;}});li.appendChild(toggle);
 const remove=el("button","toggle","Delete goal");remove.type="button";remove.addEventListener("click",async()=>{if(!confirm("Permanently delete savings goal "+g.name+"?"))return;remove.disabled=true;try{await api("/api/savings-goals/"+g.id,{method:"DELETE"});await refresh();message("Savings goal deleted.");}catch(e){message(e.message,true);remove.disabled=false;}});li.appendChild(remove);list.appendChild(li);}}
 document.getElementById("goal-form").addEventListener("submit",async(e)=>{e.preventDefault();const f=e.currentTarget;const b=f.querySelector("button");b.disabled=true;try{await api("/api/savings-goals",{method:"POST",body:JSON.stringify({name:f.elements.name.value.trim(),target_amount_cents:cents(f.elements.target.value),current_balance_cents:cents(f.elements.current.value),target_date:f.elements.target_date.value||null,priority:Number(f.elements.priority.value),contribution_per_period_cents:cents(f.elements.contribution.value)})});f.reset();f.elements.current.value="0";f.elements.priority.value="100";f.elements.contribution.value="0";await refresh();message("Savings goal saved.");}catch(err){message(err.message,true);}finally{b.disabled=false;}});
