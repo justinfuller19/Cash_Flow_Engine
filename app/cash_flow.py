@@ -177,6 +177,10 @@ def weekly_cash_flow(
             "buffer_shortfall_cents": max(0, buffer_target - ending_cash),
         })
         carried_cash = ending_cash
+        carried_savings_arrears = {
+            item["goal_id"]: item["arrears_after_recorded_contributions_cents"]
+            for item in future["savings_plan"]
+        }
         future_start = future_end + timedelta(days=1)
 
     # The lowest balance in the entire horizon limits discretionary spending now.
@@ -952,6 +956,8 @@ renderList("allocations",allocations.filter(a=>a.status!=="planned"||a.allocatio
 renderList("future-forecast",report.future_forecast,"No future weeks included in this forecast.",(li,x)=>{
   li.appendChild(el("div","item-title",x.start_date+" to "+x.end_date+" · ending cash "+dollars(x.projected_ending_cash_cents)));
   li.appendChild(el("div","detail","Starting cash "+dollars(x.starting_cash_cents)+" · income "+dollars(x.expected_income_cents+x.recorded_income_cents)+" · bills "+dollars(x.bills_due_cents)+" · minimum debt "+dollars(x.minimum_debt_payments_cents)));
+  li.appendChild(el("div","detail","Savings target "+dollars(x.planned_savings_cents)+" · safely funded "+dollars(x.funded_savings_cents)+" · arrears carried "+dollars(x.savings_arrears_cents)));
+  if(x.savings_shortfall_cents>0)li.appendChild(el("div","detail","Savings target not currently affordable: "+dollars(x.savings_shortfall_cents)));
   if(x.buffer_shortfall_cents>0)li.appendChild(el("div","detail","Buffer shortfall: "+dollars(x.buffer_shortfall_cents)));
 }); 
 }
