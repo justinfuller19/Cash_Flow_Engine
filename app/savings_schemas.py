@@ -11,7 +11,6 @@ class SavingsGoalCreate(BaseModel):
     current_balance_cents: int = Field(default=0, ge=0)
     target_date: date | None = None
     priority: int = Field(default=100, ge=0, le=10000)
-    contribution_per_period_cents: int = Field(default=0, ge=0)
     weekly_target_cents: int = Field(default=0, ge=0)
     schedule_start_date: date | None = None
     active: bool = True
@@ -23,7 +22,6 @@ class SavingsGoalUpdate(BaseModel):
     current_balance_cents: int | None = Field(default=None, ge=0)
     target_date: date | None = None
     priority: int | None = Field(default=None, ge=0, le=10000)
-    contribution_per_period_cents: int | None = Field(default=None, ge=0)
     weekly_target_cents: int | None = Field(default=None, ge=0)
     schedule_start_date: date | None = None
     active: bool | None = None
@@ -46,7 +44,6 @@ class SavingsGoalOut(BaseModel):
     current_balance_cents: int
     target_date: date | None
     priority: int
-    contribution_per_period_cents: int
     weekly_target_cents: int = 0
     schedule_start_date: date | None = None
     active: bool
