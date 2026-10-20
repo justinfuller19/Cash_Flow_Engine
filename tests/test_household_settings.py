@@ -376,10 +376,29 @@ def test_suggested_cash_balance_uses_only_transactions_before_current_week(tmp_p
     assert on_snapshot_day.status_code == 201
     assert later_transaction.status_code == 201
 
+    transfer_category = client.post(
+        "/api/categories",
+        json={"name": "account transfer", "transaction_type": "transfer"},
+    )
+    assert transfer_category.status_code == 201
+    transfer = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": (prior_week + timedelta(days=2)).isoformat(),
+            "category": "account transfer",
+            "transaction_type": "transfer",
+            "description": "Move between household accounts",
+            "amount_cents": 30000,
+        },
+    )
+    assert transfer.status_code == 201
+
     settings = client.get("/api/household/settings").json()
     assert settings["suggested_cash_balance_cents"] == 97500
     assert settings["suggested_cash_effective_week"] == current_week.isoformat()
     assert settings["suggested_cash_based_on_effective_week"] == prior_week.isoformat()
+    # Only income and expense change the estimate; transfers between household
+    # accounts are cash-neutral and excluded from both the amount and count.
     assert settings["suggested_cash_transaction_count"] == 2
     # The estimate is advisory and must not mutate the confirmed historical snapshot.
     assert settings["starting_cash_cents"] == 100000
