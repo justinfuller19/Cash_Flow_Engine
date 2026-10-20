@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 
 def base_database_path() -> Path:
@@ -531,3 +531,39 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
             # but stop using it in the application and clear its old values.
             db.execute("UPDATE savings_goals SET contribution_per_period_cents = 0")
 
+
+
+    if version < 17:
+        # Version 17 records dated, confirmed household cash snapshots. The old
+        # single starting-cash setting is retained for compatibility and seeded
+        # as a snapshot only when it contains a nonzero legacy value.
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS cash_balance_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                effective_week_start TEXT NOT NULL,
+                balance_cents INTEGER NOT NULL CHECK(balance_cents >= 0),
+                confirmed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(effective_week_start)
+            )"""
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_cash_snapshots_effective_week "
+            "ON cash_balance_snapshots(effective_week_start DESC)"
+        )
+        settings = db.execute(
+            "SELECT starting_cash_cents, financial_week_start, updated_at "
+            "FROM household_settings WHERE id = 1"
+        ).fetchone()
+        if settings and settings["starting_cash_cents"] > 0:
+            weekday = {
+                "Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
+                "Friday": 4, "Saturday": 5, "Sunday": 6,
+            }.get(settings["financial_week_start"], 4)
+            today = date.today()
+            week_start = today - timedelta(days=(today.weekday() - weekday) % 7)
+            db.execute(
+                """INSERT OR IGNORE INTO cash_balance_snapshots
+                   (effective_week_start, balance_cents, confirmed_at)
+                   VALUES (?, ?, ?)""",
+                (week_start.isoformat(), settings["starting_cash_cents"], settings["updated_at"]),
+            )

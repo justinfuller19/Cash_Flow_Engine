@@ -12,6 +12,7 @@ router = APIRouter()
 
 CONFIRMATION_PHRASE = "DELETE ALL DATA"
 FINANCIAL_TABLES = (
+    "cash_balance_snapshots",
     "plan_items",
     "payday_plans",
     "transactions",

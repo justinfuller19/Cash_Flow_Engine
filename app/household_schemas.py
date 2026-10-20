@@ -42,6 +42,9 @@ class HouseholdSettingsOut(BaseModel):
     starting_cash_cents: int
     financial_week_start: Weekday = "Friday"
     updated_at: str
+    starting_cash_effective_week: date | None = None
+    starting_cash_confirmed_at: str | None = None
+    starting_cash_is_stale: bool = False
 
 
 class HouseholdSettingsUpdate(BaseModel):
@@ -49,6 +52,7 @@ class HouseholdSettingsUpdate(BaseModel):
 
     buffer_target_cents: int | None = Field(default=None, ge=0)
     starting_cash_cents: int | None = Field(default=None, ge=0)
+    starting_cash_effective_week: date | None = None
     financial_week_start: Weekday | None = None
 
     @model_validator(mode="before")

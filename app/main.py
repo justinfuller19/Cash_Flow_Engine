@@ -151,6 +151,16 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 <p class="muted">Your household cash-flow overview. Forecasts help you plan; they do not send payments or move money.</p>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
+<div class="card" style="margin:18px 0">
+<h2>Confirm cash on hand</h2>
+<p class="muted">Set the actual household cash balance as of the first day of a financial week. Transactions dated after that snapshot are included separately in the forecast. This is a planning balance; it does not connect to your bank.</p>
+<form id="dashboard-cash-snapshot-form" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;align-items:end">
+<div><label for="dashboard-cash-amount">Cash on hand ($)</label><input id="dashboard-cash-amount" name="amount" type="number" min="0" step="0.01" required style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit"></div>
+<div><label for="dashboard-cash-week">Effective week starts</label><input id="dashboard-cash-week" name="effective_week" type="date" required style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit"></div>
+<div><button type="submit">Confirm cash balance</button></div>
+</form>
+<p id="dashboard-cash-snapshot-status" class="muted" role="status">Loading cash confirmation…</p>
+</div>
 <div class="grid">
 <section class="card"><h2>Weekly cash flow</h2><div id="weekly-summary" class="muted">Loading forecast…</div><h3>Recorded spending by category</h3><ul id="weekly-category-spending" class="list"><li class="muted">Loading…</li></ul><p><a href="/weekly">Review safe surplus and allocate money →</a></p></section>
 <section class="card"><h2>Next paydays</h2><ul id="paydays" class="list"><li class="muted">Loading…</li></ul></section>
@@ -182,6 +192,7 @@ root.appendChild(el("div","item-title",dollars(weekly.free_to_spend_cents)+" saf
 root.appendChild(el("div","detail","After upcoming obligations, planned savings, existing allocations, and future weekly buffer protection."));
 root.appendChild(el("div","detail","Suggested debt snowball: "+(weekly.recommended_snowball_debt?weekly.recommended_snowball_debt.name:"Add a debt to get a recommendation")+" · Allocated so far "+dollars(weekly.planned_allocations_cents)));
 root.appendChild(el("div","detail","Starting cash "+dollars(weekly.starting_cash_cents)+" · expected income "+dollars(weekly.expected_income_cents)));
+if(weekly.starting_cash_is_stale)root.appendChild(el("div","detail",weekly.starting_cash_confirmed_at?"Warning: starting cash was last confirmed "+weekly.starting_cash_confirmed_at+". Please reconfirm it in Household & income.":"Warning: no starting-cash snapshot is confirmed yet. Set it in Household & income."));
 root.appendChild(el("div","detail","Bills still due "+dollars(weekly.bills_due_cents)+" · minimum debt payments "+dollars(weekly.minimum_debt_payments_cents)));
 root.appendChild(el("div","detail","You choose how much to allocate to debt, savings, the household buffer, or leave unallocated."));
 const categoryRoot=document.getElementById("weekly-category-spending");categoryRoot.replaceChildren();
@@ -194,7 +205,42 @@ else if(weekly.future_buffer_shortfall_cents>0)root.appendChild(el("div","detail
 else if(weekly.future_buffer_reservation_cents>0)root.appendChild(el("div","detail",dollars(weekly.future_buffer_reservation_cents)+" reserved for upcoming bills to protect the household buffer."));
 }catch(error){document.getElementById("weekly-summary").textContent="Weekly forecast unavailable: "+error.message;}
 }
+async function loadCashSnapshotControl(){
+  const settings=await api("/api/household/settings");
+  const amount=document.getElementById("dashboard-cash-amount");
+  const week=document.getElementById("dashboard-cash-week");
+  const weekdays={Monday:1,Tuesday:2,Wednesday:3,Thursday:4,Friday:5,Saturday:6,Sunday:0};
+  const today=new Date();const targetDay=weekdays[settings.financial_week_start||"Friday"];
+  today.setDate(today.getDate()-((today.getDay()-targetDay+7)%7));
+  const currentWeek=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+  amount.value=(settings.starting_cash_cents/100).toFixed(2);
+  week.value=settings.starting_cash_effective_week||currentWeek;
+  const status=document.getElementById("dashboard-cash-snapshot-status");
+  if(settings.starting_cash_confirmed_at){
+    status.textContent="Last confirmed "+settings.starting_cash_confirmed_at+" · effective week "+settings.starting_cash_effective_week+(settings.starting_cash_is_stale?" · OUT OF DATE — please confirm the current balance.":".");
+    status.style.color=settings.starting_cash_is_stale?"#b91c1c":"#166534";
+  }else{
+    status.textContent="No cash snapshot has been confirmed. Enter the balance and effective week to establish your first snapshot.";
+    status.style.color="#b91c1c";
+  }
+}
+document.getElementById("dashboard-cash-snapshot-form").addEventListener("submit",async event=>{
+  event.preventDefault();const form=event.currentTarget;const button=form.querySelector("button");button.disabled=true;
+  const status=document.getElementById("dashboard-cash-snapshot-status");
+  try{
+    const amount=Number(form.elements.amount.value);
+    if(!Number.isFinite(amount)||amount<0)throw Error("Enter a cash balance of zero or more.");
+    const response=await fetch("/api/household/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({starting_cash_cents:Math.round((amount+Number.EPSILON)*100),starting_cash_effective_week:form.elements.effective_week.value})});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw Error(data.detail||"Could not confirm the cash balance.");
+    status.textContent="Cash balance confirmed for the week starting "+data.starting_cash_effective_week+".";
+    status.style.color="#166534";
+    await load();await loadCashSnapshotControl();
+  }catch(error){status.textContent=error.message;status.style.color="#b91c1c";}
+  finally{button.disabled=false;}
+});
 load().catch(e=>{statusBox.textContent=e.message;statusBox.classList.add("error");statusBox.hidden=false;});
+loadCashSnapshotControl().catch(e=>{const s=document.getElementById("dashboard-cash-snapshot-status");s.textContent="Cash confirmation unavailable: "+e.message;s.style.color="#b91c1c";});
 </script></body></html>"""
 
 
@@ -222,10 +268,13 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <p class="muted">Start by adding the people in your household and their take-home pay. Amounts are saved as cents in your local SQLite database.</p></header>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div class="layout">
-<section class="card"><h2>Household cash settings</h2><p class="muted">One shared cash buffer target for the whole household, restored after bills and minimum debt payments, plus the household's current available cash balance.</p>
+<section class="card"><h2>Household cash settings</h2><p class="muted">One shared cash buffer target for the whole household. Confirm cash on hand at the beginning of a financial week; transactions recorded during that week are then reflected in the forecast separately.</p>
+<p id="cash-confirmation-status" class="muted" role="status">Loading cash confirmation…</p>
 <form id="settings-form">
 <label for="settings-buffer">Cash buffer target ($)</label><input id="settings-buffer" name="buffer_target" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
-<label for="settings-cash">Starting cash balance ($)</label><input id="settings-cash" name="starting_cash" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
+<label for="settings-cash">Cash on hand at week start ($)</label><input id="settings-cash" name="starting_cash" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
+<label for="settings-cash-week">Effective financial week starts</label><input id="settings-cash-week" name="starting_cash_effective_week" type="date" required>
+<p class="muted">Choose the first day of the financial week. Confirmed snapshots are saved with their effective date so older weekly reports can use the matching balance. Confirm again if the balance is more than 10 days old.</p>
 <button type="submit">Save household settings</button></form>
 </section>
 <section class="card"><h2>Household members</h2><p class="muted">Add the people in your household. Income sources are linked to a member below.</p>
@@ -392,6 +441,22 @@ async function refresh() {
     const settings = await api("/api/household/settings");
     document.getElementById("settings-buffer").value = (settings.buffer_target_cents / 100).toFixed(2);
     document.getElementById("settings-cash").value = (settings.starting_cash_cents / 100).toFixed(2);
+    const weekInput = document.getElementById("settings-cash-week");
+    const today = new Date();
+    const weekdays = {Monday:1, Tuesday:2, Wednesday:3, Thursday:4, Friday:5, Saturday:6, Sunday:0};
+    const targetDay = weekdays[settings.financial_week_start || "Friday"];
+    const delta = (today.getDay() - targetDay + 7) % 7;
+    today.setDate(today.getDate() - delta);
+    const currentWeek = today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+    weekInput.value = settings.starting_cash_effective_week || currentWeek;
+    const confirmation = document.getElementById("cash-confirmation-status");
+    if (settings.starting_cash_confirmed_at) {
+      confirmation.textContent = "Last confirmed "+settings.starting_cash_confirmed_at+" · effective week "+settings.starting_cash_effective_week+" · balance "+(settings.starting_cash_cents/100).toLocaleString(undefined,{style:"currency",currency:"USD"})+(settings.starting_cash_is_stale?" · OUT OF DATE — please confirm the current balance.":".");
+      confirmation.style.color = settings.starting_cash_is_stale ? "#b91c1c" : "#166534";
+    } else {
+      confirmation.textContent = "No cash balance has been confirmed yet. Set the amount and effective week to establish your first snapshot.";
+      confirmation.style.color = "#b91c1c";
+    }
   } catch (error) { showStatus("Could not load household settings: " + error.message, true); }
 }
 document.getElementById("settings-form").addEventListener("submit", async (event) => {
@@ -402,10 +467,11 @@ document.getElementById("settings-form").addEventListener("submit", async (event
   try {
     await api("/api/household/settings", {method:"PATCH", body:JSON.stringify({
       buffer_target_cents:centsFromInput(form.elements.buffer_target.value),
-      starting_cash_cents:centsFromInput(form.elements.starting_cash.value)
+      starting_cash_cents:centsFromInput(form.elements.starting_cash.value),
+      starting_cash_effective_week:form.elements.starting_cash_effective_week.value
     })});
     await refresh();
-    showStatus("Household settings saved.");
+    showStatus("Household settings saved. Cash snapshot recorded for the selected financial week.");
   } catch (error) { showStatus(error.message, true); }
   finally { button.disabled = false; }
 });

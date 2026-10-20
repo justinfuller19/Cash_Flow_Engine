@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from . import database
+from .household import CASH_SNAPSHOT_STALE_DAYS
 from .forecast import occurrences_between
 
 router = APIRouter()
@@ -187,11 +188,34 @@ def _weekly_cash_flow_for_window(
         settings = db.execute(
             "SELECT starting_cash_cents, buffer_target_cents, financial_week_start FROM household_settings WHERE id = 1"
         ).fetchone()
+        snapshot = db.execute(
+            """SELECT effective_week_start, balance_cents, confirmed_at
+               FROM cash_balance_snapshots
+               WHERE effective_week_start <= ?
+               ORDER BY effective_week_start DESC, id DESC LIMIT 1""",
+            (start.isoformat(),),
+        ).fetchone()
+        any_snapshot = db.execute(
+            "SELECT 1 FROM cash_balance_snapshots LIMIT 1"
+        ).fetchone()
         starting_cash = (
             starting_cash_override
             if starting_cash_override is not None
-            else (settings["starting_cash_cents"] if settings else 0)
+            else (
+                snapshot["balance_cents"] if snapshot
+                else (0 if any_snapshot else (settings["starting_cash_cents"] if settings else 0))
+            )
         )
+        starting_cash_effective_week = snapshot["effective_week_start"] if snapshot else None
+        starting_cash_confirmed_at = snapshot["confirmed_at"] if snapshot else None
+        starting_cash_is_stale = True
+        if snapshot:
+            try:
+                starting_cash_is_stale = (
+                    date.today() - date.fromisoformat(snapshot["confirmed_at"][:10])
+                ).days > CASH_SNAPSHOT_STALE_DAYS
+            except (TypeError, ValueError):
+                starting_cash_is_stale = True
         buffer_target = settings["buffer_target_cents"] if settings else 0
 
         # Include a short look-back for payments recorded just before the window
@@ -467,6 +491,9 @@ def _weekly_cash_flow_for_window(
         "end_date": end.isoformat(),
         "financial_week_start": (settings["financial_week_start"] if settings and "financial_week_start" in settings.keys() else "Friday"),
         "starting_cash_cents": starting_cash,
+        "starting_cash_effective_week": starting_cash_effective_week,
+        "starting_cash_confirmed_at": starting_cash_confirmed_at,
+        "starting_cash_is_stale": starting_cash_is_stale,
         "buffer_target_cents": buffer_target,
         "expected_income": expected_income,
         "expected_income_cents": expected_income_cents,
@@ -512,6 +539,12 @@ def _weekly_cash_flow_for_window(
             "Linked transactions match scheduled occurrences within seven days, or the bill's larger flexible window.",
             "Transfers are listed for reference but do not change household cash totals.",
             "All monetary calculations use integer cents; this report never initiates payments or transfers.",
+            "Starting cash is a confirmed household snapshot effective at the beginning of its financial week; snapshots are not automatically inferred from transactions.",
+            (
+                "WARNING: no confirmed starting-cash snapshot is available for this week. Set cash on hand in Household & income."
+                if starting_cash_confirmed_at is None
+                else f"WARNING: starting cash was last confirmed more than {CASH_SNAPSHOT_STALE_DAYS} days ago. Reconfirm it in Household & income."
+            ) if starting_cash_is_stale else "Starting cash confirmation is current.",
         ],
     }
 
