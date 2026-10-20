@@ -29,14 +29,14 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 
 - [x] Define starting cash as a confirmed household balance effective at the start of a specified financial week.
 - [x] Track the effective financial-week start and last-confirmed timestamp; preserve history where needed for historical reports.
-- [ ] Add a dashboard/weekly-report control: **“Set cash on hand as of [week start]”.** (A dated control is currently available in Household & income setup; dashboard/weekly-report editing remains open.)
+- [x] Add a dashboard control: **“Set cash on hand as of [week start]”.** The same dated control is available in Household & income setup.
 - [x] Show the previous confirmed amount, effective date, and last-confirmed date in Household & income setup.
 - [ ] Apply transactions after the snapshot exactly once; do not reapply transactions already reflected in a confirmed balance. (Snapshot selection is wired into period forecasts; transaction-boundary regression coverage remains open.)
 - [x] Ensure new snapshots do not silently rewrite historical transactions or prior reports; snapshots are versioned by effective week and prior snapshots are retained.
 - [ ] Optionally suggest a balance from the previous snapshot and known transactions; label it estimated and require explicit confirmation.
-- [ ] Add first-run guidance for establishing the initial cash balance.
+- [x] Add first-run guidance for establishing the initial cash balance.
 - [x] Warn when the balance has not been confirmed in more than 10 days.
-- [ ] Centralize/configure the stale-balance threshold.
+- [x] Centralize the stale-balance threshold in `CASH_SNAPSHOT_STALE_DAYS` so the settings API and weekly forecast use the same rule.
 - [x] Add safe schema migration and migration tests that preserve existing starting-cash settings and financial records.
 - [x] Test exact before-and-after cash values, transaction boundaries, and multi-week safe-to-spend for the implemented snapshot path.
 - [x] Update UI and `/api/cash-flow/weekly` notes to explain the balance and transaction period used.
@@ -228,7 +228,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 Record meaningful implementation updates here. Each entry should include date, phase, PR/commit reference, tests run, and remaining work.
 
 - **2026-10-20 — Roadmap created:** Defined three milestones and eight phases. No application behavior changed by this documentation alone. Implementation remained pending at that point.
-- **2026-10-20 — Phase 1 implementation started (PR #35):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, a dated Household & income control, and regression tests for snapshot persistence, history, migration, transaction boundaries, multi-week safe-to-spend, and stale warnings. GitHub Actions passed the full pytest suite on Python 3.11, 3.12, and 3.13 after an initial run exposed that the new snapshot history also needed to be cleared by the existing household-data reset; that reset path is now covered by the existing suite. First-run guidance, estimated balance suggestions, central configuration of the stale threshold, and dashboard/weekly editing remain open. This PR is not merged or deployed.
+- **2026-10-20 — Phase 1 implementation started (PR #35):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, a dated Household & income control, and regression tests for snapshot persistence, history, migration, transaction boundaries, multi-week safe-to-spend, and stale warnings. GitHub Actions passed the full pytest suite on Python 3.11, 3.12, and 3.13 after an initial run exposed that the new snapshot history also needed to be cleared by the existing household-data reset; that reset path is now covered by the existing suite. After that passing run, the dashboard control and centralized freshness threshold were added, so validation is running again on the latest commit. Estimated balance suggestions and an edit control embedded directly in the weekly report remain open. This PR is not merged or deployed.
 
 ## Implementation / release rules
 
