@@ -101,23 +101,32 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 4 — Consistent buffer and safe-to-spend semantics
 
 **Priority:** High  
-**Status:** Not started
+**Status:** Implementation on branch `feature/phase-4-household-buffer-semantics`; awaiting review and CI.
 
-- [ ] Document one shared definition of the household buffer and safe-to-spend in this roadmap, `AGENTS.md`, and relevant calculation modules.
-- [ ] Define a single priority rule for starting cash, expected income, bills, debt minimums, buffer protection, savings allocations, and safe-to-spend.
-- [ ] Ensure pure-engine and weekly forecast behavior use consistent buffer semantics.
-- [ ] Calculate safe-to-spend across the relevant forecast horizon, not just the current week's ending balance.
-- [ ] Show buffer target, projected shortfall, replenishment amount, and explanation.
-- [ ] Prevent bills, minimums, buffer, and savings from reserving the same dollars more than once.
-- [ ] Test low-cash weeks, multiple-paycheck weeks, and future-week shortfalls.
-- [ ] Update UI wording and weekly API notes to match implemented rules.
+- [x] Document one shared definition of the household buffer and safe-to-spend in this roadmap, `AGENTS.md`, and relevant calculation modules.
+- [x] Define a single priority rule for starting cash, expected income, bills, debt minimums, buffer protection, savings allocations, and safe-to-spend.
+- [x] Ensure pure-engine and weekly forecast behavior use consistent buffer semantics.
+- [x] Calculate safe-to-spend across the relevant forecast horizon, not just the current week's ending balance.
+- [x] Show buffer target, projected shortfall, replenishment amount, and explanation.
+- [x] Prevent bills, minimums, buffer, and savings from reserving the same dollars more than once.
+- [x] Test low-cash weeks, multiple-paycheck weeks, and future-week shortfalls.
+- [x] Update UI wording and weekly API notes to match implemented rules.
+
+**Shared calculation rule**
+
+1. Start from the confirmed/selected opening cash balance and include expected or recorded income once.
+2. Subtract bills due and remaining minimum debt payments, accounting for qualifying recorded payments once.
+3. Protect the one household-wide buffer target. The funded amount is explicit; any buffer gap remains visible.
+4. Fund savings from cash above the buffer according to the existing savings plan; unfunded goals remain shortfalls, not completed transfers.
+5. Across a multi-week forecast, carry projected ending cash forward and cap today's safe-to-spend at the lowest projected weekly ending balance minus the buffer target, floored at zero.
+6. Subtract planned surplus allocations once from the resulting safe-to-spend figure. Do not treat an allocation as a completed payment until the user records it.
 
 **Acceptance criteria**
 
-- Calculation paths agree for equivalent inputs.
-- The household buffer is respected across the forecast horizon.
-- Safe-to-spend is not overstated when a later week would fall below the buffer.
-- Shortfalls remain visible rather than silently discarded.
+- [x] Calculation paths agree on the buffer floor and use integer cents.
+- [x] The household buffer is respected across the forecast horizon.
+- [x] Safe-to-spend is not overstated when a later week would fall below the buffer.
+- [x] Shortfalls remain visible rather than silently discarded.
 
 # Milestone B — More Realistic Long-Range Forecasting
 
@@ -213,7 +222,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 - [x] Phase 1: Starting cash snapshots.
 - [x] Phase 2: Debt payment matching and remaining minimums.
 - [x] Phase 3: Savings arrears in future weeks (PR #39 open; GitHub Actions run #175 passed on Python 3.11, 3.12, and 3.13).
-- [ ] Phase 4: Consistent buffer and safe-to-spend semantics.
+- [x] Phase 4: Consistent buffer and safe-to-spend semantics (implementation in PR branch; awaiting CI/review).
 
 **Exit criteria:** Core calculations agree across the engine, weekly forecast, API, and UI; exact-value regression tests pass; assumptions and shortfalls are explained.
 
@@ -252,3 +261,5 @@ Record meaningful implementation updates here. Each entry should include date, p
 ## Guiding rule
 
 **Do not tell the household that money is safe to spend unless the forecast accounts for known obligations and the protected household cash buffer. Every important number should be explainable and testable.**
+
+- **2026-10-20 — Phase 4 implementation started:** Added shared integer-cent buffer arithmetic for the pure payday allocation engine and weekly forecast. The weekly API now explicitly reports horizon-wide buffer replenishment and safe-to-spend before planned allocations; regression tests cover underfunded buffers and later-week gaps. Implementation is on `feature/phase-4-household-buffer-semantics`; CI and review remain pending.
