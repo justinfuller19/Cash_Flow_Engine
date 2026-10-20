@@ -381,8 +381,9 @@ def test_record_actual_debt_payment_updates_balance_and_transaction_ledger(tmp_p
         )
         debt_id = db.execute(
             """INSERT INTO credit_cards
-               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active)
-               VALUES ('Smallest card', 50000, 5000, 25, 19.9, 1)"""
+               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active, next_due_date)
+               VALUES ('Smallest card', 50000, 5000, 25, 19.9, 1, ?)""",
+            (date.today().isoformat(),),
         ).lastrowid
 
     allocation = client.post(
