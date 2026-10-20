@@ -303,3 +303,35 @@ def test_dashboard_explains_future_buffer_reservation(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert "future_buffer_reservation_cents" in response.text
     assert "reserved for upcoming bills to protect the household buffer." in response.text
+
+def test_household_financial_week_start_defaults_to_friday_and_is_editable(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+
+    settings = client.get("/api/household/settings")
+    assert settings.status_code == 200
+    assert settings.json()["financial_week_start"] == "Friday"
+
+    updated = client.patch(
+        "/api/household/settings",
+        json={"financial_week_start": "Monday"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["financial_week_start"] == "Monday"
+
+
+def test_weekly_forecast_defaults_to_configured_financial_week(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET financial_week_start = 'Monday' WHERE id = 1"
+        )
+
+    response = client.get("/api/cash-flow/weekly")
+    assert response.status_code == 200
+    report = response.json()
+    today = date.today()
+    expected_start = today - timedelta(days=today.weekday())
+
+    assert report["financial_week_start"] == "Monday"
+    assert report["start_date"] == expected_start.isoformat()
+    assert report["end_date"] == (expected_start + timedelta(days=6)).isoformat()
