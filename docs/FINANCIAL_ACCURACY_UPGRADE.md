@@ -35,9 +35,10 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 - [x] Ensure new snapshots do not silently rewrite historical transactions or prior reports; snapshots are versioned by effective week and prior snapshots are retained.
 - [ ] Optionally suggest a balance from the previous snapshot and known transactions; label it estimated and require explicit confirmation.
 - [ ] Add first-run guidance for establishing the initial cash balance.
-- [x] Warn when the balance has not been confirmed in more than 10 days; centralize/configure the threshold. (Threshold is currently 10 days and still needs central configuration.)
+- [x] Warn when the balance has not been confirmed in more than 10 days.
+- [ ] Centralize/configure the stale-balance threshold.
 - [x] Add safe schema migration and migration tests that preserve existing starting-cash settings and financial records.
-- [ ] Test exact before-and-after cash values, transaction boundaries, and multi-week safe-to-spend. (Exact snapshot values and historical-week selection are covered; transaction-boundary and multi-week safe-to-spend cases remain open.)
+- [x] Test exact before-and-after cash values, transaction boundaries, and multi-week safe-to-spend for the implemented snapshot path.
 - [x] Update UI and `/api/cash-flow/weekly` notes to explain the balance and transaction period used.
 
 **Acceptance criteria**
@@ -227,7 +228,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 Record meaningful implementation updates here. Each entry should include date, phase, PR/commit reference, tests run, and remaining work.
 
 - **2026-10-20 — Roadmap created:** Defined three milestones and eight phases. No application behavior changed by this documentation alone. Implementation remained pending at that point.
-- **2026-10-20 — Phase 1 implementation started (PR #35):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, a dated Household & income control, and regression tests for snapshot persistence, history, migration, and stale warnings. Validation is pending GitHub Actions; transaction-boundary and multi-week safe-to-spend tests, first-run guidance, estimated balance suggestions, and dashboard/weekly editing remain open. This PR is not merged or deployed.
+- **2026-10-20 — Phase 1 implementation started (PR #35):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, a dated Household & income control, and regression tests for snapshot persistence, history, migration, transaction boundaries, multi-week safe-to-spend, and stale warnings. Validation is pending GitHub Actions; first-run guidance, estimated balance suggestions, central configuration of the stale threshold, and dashboard/weekly editing remain open. This PR is not merged or deployed.
 
 ## Implementation / release rules
 
