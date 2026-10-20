@@ -25,16 +25,13 @@ class PersonUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=120)
     active: bool | None = None
-    end_date: date | None = None
 
     @model_validator(mode="before")
     @classmethod
     def reject_explicit_nulls(cls, value: Any) -> Any:
         """PATCH fields are optional, but null is not a valid replacement value."""
-        if isinstance(value, dict) and any(
-            item is None for key, item in value.items() if key != "end_date"
-        ):
-            raise ValueError("PATCH fields cannot be null, except end_date to clear the schedule end")
+        if isinstance(value, dict) and any(item is None for item in value.values()):
+            raise ValueError("PATCH fields cannot be null")
         return value
 
 
@@ -102,13 +99,14 @@ class IncomeSourceUpdate(BaseModel):
     frequency: IncomeFrequency | None = None
     next_payday: date | None = None
     active: bool | None = None
+    end_date: date | None = None
 
     @model_validator(mode="before")
     @classmethod
     def reject_explicit_nulls(cls, value: Any) -> Any:
-        """PATCH fields are optional, but null is not a valid replacement value."""
-        if isinstance(value, dict) and any(item is None for item in value.values()):
-            raise ValueError("PATCH fields cannot be null")
+        """PATCH fields are optional; end_date may be null to remove the cutoff."""
+        if isinstance(value, dict) and any(item is None for key, item in value.items() if key != "end_date"):
+            raise ValueError("PATCH fields cannot be null, except end_date to clear the schedule end")
         return value
 
 
