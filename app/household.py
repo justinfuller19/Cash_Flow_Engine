@@ -9,6 +9,8 @@ from .household_schemas import HouseholdSettingsOut, HouseholdSettingsUpdate
 
 router = APIRouter()
 
+CASH_SNAPSHOT_STALE_DAYS = 10
+
 
 def _current_financial_week_start(db, today: date | None = None) -> date:
     row = db.execute(
@@ -44,7 +46,7 @@ def _read_settings(db) -> dict:
         result["starting_cash_confirmed_at"] = snapshot["confirmed_at"]
         try:
             confirmed_date = date.fromisoformat(snapshot["confirmed_at"][:10])
-            result["starting_cash_is_stale"] = (date.today() - confirmed_date).days > 10
+            result["starting_cash_is_stale"] = (date.today() - confirmed_date).days > CASH_SNAPSHOT_STALE_DAYS
         except (TypeError, ValueError):
             result["starting_cash_is_stale"] = True
     else:
