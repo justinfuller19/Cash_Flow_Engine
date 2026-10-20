@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 
 def base_database_path() -> Path:
@@ -224,7 +224,30 @@ def initialize_database() -> None:
             """
         )
         _apply_migrations(db)
-        db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+        if version < 18:
+        # Version 18 stores reviewable debt-payment match suggestions. Suggestions
+        # never change a transaction link until the user confirms one.
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS debt_payment_match_suggestions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+                debt_id INTEGER NOT NULL REFERENCES credit_cards(id) ON DELETE CASCADE,
+                due_date TEXT NOT NULL,
+                confidence TEXT NOT NULL CHECK(confidence IN ('high', 'review')),
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending', 'confirmed', 'dismissed', 'stale')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(transaction_id, debt_id, due_date)
+            )"""
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_debt_match_suggestions_status "
+            "ON debt_payment_match_suggestions(status, transaction_id)"
+        )
+
+    db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 
 def _apply_migrations(db: sqlite3.Connection) -> None:
