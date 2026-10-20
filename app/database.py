@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from datetime import date, timedelta
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -410,6 +411,32 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
         if "schedule_start_date" not in goal_columns:
             db.execute("ALTER TABLE savings_goals ADD COLUMN schedule_start_date TEXT")
         db.execute("UPDATE savings_goals SET schedule_start_date = COALESCE(schedule_start_date, date(created_at))")
+        # Rebase existing dated goals onto the current financial week so their
+        # first automatic weekly target does not invent arrears from before the
+        # feature existed.
+        settings = db.execute(
+            "SELECT financial_week_start FROM household_settings WHERE id = 1"
+        ).fetchone()
+        weekday = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
+                   "Friday": 4, "Saturday": 5, "Sunday": 6}.get(
+                       settings["financial_week_start"] if settings else "Friday", 4
+                   )
+        today = date.today()
+        week_start = today - timedelta(days=(today.weekday() - weekday) % 7)
+        for goal in db.execute(
+            "SELECT id, target_amount_cents, current_balance_cents, target_date FROM savings_goals"
+        ).fetchall():
+            target = date.fromisoformat(goal["target_date"]) if goal["target_date"] else None
+            remaining = max(0, goal["target_amount_cents"] - goal["current_balance_cents"])
+            if target is not None and target >= week_start and remaining > 0:
+                weeks = max(1, ((target - week_start).days // 7) + 1)
+                weekly = (remaining + weeks - 1) // weeks
+            else:
+                weekly = 0
+            db.execute(
+                "UPDATE savings_goals SET weekly_target_cents = ?, schedule_start_date = ? WHERE id = ?",
+                (weekly, week_start.isoformat(), goal["id"]),
+            )
 
     if version < 11:
         # Persist user-controlled allocations of safe surplus without initiating
