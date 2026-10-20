@@ -83,6 +83,11 @@ def update_household_settings(body: HouseholdSettingsUpdate):
                         status_code=422,
                         detail="Cash snapshots must be dated on the first day of the configured financial week",
                     )
+                if effective_week > current_week:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="A cash snapshot can only confirm the current or a past financial week",
+                    )
                 db.execute(
                     """INSERT INTO cash_balance_snapshots
                        (effective_week_start, balance_cents, confirmed_at)
