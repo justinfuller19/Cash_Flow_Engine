@@ -193,7 +193,7 @@ def _day_of_month(day: int, start: date) -> date:
 
 @router.get("/api/dashboard")
 def dashboard_summary():
-    _ensure_automatic_checklist()
+    automatic_plan_id = _ensure_automatic_checklist()
     today = date.today()
     next_90 = today + timedelta(days=90)
     next_30 = today + timedelta(days=30)
@@ -286,8 +286,9 @@ def dashboard_summary():
                FROM transactions ORDER BY transaction_date DESC, id DESC LIMIT 5"""
         ).fetchall()
         pending_count = db.execute(
-            """SELECT COUNT(*) FROM plan_items pi JOIN payday_plans pp ON pp.id = pi.plan_id
-               WHERE pi.status IN ('pending', 'attention') AND pp.status NOT IN ('completed', 'cancelled')"""
+            """SELECT COUNT(*) FROM plan_items
+               WHERE plan_id = ? AND status IN ('pending', 'attention')""",
+            (automatic_plan_id,),
         ).fetchone()[0]
 
     return {
