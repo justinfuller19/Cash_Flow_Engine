@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 def base_database_path() -> Path:
@@ -399,6 +399,17 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
                 "DEFAULT 'Friday' CHECK(financial_week_start IN "
                 "('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'))"
             )
+
+    if version < 12:
+        # Weekly savings schedules are independent of paydays. The stored weekly
+        # target is recalculated when the user edits the goal, not when a deposit
+        # is recorded, so missed weekly targets can carry forward.
+        goal_columns = {row["name"] for row in db.execute("PRAGMA table_info(savings_goals)")}
+        if "weekly_target_cents" not in goal_columns:
+            db.execute("ALTER TABLE savings_goals ADD COLUMN weekly_target_cents INTEGER NOT NULL DEFAULT 0 CHECK(weekly_target_cents >= 0)")
+        if "schedule_start_date" not in goal_columns:
+            db.execute("ALTER TABLE savings_goals ADD COLUMN schedule_start_date TEXT")
+        db.execute("UPDATE savings_goals SET schedule_start_date = COALESCE(schedule_start_date, date(created_at))")
 
     if version < 11:
         # Persist user-controlled allocations of safe surplus without initiating
