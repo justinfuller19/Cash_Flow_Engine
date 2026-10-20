@@ -101,7 +101,7 @@ def test_overrides_reject_overlapping_ranges_and_invalid_dates(tmp_path, monkeyp
 def test_v19_migration_preserves_income_and_adds_override_storage(tmp_path, monkeypatch):
     import sqlite3
 
-    path = tmp_path / "phase7-migration.db"
+    path = tmp_path / "phase7.db"
     client = setup_client(tmp_path, monkeypatch)
     person = client.post("/api/people", json={"name": "Member"}).json()
     created = client.post("/api/income-sources", json={
