@@ -47,23 +47,15 @@ def seed_planned_household(tmp_path, monkeypatch):
             "priority": 1,
         },
     )
-    plan = client.post(
-        "/api/plans/generate",
-        json={
-            "plan_date": iso(today), "period_start": iso(today),
-            "period_end": iso(today + timedelta(days=6)),
-            "starting_cash_cents": 50000, "debt_strategy": "avalanche",
-        },
-    )
-    assert plan.status_code == 201, plan.text
-    return client, plan.json(), today
+    return client, None, today
 
 
 def test_checklist_records_status_actual_amount_and_date(tmp_path, monkeypatch):
     client, plan, today = seed_planned_household(tmp_path, monkeypatch)
     checklist = client.get("/api/checklist")
     assert checklist.status_code == 200
-    assert len(checklist.json()) == 5
+    assert len(checklist.json()) == 4
+    assert {item["category"] for item in checklist.json()} == {"income", "bill", "debt", "savings"}
     item = checklist.json()[0]
 
     response = client.patch(
@@ -81,7 +73,8 @@ def test_checklist_records_status_actual_amount_and_date(tmp_path, monkeypatch):
     assert updated["actual_date"] == today.isoformat()
 
     assert len(client.get("/api/checklist").json()) == 4
-    saved = client.get(f"/api/plans/{plan['id']}").json()
+    auto_plan = next(p for p in client.get("/api/plans").json() if p.get("is_auto_generated"))
+    saved = client.get(f"/api/plans/{auto_plan['id']}").json()
     saved_item = next(row for row in saved["items"] if row["id"] == item["id"])
     assert saved_item["is_completed"] is True
     assert saved_item["status"] == "completed"
@@ -97,6 +90,7 @@ def test_checklist_validation_and_page(tmp_path, monkeypatch):
     page = client.get("/checklist")
     assert page.status_code == 200
     assert "Payday Checklist" in page.text
+    assert "generated automatically" in page.text
     assert 'id="checklist-pagination"' in page.text
     assert "const PAGE_SIZE=10" in page.text
 
@@ -108,12 +102,12 @@ def test_dashboard_summarizes_saved_household_and_plan(tmp_path, monkeypatch):
     data = response.json()
     assert data["active_household_members"] == 1
     assert data["protected_buffers_cents"] == 10000
-    assert data["pending_checklist_count"] == 5
+    assert data["pending_checklist_count"] == 4
     assert data["next_paydays"][0]["date"] == (today + timedelta(days=1)).isoformat()
     assert any(bill["name"] == "Electric" for bill in data["upcoming_bills"])
     assert any(debt["name"] == "Card" for debt in data["upcoming_debts"])
     assert data["savings_goals"][0]["name"] == "Emergency fund"
-    assert data["recent_plans"][0]["id"] == plan["id"]
+    assert any(row.get("is_auto_generated") for row in client.get("/api/plans").json())
 
 
 def test_schema_v5_adds_checklist_actual_fields(tmp_path, monkeypatch):
