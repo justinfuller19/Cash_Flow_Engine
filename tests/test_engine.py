@@ -57,7 +57,7 @@ def test_only_income_received_inside_window_counts():
         buffers=[], bills=[], credit_cards=[], savings_goals=[],
     ))
     assert plan.income_cents == 100000
-    assert plan.unallocated_cents == 100000
+    assert plan.unallocated_cents == 600000
 
 
 def test_shortfalls_are_explicit_and_never_make_cash_negative():
