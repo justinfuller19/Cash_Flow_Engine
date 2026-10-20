@@ -54,7 +54,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 2 — Debt payment matching and remaining minimums
 
 **Priority:** Critical  
-**Status:** Implementation complete in PR #38; GitHub Actions test suite passed on Python 3.11, 3.12, and 3.13; awaiting review. Covers balance-capped minimums, cycle-specific partial-payment reconciliation, surplus-payment debt links, and user-confirmed match suggestions.
+**Status:** Complete — PR #38 merged. Covers balance-capped minimums, cycle-specific partial-payment reconciliation, surplus-payment debt links, and user-confirmed match suggestions.
 
 - [x] Support explicit debt-obligation links on recorded expense transactions through the transaction ledger.
 - [x] Link payments recorded through surplus allocations to the intended debt while keeping extra principal reductions out of minimum-payment reconciliation.
@@ -79,17 +79,17 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 3 — Savings arrears in future weeks
 
 **Priority:** High  
-**Status:** Not started
+**Status:** Implementation complete in PR #39; GitHub Actions run #175 passed 137 tests on Python 3.11, 3.12, and 3.13.
 
-- [ ] Separate regular weekly target, recorded contributions, outstanding arrears, catch-up amount, and remaining goal amount.
-- [ ] Carry arrears that exist at the forecast start into future windows.
-- [ ] Add each future week's normal target without inventing new arrears for weeks that have not occurred.
-- [ ] Reduce arrears only when qualifying contributions are recorded.
-- [ ] Prevent the same shortfall from being repeatedly added as a new obligation.
-- [ ] Keep savings targets flexible; distinguish planned from completed contributions.
-- [ ] Preserve ongoing undated general savings goals with weekly targets and no finish date.
-- [ ] Test that existing arrears affect week 2 and later forecast weeks.
-- [ ] Assert expected multi-week safe-to-spend changes and accurate weekly API notes.
+- [x] Separate regular weekly target, recorded contributions, outstanding arrears, catch-up amount, and remaining goal amount.
+- [x] Carry arrears that exist at the forecast start into future windows.
+- [x] Add each future week's normal target without inventing new arrears for weeks that have not occurred.
+- [x] Reduce arrears only when qualifying contributions are recorded.
+- [x] Prevent the same shortfall from being repeatedly added as a new obligation or reserved multiple times.
+- [x] Keep savings targets flexible; distinguish planned from completed contributions.
+- [x] Preserve ongoing undated general savings goals with weekly targets and no finish date.
+- [x] Test that existing arrears affect week 2 and later forecast weeks.
+- [x] Assert expected multi-week safe-to-spend changes and accurate weekly API notes.
 
 **Acceptance criteria**
 
@@ -211,8 +211,8 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Milestone A — Trustworthy weekly cash flow
 
 - [x] Phase 1: Starting cash snapshots.
-- [ ] Phase 2: Debt payment matching and remaining minimums.
-- [ ] Phase 3: Savings arrears in future weeks.
+- [x] Phase 2: Debt payment matching and remaining minimums.
+- [x] Phase 3: Savings arrears in future weeks (PR #39 open; GitHub Actions run #175 passed on Python 3.11, 3.12, and 3.13).
 - [ ] Phase 4: Consistent buffer and safe-to-spend semantics.
 
 **Exit criteria:** Core calculations agree across the engine, weekly forecast, API, and UI; exact-value regression tests pass; assumptions and shortfalls are explained.
@@ -234,7 +234,8 @@ Record meaningful implementation updates here. Each entry should include date, p
 - **2026-10-20 — Roadmap created:** Defined three milestones and eight phases. No application behavior changed by this documentation alone. Implementation remained pending at that point.
 - **2026-10-20 — Phase 1 complete (PRs #35 and #36, merged):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, dated confirmation controls, an advisory opening-balance estimate, and explicit confirmation in the weekly report. The estimate uses only recorded income and expenses before the current financial week, excludes transfers, and never saves automatically. Regression tests cover snapshot history/migration, transaction boundaries, multi-week safe-to-spend, stale warnings, transfer exclusion, and the confirmation workflow. GitHub Actions passed on Python 3.11, 3.12, and 3.13 for the merged implementation.
 - **2026-10-20 — Phase 2 first increment (PR #37, merged):** Weekly debt forecasts cap a scheduled minimum at the recorded balance, credit linked expense transactions within seven days of the due date, preserve partial minimums, and display over-minimum amounts as extra debt reduction. Regression coverage includes balances below minimums, multiple partial payments, overpayments, wrong debts/cycles, partial checklist minimums, and zero-balance debts.
-- **2026-10-20 — Phase 2 completion candidate (PR #38, CI pending):** Surplus-allocation extra payments now carry an explicit debt link but remain excluded from minimum-payment matching. Added a schema-v18 review queue for unlinked debt-like expenses near debt due dates. Suggestions use amount plausibility, due-date proximity, transaction description/category/account, active debt status, and debt-name evidence; named matches are distinguished from ambiguous candidates. No suggestion changes a transaction link until a user confirms it. Users can dismiss suggestions; dismissed candidates stay hidden unless the transaction data changes, and confirming one candidate stales competing candidates for the same transaction. The Transactions page exposes the review controls. Regression tests cover explicit debt links, non-auto-linking, ambiguity, confirmation, dismissal, and reconsideration after edits. GitHub Actions run #167 passed the test suite on Python 3.11, 3.12, and 3.13; PR review and merge remain outstanding.
+- **2026-10-20 — Phase 2 complete (PR #38, merged):** Surplus-allocation extra payments carry explicit debt links but remain excluded from minimum-payment matching. The schema-v18 review queue suggests matches for unlinked debt-like expenses and requires user confirmation; dismissal and reconsideration are supported. Follow-up review fixes also preserve legitimate manually categorized debt payments and remove a duplicate migration invocation.
+- **2026-10-20 — Phase 3 implementation (PR #39 open):** Weekly savings plans now expose regular target, recorded contributions, outstanding arrears, catch-up, and remaining goal amount separately. Forecasts carry existing arrears forward but reserve the catch-up amount only once across the horizon; regular targets continue each future week, and future unfunded targets do not create new arrears before those weeks occur. The savings page and weekly report explain these amounts. Added regression tests for exact multi-week safe-to-spend, recorded contributions reducing arrears, and underfunded future targets. GitHub Actions run #175 passed the full suite: 137 tests passed on Python 3.11, 3.12, and 3.13.
 
 ## Implementation / release rules
 

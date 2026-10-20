@@ -531,6 +531,132 @@ def test_dated_savings_goal_uses_weekly_target_and_carries_shortfall(tmp_path, m
     assert plan["funded_this_week_cents"] <= plan["planned_this_week_cents"]
 
 
+
+def _insert_ongoing_savings_goal(db, name, schedule_start, weekly_target_cents=10000):
+    return db.execute(
+        """INSERT INTO savings_goals
+           (name, target_amount_cents, current_balance_cents,
+            weekly_target_cents, schedule_start_date)
+           VALUES (?, 0, 0, ?, ?)""",
+        (name, weekly_target_cents, schedule_start.isoformat()),
+    ).lastrowid
+
+
+def test_existing_savings_arrears_are_reserved_once_across_future_weeks(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    today = date.today()
+    start = today - timedelta(days=(today.weekday() - 4) % 7)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 0, financial_week_start = 'Friday' WHERE id = 1"
+        )
+        _insert_ongoing_savings_goal(db, "Emergency fund", start - timedelta(days=14))
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={
+            "start_date": start.isoformat(),
+            "end_date": (start + timedelta(days=6)).isoformat(),
+            "forecast_weeks": 3,
+        },
+    ).json()
+
+    plan = report["savings_plan"][0]
+    assert plan["regular_target_cents"] == 10000
+    assert plan["outstanding_arrears_cents"] == 20000
+    assert plan["catch_up_cents"] == 20000
+    assert plan["planned_this_week_cents"] == 30000
+    assert plan["funded_catch_up_cents"] == 20000
+
+    future = report["future_forecast"]
+    assert [week["savings_arrears_cents"] for week in future] == [20000, 20000]
+    assert [week["planned_savings_cents"] for week in future] == [10000, 10000]
+    assert [week["funded_savings_cents"] for week in future] == [10000, 10000]
+    # The $20 arrears are reserved in the current week, not deducted again
+    # from each future week's projected cash.
+    assert report["lowest_projected_cash_cents"] == 50000
+    assert report["free_to_spend_cents"] == 50000
+    assert any("catch-up amounts already reserved" in note.lower() for note in report["notes"])
+
+
+def test_recorded_savings_contribution_reduces_arrears_once(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    today = date.today()
+    start = today - timedelta(days=(today.weekday() - 4) % 7)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 500000, buffer_target_cents = 0, financial_week_start = 'Friday' WHERE id = 1"
+        )
+        goal_id = _insert_ongoing_savings_goal(
+            db, "Emergency fund", start - timedelta(days=14)
+        )
+
+    allocation = client.post(
+        "/api/surplus-allocations",
+        json={
+            "allocation_type": "savings",
+            "amount_cents": 5000,
+            "savings_goal_id": goal_id,
+            "description": "Catch up savings",
+        },
+    )
+    assert allocation.status_code == 201, allocation.text
+    recorded = client.post(
+        f"/api/surplus-allocations/{allocation.json()['id']}/record-savings-contribution",
+        json={"actual_amount_cents": 5000, "transaction_date": today.isoformat()},
+    )
+    assert recorded.status_code == 200, recorded.text
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={
+            "start_date": start.isoformat(),
+            "end_date": (start + timedelta(days=6)).isoformat(),
+            "forecast_weeks": 3,
+        },
+    ).json()
+
+    plan = report["savings_plan"][0]
+    assert plan["recorded_this_week_cents"] == 5000
+    assert plan["outstanding_arrears_cents"] == 20000
+    assert plan["arrears_after_recorded_contributions_cents"] == 15000
+    assert plan["catch_up_cents"] == 15000
+    assert plan["planned_this_week_cents"] == 25000
+    assert plan["funded_catch_up_cents"] == 15000
+    assert [week["savings_arrears_cents"] for week in report["future_forecast"]] == [15000, 15000]
+    assert [week["planned_savings_cents"] for week in report["future_forecast"]] == [10000, 10000]
+    assert report["lowest_projected_cash_cents"] == 450000
+    assert report["free_to_spend_cents"] == 450000
+
+
+def test_unfunded_future_savings_targets_do_not_create_future_arrears(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    today = date.today()
+    start = today - timedelta(days=(today.weekday() - 4) % 7)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 25000, buffer_target_cents = 0, financial_week_start = 'Friday' WHERE id = 1"
+        )
+        _insert_ongoing_savings_goal(db, "Emergency fund", start - timedelta(days=7))
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={
+            "start_date": start.isoformat(),
+            "end_date": (start + timedelta(days=6)).isoformat(),
+            "forecast_weeks": 3,
+        },
+    ).json()
+
+    future = report["future_forecast"]
+    assert [week["savings_arrears_cents"] for week in future] == [10000, 10000]
+    assert [week["planned_savings_cents"] for week in future] == [10000, 10000]
+    assert [week["funded_savings_cents"] for week in future] == [5000, 0]
+    assert [week["savings_shortfall_cents"] for week in future] == [5000, 10000]
+    assert report["lowest_projected_cash_cents"] == 0
+    assert report["free_to_spend_cents"] == 0
+
+
 def test_changing_household_buffer_recalculates_weekly_savings_funding(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
     today = date.today()

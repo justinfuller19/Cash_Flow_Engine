@@ -136,6 +136,22 @@ def weekly_cash_flow(
     lowest_projected_cash = current_ending_cash
     future_forecast = []
     carried_cash = current_ending_cash
+    # Carry only arrears that already exist at the end of the selected week.
+    # Future target shortfalls remain forecast gaps; they do not become new
+    # arrears until those weeks actually occur.
+    carried_savings_arrears = {
+        item["goal_id"]: item["arrears_after_recorded_contributions_cents"]
+        for item in report["savings_plan"]
+    }
+    # Arrears remain visible until an actual contribution is recorded, but
+    # catch-up cash already reserved in an earlier projected week must not be
+    # reserved a second time.
+    carried_savings_catch_up = {
+        item["goal_id"]: max(
+            0, item["catch_up_cents"] - item["funded_catch_up_cents"]
+        )
+        for item in report["savings_plan"]
+    }
     future_start = end + timedelta(days=1)
 
     # Carry each period's ending cash forward. Re-read schedules and transactions
@@ -144,7 +160,8 @@ def weekly_cash_flow(
         future_end = future_start + timedelta(days=6)
         future = _weekly_cash_flow_for_window(
             future_start, future_end, starting_cash_override=carried_cash,
-            include_savings_carryover=False,
+            savings_arrears_override=carried_savings_arrears,
+            savings_catch_up_override=carried_savings_catch_up,
         )
         ending_cash = (
             future["projected_cash_before_buffer_cents"] - future["funded_savings_cents"]
@@ -159,11 +176,27 @@ def weekly_cash_flow(
             "bills_due_cents": future["bills_due_cents"],
             "minimum_debt_payments_cents": future["minimum_debt_payments_cents"],
             "transaction_expenses_cents": future["transaction_expenses_cents"],
+            "planned_savings_cents": future["planned_savings_cents"],
+            "funded_savings_cents": future["funded_savings_cents"],
+            "savings_shortfall_cents": future["savings_shortfall_cents"],
+            "savings_arrears_cents": sum(
+                item["arrears_cents"] for item in future["savings_plan"]
+            ),
             "projected_ending_cash_cents": ending_cash,
             "projected_shortfall_cents": max(0, -ending_cash),
             "buffer_shortfall_cents": max(0, buffer_target - ending_cash),
         })
         carried_cash = ending_cash
+        carried_savings_arrears = {
+            item["goal_id"]: item["arrears_after_recorded_contributions_cents"]
+            for item in future["savings_plan"]
+        }
+        carried_savings_catch_up = {
+            item["goal_id"]: max(
+                0, item["catch_up_cents"] - item["funded_catch_up_cents"]
+            )
+            for item in future["savings_plan"]
+        }
         future_start = future_end + timedelta(days=1)
 
     # The lowest balance in the entire horizon limits discretionary spending now.
@@ -209,6 +242,12 @@ def weekly_cash_flow(
         + str(forecast_weeks)
         + " forecast week(s); future weeks carry forward prior ending cash."
     )
+    report["notes"].append(
+        "Savings arrears already present in the selected week carry into future weeks. "
+        "Each future week adds its regular savings target, but an unfunded future target "
+        "is not counted as a new arrears balance until that week occurs. Recorded "
+        "contributions reduce arrears; planned or funded amounts are not treated as completed transfers."
+    )
     return report
 
 
@@ -216,9 +255,10 @@ def _weekly_cash_flow_for_window(
     start: date,
     end: date,
     starting_cash_override: int | None = None,
-    include_savings_carryover: bool = True,
+    savings_arrears_override: dict[int, int] | None = None,
+    savings_catch_up_override: dict[int, int] | None = None,
 ) -> dict:
-    """Calculate one period without lookahead, optionally carrying prior cash."""
+    """Calculate one period, optionally carrying known savings arrears and cash."""
     with database.connect() as db:
         settings = db.execute(
             "SELECT starting_cash_cents, buffer_target_cents, financial_week_start FROM household_settings WHERE id = 1"
@@ -483,7 +523,15 @@ def _weekly_cash_flow_for_window(
         history = history_by_goal.get(goal["id"], [])
         saved_before = sum(amount for day, amount in history if day < start)
         saved_this_week = sum(amount for day, amount in history if start <= day <= end)
-        arrears = max(0, weekly_target * elapsed_weeks - saved_before) if include_savings_carryover else 0
+        if savings_arrears_override is None:
+            arrears = max(0, weekly_target * elapsed_weeks - saved_before)
+            catch_up_due = max(0, arrears - saved_this_week)
+        else:
+            arrears = max(0, savings_arrears_override.get(goal["id"], 0))
+            catch_up_due = max(
+                0, (savings_catch_up_override or {}).get(goal["id"], 0)
+            )
+            catch_up_due = min(catch_up_due, max(0, arrears - saved_this_week))
 
         # A goal with a date stops reserving new weekly deposits after its
         # deadline. An undated goal with a positive amount stops once funded;
@@ -491,7 +539,13 @@ def _weekly_cash_flow_for_window(
         if has_deadline and target_date < start:
             due_this_week = 0
         else:
-            due_this_week = max(0, weekly_target + arrears - saved_this_week)
+            # The outstanding arrears remain visible, but catch-up already
+            # reserved in an earlier forecast week is not reserved again.
+            # Recorded contributions pay arrears first; only any excess reduces
+            # this week's regular target.
+            due_this_week = max(
+                0, weekly_target + catch_up_due - max(0, saved_this_week - arrears)
+            )
             if goal["target_amount_cents"] > 0:
                 due_this_week = min(remaining, due_this_week)
 
@@ -503,9 +557,14 @@ def _weekly_cash_flow_for_window(
             required_weekly = None
             behind_schedule = False
 
+        catch_up_due = min(catch_up_due, due_this_week)
         savings_plan.append({
             "goal_id": goal["id"], "goal_name": goal["name"],
-            "weekly_target_cents": weekly_target, "arrears_cents": arrears,
+            "weekly_target_cents": weekly_target, "regular_target_cents": weekly_target,
+            "arrears_cents": arrears, "outstanding_arrears_cents": arrears,
+            "catch_up_cents": catch_up_due,
+            "regular_target_due_cents": max(0, due_this_week - catch_up_due),
+            "arrears_after_recorded_contributions_cents": max(0, arrears - saved_this_week),
             "planned_this_week_cents": due_this_week,
             "recorded_this_week_cents": saved_this_week,
             "remaining_cents": remaining if goal["target_amount_cents"] > 0 else None,
@@ -530,6 +589,9 @@ def _weekly_cash_flow_for_window(
         )
         item["unfunded_this_week_cents"] = (
             item["planned_this_week_cents"] - item["funded_this_week_cents"]
+        )
+        item["funded_catch_up_cents"] = min(
+            item["catch_up_cents"], item["funded_this_week_cents"]
         )
         remaining_savings_capacity -= item["funded_this_week_cents"]
         item["deadline_warning"] = bool(
@@ -587,7 +649,9 @@ def _weekly_cash_flow_for_window(
         "free_to_spend_cents": free_to_spend,
         "extra_debt_payoff_capacity_cents": free_to_spend,
         "notes": [
-            "All savings goals use weekly targets and carry forward missed amounts based on recorded contributions. Goals without a target date are ongoing weekly savings.",
+            "Savings arrears are based on missed targets before the selected week and recorded contributions; the selected week's regular target is shown separately from catch-up.",
+            "In multi-week forecasts, existing arrears stay visible until actual contributions are recorded. Catch-up amounts already reserved in earlier projected weeks are not reserved again; each future week adds its regular target. Future unfunded targets do not become new arrears until that week occurs.",
+            "Goals without a target date and with a positive weekly target are ongoing savings; a zero-amount undated goal remains an open-ended general savings goal.",
             "Only active scheduled income, bills, debts, and savings goals are included.",
             "Link a recorded transaction to the scheduled item it paid or received to prevent duplicate counting.",
             "Linked transactions match scheduled occurrences within seven days, or the bill's larger flexible window.",
@@ -923,6 +987,8 @@ renderList("allocations",allocations.filter(a=>a.status!=="planned"||a.allocatio
 renderList("future-forecast",report.future_forecast,"No future weeks included in this forecast.",(li,x)=>{
   li.appendChild(el("div","item-title",x.start_date+" to "+x.end_date+" · ending cash "+dollars(x.projected_ending_cash_cents)));
   li.appendChild(el("div","detail","Starting cash "+dollars(x.starting_cash_cents)+" · income "+dollars(x.expected_income_cents+x.recorded_income_cents)+" · bills "+dollars(x.bills_due_cents)+" · minimum debt "+dollars(x.minimum_debt_payments_cents)));
+  li.appendChild(el("div","detail","Savings target "+dollars(x.planned_savings_cents)+" · safely funded "+dollars(x.funded_savings_cents)+" · arrears carried "+dollars(x.savings_arrears_cents)));
+  if(x.savings_shortfall_cents>0)li.appendChild(el("div","detail","Savings target not currently affordable: "+dollars(x.savings_shortfall_cents)));
   if(x.buffer_shortfall_cents>0)li.appendChild(el("div","detail","Buffer shortfall: "+dollars(x.buffer_shortfall_cents)));
 }); 
 }
