@@ -123,8 +123,12 @@ def _ensure_automatic_checklist() -> int:
             (start.isoformat(), end.isoformat()),
         ).fetchone()
         if plan is None:
-            cursor = db.execute(
-                """INSERT INTO payday_plans
+            # The partial unique index makes this safe if two requests both
+            # observed that no plan existed for the week. INSERT OR IGNORE lets
+            # the losing request reuse the winner's plan instead of creating a
+            # second checklist (or returning a uniqueness error).
+            db.execute(
+                """INSERT OR IGNORE INTO payday_plans
                    (plan_date, period_start, period_end, starting_cash_cents, debt_strategy,
                     status, is_auto_generated, income_cents, total_available_cents,
                     allocated_cents, unallocated_cents, unfunded_cents)
@@ -133,16 +137,21 @@ def _ensure_automatic_checklist() -> int:
                  report.get("starting_cash_cents", 0), income_total, total_available,
                  allocated, max(0, total_available - allocated), unfunded),
             )
-            plan_id = cursor.lastrowid
-        else:
-            plan_id = plan["id"]
-            db.execute(
-                """UPDATE payday_plans SET starting_cash_cents = ?, income_cents = ?,
-                   total_available_cents = ?, allocated_cents = ?, unallocated_cents = ?,
-                   unfunded_cents = ? WHERE id = ?""",
-                (report.get("starting_cash_cents", 0), income_total, total_available,
-                 allocated, max(0, total_available - allocated), unfunded, plan_id),
-            )
+            plan = db.execute(
+                """SELECT id FROM payday_plans
+                   WHERE is_auto_generated = 1 AND period_start = ? AND period_end = ?
+                     AND status = 'active'
+                   ORDER BY id DESC LIMIT 1""",
+                (start.isoformat(), end.isoformat()),
+            ).fetchone()
+        plan_id = plan["id"]
+        db.execute(
+            """UPDATE payday_plans SET starting_cash_cents = ?, income_cents = ?,
+               total_available_cents = ?, allocated_cents = ?, unallocated_cents = ?,
+               unfunded_cents = ? WHERE id = ?""",
+            (report.get("starting_cash_cents", 0), income_total, total_available,
+             allocated, max(0, total_available - allocated), unfunded, plan_id),
+        )
 
         existing_rows = db.execute(
             "SELECT * FROM plan_items WHERE plan_id = ? ORDER BY id", (plan_id,)
