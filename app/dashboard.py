@@ -79,6 +79,7 @@ def _ensure_automatic_checklist() -> int:
             note += " Warning: the goal may miss its target date at the current funding rate."
         actions.append({
             "category": "savings", "name": "Save for: " + goal["goal_name"],
+            "savings_goal_id": goal["goal_id"],
             "requested_cents": max(0, requested), "funded_cents": max(0, funded),
             "unfunded_cents": max(0, goal.get("unfunded_this_week_cents", requested - funded)),
             "due_date": end.isoformat(), "note": note,
@@ -88,7 +89,7 @@ def _ensure_automatic_checklist() -> int:
     payday_count = len(report.get("expected_income", [])) + len(report.get("covered_income", []))
     with database.connect() as db:
         legacy_goals = db.execute(
-            """SELECT name, contribution_per_period_cents, priority
+            """SELECT id, name, contribution_per_period_cents, priority
                FROM savings_goals
                WHERE active = 1 AND target_date IS NULL AND contribution_per_period_cents > 0
                ORDER BY priority, name COLLATE NOCASE, id"""
@@ -102,6 +103,7 @@ def _ensure_automatic_checklist() -> int:
         legacy_capacity -= funded
         actions.append({
             "category": "savings", "name": "Save for: " + goal["name"],
+            "savings_goal_id": goal["id"],
             "requested_cents": requested, "funded_cents": funded,
             "unfunded_cents": requested - funded, "due_date": end.isoformat(),
             "note": "Savings contribution based on scheduled paydays; review any unfunded amount.",
@@ -157,17 +159,19 @@ def _ensure_automatic_checklist() -> int:
                 db.execute(
                     """INSERT INTO plan_items
                        (plan_id, category, name, requested_cents, funded_cents,
-                        unfunded_cents, due_date, note, status)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
+                        unfunded_cents, due_date, note, savings_goal_id, status)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
                     (plan_id, action["category"], action["name"], action["requested_cents"],
-                     action["funded_cents"], action["unfunded_cents"], action["due_date"], action["note"]),
+                     action["funded_cents"], action["unfunded_cents"], action["due_date"],
+                     action["note"], action.get("savings_goal_id")),
                 )
             elif old["status"] not in ("completed", "skipped"):
                 db.execute(
                     """UPDATE plan_items SET requested_cents = ?, funded_cents = ?,
-                       unfunded_cents = ?, note = ? WHERE id = ?""",
+                       unfunded_cents = ?, note = ?, savings_goal_id = ? WHERE id = ?""",
                     (action["requested_cents"], action["funded_cents"],
-                     action["unfunded_cents"], action["note"], old["id"]),
+                     action["unfunded_cents"], action["note"],
+                     action.get("savings_goal_id"), old["id"]),
                 )
 
         for old in existing_rows:
@@ -334,8 +338,79 @@ def update_checklist_item(item_id: int, body: ChecklistItemUpdate):
         raise HTTPException(status_code=422, detail="unsupported field")
     try:
         with database.connect() as db:
-            if db.execute("SELECT id FROM plan_items WHERE id = ?", (item_id,)).fetchone() is None:
+            existing = db.execute(
+                """SELECT pi.*, pp.period_start, pp.period_end
+                   FROM plan_items pi JOIN payday_plans pp ON pp.id = pi.plan_id
+                   WHERE pi.id = ?""", (item_id,)
+            ).fetchone()
+            if existing is None:
                 raise HTTPException(status_code=404, detail="Checklist item not found")
+
+            # Savings entries are real contributions, not just checklist notes.
+            # Create/update a transaction and a recorded allocation so the goal
+            # balance and weekly carryover history remain consistent on refresh.
+            if existing["category"] == "savings" and existing["savings_goal_id"] is not None and "actual_amount_cents" in updates:
+                new_amount = updates["actual_amount_cents"]
+                old_amount = existing["actual_amount_cents"] or 0
+                goal_id = existing["savings_goal_id"]
+                transaction_id = existing["actual_transaction_id"]
+                transaction_date = updates.get("actual_date") or existing["actual_date"] or date.today().isoformat()
+                if new_amount is None or new_amount == 0:
+                    if transaction_id:
+                        db.execute("DELETE FROM surplus_allocations WHERE transaction_id = ?", (transaction_id,))
+                        db.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
+                    if old_amount:
+                        db.execute(
+                            "UPDATE savings_goals SET current_balance_cents = MAX(0, current_balance_cents - ?) WHERE id = ?",
+                            (old_amount, goal_id),
+                        )
+                    transaction_id = None
+                    updates["actual_transaction_id"] = None
+                    updates["actual_date"] = None if new_amount is None else transaction_date
+                else:
+                    goal = db.execute(
+                        "SELECT name FROM savings_goals WHERE id = ?", (goal_id,)
+                    ).fetchone()
+                    if goal is None:
+                        raise HTTPException(status_code=422, detail="Linked savings goal no longer exists")
+                    if transaction_id:
+                        db.execute(
+                            """UPDATE transactions SET transaction_date = ?, category = 'savings contribution',
+                               transaction_type = 'expense', description = ?, amount_cents = ?
+                               WHERE id = ?""",
+                            (transaction_date, "Contribution to " + goal["name"], new_amount, transaction_id),
+                        )
+                        db.execute(
+                            """UPDATE surplus_allocations SET allocation_date = ?, amount_cents = ?,
+                               actual_amount_cents = ?, status = 'recorded' WHERE transaction_id = ?""",
+                            (transaction_date, max(new_amount, existing["requested_cents"], 1), new_amount, transaction_id),
+                        )
+                    else:
+                        cursor = db.execute(
+                            """INSERT INTO transactions
+                               (transaction_date, category, transaction_type, description, amount_cents, notes)
+                               VALUES (?, 'savings contribution', 'expense', ?, ?, ?)""",
+                            (transaction_date, "Contribution to " + goal["name"], new_amount,
+                             "Recorded from automatic weekly checklist item #" + str(item_id)),
+                        )
+                        transaction_id = cursor.lastrowid
+                        db.execute(
+                            """INSERT INTO surplus_allocations
+                               (allocation_date, allocation_type, amount_cents, savings_goal_id,
+                                description, status, actual_amount_cents, transaction_id)
+                               VALUES (?, 'savings', ?, ?, ?, 'recorded', ?, ?)""",
+                            (transaction_date, max(new_amount, existing["requested_cents"], 1),
+                             goal_id, "Checklist savings contribution", new_amount, transaction_id),
+                        )
+                    delta = new_amount - old_amount
+                    if delta:
+                        db.execute(
+                            "UPDATE savings_goals SET current_balance_cents = MAX(0, current_balance_cents + ?) WHERE id = ?",
+                            (delta, goal_id),
+                        )
+                    updates["actual_transaction_id"] = transaction_id
+                    updates["actual_date"] = transaction_date
+
             assignments = ", ".join(f"{key} = ?" for key in updates)
             db.execute(f"UPDATE plan_items SET {assignments} WHERE id = ?", (*updates.values(), item_id))
             row = db.execute(
