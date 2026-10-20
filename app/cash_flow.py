@@ -152,8 +152,10 @@ def weekly_cash_flow(
                ORDER BY balance_cents ASC, id ASC LIMIT 1"""
         ).fetchone()
     safe_before_allocations = safe_to_spend
+    allocation_shortfall = max(0, allocated_cents - safe_before_allocations)
     safe_to_spend = max(0, safe_to_spend - allocated_cents)
     report["safe_surplus_before_allocations_cents"] = safe_before_allocations
+    report["allocation_shortfall_cents"] = allocation_shortfall
     report["planned_allocations_cents"] = allocated_cents
     report["surplus_allocations"] = [dict(row) for row in allocations]
     report["recommended_snowball_debt"] = dict(debt_target) if debt_target else None
@@ -648,6 +650,7 @@ for(const [label,value] of [
 if(report.projected_shortfall_cents>0)message("Projected shortfall: "+dollars(report.projected_shortfall_cents)+". Required obligations exceed projected cash.","warning");
 else if(report.buffer_shortfall_cents>0)message("Projected cash is below the household buffer target by "+dollars(report.buffer_shortfall_cents)+". Extra spending and savings are not available until the buffer is restored.","warning");
 else if(report.future_buffer_shortfall_cents>0)message("Future weeks would fall below the household buffer by as much as "+dollars(report.future_buffer_shortfall_cents)+". Safe-to-spend has been reduced to $0 until the forecast gap is addressed.","warning");
+else if(report.allocation_shortfall_cents>0)message("Your planned allocations now exceed safe available surplus by "+dollars(report.allocation_shortfall_cents)+". Review or cancel planned allocations before making more payments.","warning");
 else if(report.future_buffer_reservation_cents>0)message(dollars(report.future_buffer_reservation_cents)+" is reserved for upcoming obligations so the projected household balance can stay above its buffer.","warning");
 else if(report.savings_shortfall_cents>0)message("Required obligations and the buffer are covered, but planned savings are short by "+dollars(report.savings_shortfall_cents)+".","warning");
 else {statusBox.hidden=true;}
