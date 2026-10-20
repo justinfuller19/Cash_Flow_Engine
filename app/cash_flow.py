@@ -936,7 +936,8 @@ for(const [label,value] of [
 ["Buffer replenishment needed",report.buffer_replenishment_cents],["Planned savings",report.planned_savings_cents],
 ["Savings funded",report.funded_savings_cents],
 ["Available before future reserve",report.free_to_spend_before_future_reserve_cents],
-["Reserved for future bills",report.future_buffer_reservation_cents],
+["Reserved for future shortfalls",report.future_buffer_reservation_cents],
+["Horizon buffer replenishment needed",report.horizon_buffer_replenishment_cents],
 ["Safe available surplus",report.free_to_spend_cents],
 ["Already allocated",report.planned_allocations_cents],
 ["Still available to allocate",report.free_to_spend_cents]
