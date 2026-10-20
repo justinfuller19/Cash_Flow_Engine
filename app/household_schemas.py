@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 
-IncomeFrequency = Literal["weekly", "biweekly", "semimonthly", "monthly", "irregular"]
+IncomeFrequency = Literal["weekly", "biweekly", "semimonthly", "twice_monthly_last", "first_third_friday", "last_business_day", "monthly", "irregular"]
 Weekday = Literal["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
