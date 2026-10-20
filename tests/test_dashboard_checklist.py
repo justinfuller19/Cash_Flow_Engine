@@ -141,5 +141,5 @@ def test_schema_v5_adds_checklist_actual_fields(tmp_path, monkeypatch):
     with database.connect() as db:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(plan_items)")}
         version = db.execute("PRAGMA user_version").fetchone()[0]
-    assert {"status", "actual_amount_cents", "actual_date"} <= columns
+    assert {"status", "actual_amount_cents", "actual_date", "savings_goal_id", "actual_transaction_id"} <= columns
     assert version == database.SCHEMA_VERSION
