@@ -25,7 +25,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 1 — Starting cash snapshots
 
 **Priority:** Critical  
-**Status:** In progress — PR #35 (not merged)
+**Status:** In progress — PR #35 merged; finishing estimated-balance guidance and weekly-report confirmation in the follow-up PR.
 
 - [x] Define starting cash as a confirmed household balance effective at the start of a specified financial week.
 - [x] Track the effective financial-week start and last-confirmed timestamp; preserve history where needed for historical reports.
@@ -34,7 +34,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 - [x] Show the previous confirmed amount, effective date, and last-confirmed date in Household & income setup.
 - [x] Apply transactions after the snapshot exactly once; do not reapply transactions already reflected in a confirmed balance. Regression coverage verifies that a transaction before the snapshot is excluded from the selected week and a transaction after the snapshot is counted once.
 - [x] Ensure new snapshots do not silently rewrite historical transactions or prior reports; snapshots are versioned by effective week and prior snapshots are retained.
-- [ ] Optionally suggest a balance from the previous snapshot and known transactions; label it estimated and require explicit confirmation.
+- [x] Optionally suggest a balance from the previous snapshot and known transactions; label it estimated and require explicit confirmation.
 - [x] Add first-run guidance for establishing the initial cash balance.
 - [x] Warn when the balance has not been confirmed in more than 10 days.
 - [x] Centralize the stale-balance threshold in `CASH_SNAPSHOT_STALE_DAYS` so the settings API and weekly forecast use the same rule.
@@ -230,7 +230,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 Record meaningful implementation updates here. Each entry should include date, phase, PR/commit reference, tests run, and remaining work.
 
 - **2026-10-20 — Roadmap created:** Defined three milestones and eight phases. No application behavior changed by this documentation alone. Implementation remained pending at that point.
-- **2026-10-20 — Phase 1 implementation started (PR #35):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, a dated Household & income control, and regression tests for snapshot persistence, history, migration, transaction boundaries, multi-week safe-to-spend, and stale warnings. GitHub Actions passed the full pytest suite on Python 3.11, 3.12, and 3.13 after an initial run exposed that the new snapshot history also needed to be cleared by the existing household-data reset; that reset path is now covered by the existing suite. After the reset fix, the dashboard control and centralized freshness threshold were added; the latest GitHub Actions run passed the full pytest suite on Python 3.11, 3.12, and 3.13. Estimated balance suggestions and an edit control embedded directly in the weekly report remain open. Review follow-up: clarified forecast anchoring in the PR description and rejected future-dated snapshots because future balances cannot yet be confirmed. This PR is not merged or deployed.
+- **2026-10-20 — Phase 1 implementation (PR #35, merged):** Added schema v17 dated cash snapshots, legacy starting-cash migration, effective-week lookup in weekly forecasts, confirmation metadata and a 10-day stale warning, a dated Household & income control, and regression tests for snapshot persistence, history, migration, transaction boundaries, multi-week safe-to-spend, and stale warnings. GitHub Actions passed the full pytest suite on Python 3.11, 3.12, and 3.13 after an initial run exposed that the new snapshot history also needed to be cleared by the existing household-data reset; that reset path is now covered by the existing suite. After the reset fix, the dashboard control and centralized freshness threshold were added; the latest GitHub Actions run passed the full pytest suite on Python 3.11, 3.12, and 3.13. Estimated balance suggestions and an edit control embedded directly in the weekly report remain open. Review follow-up: clarified forecast anchoring in the PR description and rejected future-dated snapshots because future balances cannot yet be confirmed. PR #35 was merged. The follow-up adds a transaction-based estimate for the next financial-week opening and a cash-confirmation control on the weekly report. The estimate is advisory, never saved automatically, and only rolls forward recorded transactions before the current week's start so it does not double-count current-week activity. Follow-up PR validation is pending; nothing has been deployed.
 
 ## Implementation / release rules
 
