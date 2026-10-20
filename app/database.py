@@ -519,13 +519,15 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
     if version < 16:
         # Savings are weekly, not per-paycheck. Preserve existing undated goals
         # by carrying their former per-payday amount into a weekly target once.
-        db.execute(
-            """UPDATE savings_goals
-               SET weekly_target_cents = contribution_per_period_cents
-               WHERE target_date IS NULL AND weekly_target_cents = 0
-                 AND contribution_per_period_cents > 0"""
-        )
-        # Keep the legacy storage column for backward-compatible databases,
-        # but stop using it in the application and clear its old values.
-        db.execute("UPDATE savings_goals SET contribution_per_period_cents = 0")
+        goal_columns = {row["name"] for row in db.execute("PRAGMA table_info(savings_goals)")}
+        if "contribution_per_period_cents" in goal_columns:
+            db.execute(
+                """UPDATE savings_goals
+                   SET weekly_target_cents = contribution_per_period_cents
+                   WHERE target_date IS NULL AND weekly_target_cents = 0
+                     AND contribution_per_period_cents > 0"""
+            )
+            # Keep the legacy storage column for backward-compatible databases,
+            # but stop using it in the application and clear its old values.
+            db.execute("UPDATE savings_goals SET contribution_per_period_cents = 0")
 
