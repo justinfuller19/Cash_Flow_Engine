@@ -887,3 +887,52 @@ def test_user_category_named_debt_payment_can_cover_minimum(tmp_path, monkeypatc
     assert debt["qualifying_payments_cents"] == 5000
     assert debt["amount_cents"] == 0
     assert debt["status"] == "recorded"
+
+
+def test_horizon_buffer_replenishment_uses_lowest_projected_week(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 150000, buffer_target_cents = 20000 WHERE id = 1"
+        )
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, next_due_date, flexible_window_days, active,
+                category, frequency, autopay)
+               VALUES ('Rent', 90000, '2026-10-26', 0, 1, 'housing', 'monthly', 0)"""
+        )
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": "2026-10-19", "end_date": "2026-10-25", "forecast_weeks": 2},
+    ).json()
+    assert report["projected_cash_before_buffer_cents"] == 150000
+    assert report["buffer_replenishment_cents"] == 0
+    assert report["future_forecast"][0]["projected_ending_cash_cents"] == 60000
+    assert report["horizon_buffer_replenishment_cents"] == 0
+    assert report["safe_to_spend_before_allocations_cents"] == 40000
+    assert report["free_to_spend_cents"] == 40000
+
+
+def test_horizon_buffer_gap_reports_shortfall_without_negative_safe_spend(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    with database.connect() as db:
+        db.execute(
+            "UPDATE household_settings SET starting_cash_cents = 100000, buffer_target_cents = 20000 WHERE id = 1"
+        )
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, next_due_date, flexible_window_days, active,
+                category, frequency, autopay)
+               VALUES ('Rent', 90000, '2026-10-26', 0, 1, 'housing', 'monthly', 0)"""
+        )
+
+    report = client.get(
+        "/api/cash-flow/weekly",
+        params={"start_date": "2026-10-19", "end_date": "2026-10-25", "forecast_weeks": 2},
+    ).json()
+    assert report["future_forecast"][0]["projected_ending_cash_cents"] == 10000
+    assert report["future_buffer_shortfall_cents"] == 10000
+    assert report["horizon_buffer_replenishment_cents"] == 10000
+    assert report["safe_to_spend_before_allocations_cents"] == 0
+    assert report["free_to_spend_cents"] == 0
