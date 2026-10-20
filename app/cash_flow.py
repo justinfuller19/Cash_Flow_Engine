@@ -245,9 +245,11 @@ def weekly_cash_flow(
     report["safe_to_spend_before_allocations_cents"] = safe_before_allocations
     report["future_forecast"] = future_forecast
     report["notes"].append(
-        "Safe-to-spend reserves cash against the lowest projected ending balance across "
-        + str(forecast_weeks)
-        + " forecast week(s); future weeks carry forward prior ending cash."
+        "One household-wide buffer is a protected minimum cash floor after required bills "
+        "and debt minimums. Safe-to-spend is limited by the lowest projected ending balance "
+        "across " + str(forecast_weeks) + " forecast week(s), less that buffer; future "
+        "weeks carry forward prior ending cash. Planned surplus allocations are reserved "
+        "once and remain plans until recorded."
     )
     report["notes"].append(
         "Savings arrears already present in the selected week carry into future weeks. "
