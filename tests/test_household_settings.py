@@ -383,3 +383,12 @@ def test_suggested_cash_balance_uses_only_transactions_before_current_week(tmp_p
     assert settings["suggested_cash_transaction_count"] == 2
     # The estimate is advisory and must not mutate the confirmed historical snapshot.
     assert settings["starting_cash_cents"] == 100000
+
+
+def test_weekly_report_exposes_cash_confirmation_control(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    response = client.get("/weekly")
+    assert response.status_code == 200
+    assert 'id="weekly-cash-form"' in response.text
+    assert 'id="weekly-cash-use-estimate"' in response.text
+    assert "Use estimated balance (not saved)" in response.text
