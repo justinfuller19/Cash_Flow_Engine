@@ -411,7 +411,8 @@ function renderIncome(incomes) {
     const item = document.createElement("li");
     addText(item, "div", "item-title", income.name + " · " + dollars(income.net_amount_cents));
     addText(item, "div", "item-detail", (person ? person.name : "Unknown member") + " · " +
-      income.frequency + " · next payday " + income.next_payday + (income.active ? "" : " · inactive"));
+      income.frequency + " · next payday " + income.next_payday +
+      (income.end_date ? " · ends " + income.end_date : " · no end date") + (income.active ? "" : " · inactive"));
     addSmallButton(item, "Edit income", async () => {
       const name = prompt("Income source name:", income.name);
       if (name === null) return;
@@ -421,12 +422,41 @@ function renderIncome(incomes) {
       if (frequency === null) return;
       const nextPayday = prompt("Next payday YYYY-MM-DD:", income.next_payday);
       if (nextPayday === null) return;
+      const endDate = prompt("Last scheduled payday YYYY-MM-DD (leave blank for no end date):", income.end_date || "");
+      if (endDate === null) return;
       try {
         await api("/api/income-sources/" + income.id, {method:"PATCH", body:JSON.stringify({
           name:name.trim(), net_amount_cents:centsFromInput(amount),
-          frequency:frequency.trim(), next_payday:nextPayday
+          frequency:frequency.trim(), next_payday:nextPayday,
+          end_date:endDate.trim() || null
         })});
         await refresh(); showStatus("Income source updated.");
+      } catch (error) { showStatus(error.message, true); }
+    }, true);
+    addSmallButton(item, "Temporary amount override", async () => {
+      const startDate = prompt("Override start date (YYYY-MM-DD):");
+      if (!startDate) return;
+      const endDate = prompt("Override end date (YYYY-MM-DD, inclusive):", startDate);
+      if (!endDate) return;
+      const amount = prompt("Temporary net amount per paycheck in dollars:", (income.net_amount_cents / 100).toFixed(2));
+      if (amount === null) return;
+      const reason = prompt("Reason (optional, e.g. bonus or reduced hours):", "") ?? "";
+      try {
+        await api("/api/income-sources/" + income.id + "/amount-overrides", {method:"POST", body:JSON.stringify({
+          start_date:startDate, end_date:endDate, amount_cents:centsFromInput(amount), reason
+        })});
+        await refresh(); showStatus("Temporary amount override saved.");
+      } catch (error) { showStatus(error.message, true); }
+    }, true);
+    addSmallButton(item, "Manage overrides", async () => {
+      try {
+        const overrides = await api("/api/income-sources/" + income.id + "/amount-overrides");
+        if (!overrides.length) { showStatus("No temporary overrides are set for " + income.name + "."); return; }
+        const choices = overrides.map(x => x.id + ": " + x.start_date + " to " + x.end_date + " · " + dollars(x.amount_cents) + (x.reason ? " · " + x.reason : "")).join("\\n");
+        const selected = prompt("Saved temporary overrides (enter an ID to delete one):\\n" + choices);
+        if (!selected) return;
+        await api("/api/income-sources/" + income.id + "/amount-overrides/" + Number(selected), {method:"DELETE"});
+        await refresh(); showStatus("Temporary amount override deleted.");
       } catch (error) { showStatus(error.message, true); }
     }, true);
     addSmallButton(item, income.active ? "Deactivate income" : "Reactivate income", async () => {
