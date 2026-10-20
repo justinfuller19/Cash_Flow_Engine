@@ -183,6 +183,10 @@ def _day_of_month(day: int, start: date) -> date:
 @router.get("/api/dashboard")
 def dashboard_summary():
     automatic_plan_id = _ensure_automatic_checklist()
+    forecast_start, forecast_end = _financial_week()
+    cash_report = weekly_cash_flow(
+        start_date=forecast_start, end_date=forecast_end, forecast_weeks=13
+    )
     today = date.today()
     next_90 = today + timedelta(days=90)
     next_30 = today + timedelta(days=30)
@@ -284,6 +288,11 @@ def dashboard_summary():
         "today": today.isoformat(),
         "active_household_members": people_count,
         "protected_buffers_cents": buffer_total,
+        "safe_to_spend_cents": cash_report["free_to_spend_cents"],
+        "current_buffer_shortfall_cents": cash_report["buffer_shortfall_cents"],
+        "horizon_buffer_shortfall_cents": cash_report["future_buffer_shortfall_cents"],
+        "horizon_buffer_replenishment_cents": cash_report["horizon_buffer_replenishment_cents"],
+        "forecast_weeks": cash_report["forecast_weeks"],
         "next_paydays": paydays[:6],
         "upcoming_bills": bills[:8],
         "upcoming_debts": debts[:8],

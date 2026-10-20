@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal, Sequence
 
+from .buffer import buffer_reservation_cents
+
 DebtStrategy = Literal["avalanche", "snowball"]
 
 
@@ -196,10 +198,22 @@ def generate_payday_plan(request: PaydayRequest) -> PaydayPlan:
                           due_date=card.due_date)
         minimum_funded_by_card[card.name] = funded
 
-    # 3. Protect the household-wide buffer only after required obligations.
+    # 3. Protect the shared household buffer only after required obligations.
+    # Keep the requested target visible when cash is insufficient, but only
+    # leave cash above the target available for later discretionary categories.
     for buffer in request.buffers:
-        allocate("buffer", buffer.name, buffer.amount_cents,
-                 note="Reserved after bills and minimum debt payments")
+        funded, shortfall, remaining = buffer_reservation_cents(
+            available, buffer.amount_cents
+        )
+        items.append(PlanItem(
+            category="buffer",
+            name=buffer.name,
+            requested_cents=buffer.amount_cents,
+            funded_cents=funded,
+            unfunded_cents=shortfall,
+            note="Household buffer protected after bills and minimum debt payments",
+        ))
+        available = remaining
 
     # 4. Goal contributions: priority ascending, then name for deterministic results.
     goals = sorted(request.savings_goals, key=lambda g: (g.priority, g.name.casefold()))

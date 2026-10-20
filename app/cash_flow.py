@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from . import database
 from .household import CASH_SNAPSHOT_STALE_DAYS
 from .forecast import occurrences_between
+from .buffer import buffer_shortfall_cents, safe_surplus_cents
 
 router = APIRouter()
 
@@ -200,7 +201,9 @@ def weekly_cash_flow(
         future_start = future_end + timedelta(days=1)
 
     # The lowest balance in the entire horizon limits discretionary spending now.
-    safe_to_spend = max(0, lowest_projected_cash - buffer_target)
+    # One shared buffer floor applies to every projected week. Only the lowest
+    # projected ending balance determines today's safe discretionary surplus.
+    safe_to_spend = safe_surplus_cents(lowest_projected_cash, buffer_target)
     report["projected_ending_cash_cents"] = current_ending_cash
     report["free_to_spend_before_future_reserve_cents"] = report["free_to_spend_cents"]
     report["future_buffer_reservation_cents"] = max(
@@ -235,12 +238,18 @@ def weekly_cash_flow(
     report["extra_debt_payoff_capacity_cents"] = safe_to_spend
     report["forecast_weeks"] = forecast_weeks
     report["lowest_projected_cash_cents"] = lowest_projected_cash
-    report["future_buffer_shortfall_cents"] = max(0, buffer_target - lowest_projected_cash)
+    report["future_buffer_shortfall_cents"] = buffer_shortfall_cents(lowest_projected_cash, buffer_target)
+    report["horizon_buffer_replenishment_cents"] = buffer_shortfall_cents(
+        lowest_projected_cash, buffer_target
+    )
+    report["safe_to_spend_before_allocations_cents"] = safe_before_allocations
     report["future_forecast"] = future_forecast
     report["notes"].append(
-        "Safe-to-spend reserves cash against the lowest projected ending balance across "
-        + str(forecast_weeks)
-        + " forecast week(s); future weeks carry forward prior ending cash."
+        "One household-wide buffer is a protected minimum cash floor after required bills "
+        "and debt minimums. Safe-to-spend is limited by the lowest projected ending balance "
+        "across " + str(forecast_weeks) + " forecast week(s), less that buffer; future "
+        "weeks carry forward prior ending cash. Planned surplus allocations are reserved "
+        "once and remain plans until recorded."
     )
     report["notes"].append(
         "Savings arrears already present in the selected week carry into future weeks. "
@@ -578,8 +587,8 @@ def _weekly_cash_flow_for_window(
         starting_cash + expected_income_cents + transaction_income
         - bills_due_cents - minimum_debt_cents - transaction_expenses
     )
-    buffer_replenishment = max(0, buffer_target - projected_cash)
-    available_after_buffer = max(0, projected_cash - buffer_target)
+    buffer_replenishment = buffer_shortfall_cents(projected_cash, buffer_target)
+    available_after_buffer = safe_surplus_cents(projected_cash, buffer_target)
     funded_savings = min(planned_savings, available_after_buffer)
     savings_shortfall = planned_savings - funded_savings
     remaining_savings_capacity = funded_savings
@@ -929,7 +938,8 @@ for(const [label,value] of [
 ["Buffer replenishment needed",report.buffer_replenishment_cents],["Planned savings",report.planned_savings_cents],
 ["Savings funded",report.funded_savings_cents],
 ["Available before future reserve",report.free_to_spend_before_future_reserve_cents],
-["Reserved for future bills",report.future_buffer_reservation_cents],
+["Reserved for future shortfalls",report.future_buffer_reservation_cents],
+["Horizon buffer replenishment needed",report.horizon_buffer_replenishment_cents],
 ["Safe available surplus",report.free_to_spend_cents],
 ["Already allocated",report.planned_allocations_cents],
 ["Still available to allocate",report.free_to_spend_cents]

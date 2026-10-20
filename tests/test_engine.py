@@ -95,3 +95,34 @@ def test_savings_contribution_rounds_up_to_cents():
 def test_invalid_pay_period_is_rejected():
     with pytest.raises(ValueError, match="period_end"):
         generate_payday_plan(sample_request(period_start=END, period_end=START))
+
+
+
+def test_buffer_is_a_protected_floor_and_shortfall_is_explicit():
+    plan = generate_payday_plan(sample_request(
+        starting_cash_cents=0,
+        incomes=[Income("Paycheck", 10000, START)],
+        buffers=[BufferReservation("Household buffer", 7000)],
+        bills=[Bill("Rent", 8000, date(2026, 11, 18))],
+        credit_cards=[], savings_goals=[],
+    ))
+    buffer_item = next(item for item in plan.items if item.category == "buffer")
+    assert buffer_item.requested_cents == 7000
+    assert buffer_item.funded_cents == 2000
+    assert buffer_item.unfunded_cents == 5000
+    assert plan.unallocated_cents == 0
+    assert plan.unfunded_cents == 5000
+
+
+def test_buffer_reservation_does_not_consume_cash_twice():
+    plan = generate_payday_plan(sample_request(
+        starting_cash_cents=5000,
+        incomes=[Income("Paycheck", 10000, START)],
+        buffers=[BufferReservation("Household buffer", 5000)],
+        bills=[Bill("Rent", 4000, date(2026, 11, 18))],
+        credit_cards=[], savings_goals=[],
+    ))
+    buffer_item = next(item for item in plan.items if item.category == "buffer")
+    assert buffer_item.funded_cents == 5000
+    assert plan.total_available_cents == plan.allocated_cents + plan.unallocated_cents
+    assert plan.unallocated_cents == 6000
