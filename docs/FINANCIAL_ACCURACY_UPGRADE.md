@@ -174,7 +174,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 8 — Potentially unmatched expenses
 
 **Priority:** Medium-Low  
-**Status:** Implemented on `feature/phase-8-unmatched-expenses`; awaiting CI and review in PR.
+**Status:** Implemented; GitHub Actions run #202 passed 164 tests on Python 3.11, 3.12, and 3.13; awaiting review in PR #44.
 
 - [x] Identify possible links between recent unlinked expenses and uncovered bill/debt obligations using amount, date, payee/description, account, category, and obligation status.
 - [x] Show review suggestions such as **“Could this payment cover [Bill Name]?”** for likely bill matches and retain the existing debt-payment review queue.
@@ -266,5 +266,5 @@ Record meaningful implementation updates here. Each entry should include date, p
 
 
 - **2026-10-20 — Phase 4 merged (PR #40):** Household-wide buffer and horizon safe-to-spend semantics are merged. Earlier Phase 4 review notes are corrected in this update.
-- **2026-10-21 — Phase 8 implementation (PR pending):** Added schema-v21 bill-payment suggestion storage, evidence-based candidate generation for recent unlinked expenses, explicit confirm/dismiss endpoints, stale-on-transaction/obligation-edit behavior, and a possible-unmatched-payments review section in the weekly report. Existing debt-payment suggestions are surfaced alongside bill suggestions without changing their existing confirmation workflow. Added regression tests; CI for this branch is pending. No deployment performed.
+- **2026-10-21 — Phase 8 implementation (PR pending):** Added schema-v21 bill-payment suggestion storage, evidence-based candidate generation for recent unlinked expenses, explicit confirm/dismiss endpoints, stale-on-transaction/obligation-edit behavior, and a possible-unmatched-payments review section in the weekly report. Existing debt-payment suggestions are surfaced alongside bill suggestions without changing their existing confirmation workflow. Added regression tests; GitHub Actions run #202 passed 164 tests on Python 3.11, 3.12, and 3.13. No deployment performed.
 - **2026-10-20 — Phase 5 implementation (PR pending):** Added an opt-in multi-week debt-interest estimate based on projected opening balances and APR, carried projected balances week by week, and exposed estimates in the weekly report. Estimates do not affect cash totals, saved debt balances, or recorded transactions. Regression tests cover opt-in behavior, zero APR/balance, higher APR, rounding, and unchanged cash values. CI results pending.
