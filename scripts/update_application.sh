@@ -94,6 +94,9 @@ if [[ -f "$ENV_FILE" ]] && ! grep -Eq '^[[:space:]]*CASHFLOW_ALLOW_LAN=' "$ENV_F
   printf '\nCASHFLOW_ALLOW_LAN=1\n' >> "$ENV_FILE"
   chmod 600 "$ENV_FILE"
 fi
+if ! command -v avahi-daemon >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+  apt-get install -y avahi-daemon || true
+fi
 if command -v avahi-daemon >/dev/null 2>&1; then
   systemctl enable --now avahi-daemon || true
 fi
