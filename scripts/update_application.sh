@@ -11,7 +11,7 @@ readonly SERVICE_UNIT_FILE="/etc/systemd/system/cashflow-engine.service"
 readonly NGINX_SITE_FILE="/etc/nginx/sites-available/cashflow-engine"
 readonly ENV_FILE="/etc/cashflow-engine.env"
 
-previous_sha=""
+previous_sha="${CASHFLOW_UPDATE_PREVIOUS_SHA:-}"
 app_stopped=0
 
 # Keep credentials available for the authenticated health check only.
@@ -58,6 +58,12 @@ fail_update() {
 }
 trap 'fail_update "Update failed near line $LINENO."' ERR
 
+# The updater file is replaced by git reset below. Re-exec the freshly updated
+# script in continuation mode so deployment steps run from the new revision,
+# not from the old script already loaded by this shell.
+if [[ "${CASHFLOW_UPDATE_CONTINUATION:-0}" == "1" ]]; then
+  app_stopped=1
+else
 rm -f /var/lib/cashflow-engine/application-update-request
 cd "$INSTALL_DIR"
 previous_sha="$(git rev-parse HEAD)"
@@ -84,6 +90,14 @@ app_stopped=1
 git reset --hard FETCH_HEAD
 "$INSTALL_DIR/.venv/bin/python" -m pip install -r "$INSTALL_DIR/requirements.txt"
 "$INSTALL_DIR/.venv/bin/python" -m pytest -q
+
+exec env \
+  CASHFLOW_USERNAME="$health_username" \
+  CASHFLOW_PASSWORD="$health_password" \
+  CASHFLOW_UPDATE_CONTINUATION=1 \
+  CASHFLOW_UPDATE_PREVIOUS_SHA="$previous_sha" \
+  /bin/bash "$INSTALL_DIR/scripts/update_application.sh"
+fi
 
 write_status "running" "Applying the service configuration for trusted home-network access."
 install -o root -g root -m 644 "$INSTALL_DIR/deploy/cashflow-engine.service" "$SERVICE_UNIT_FILE"
