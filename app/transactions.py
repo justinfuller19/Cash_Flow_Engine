@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 
 from . import database
 from .transaction_schemas import TransactionCreate, TransactionOut, TransactionUpdate
+from .forecast import occurrences_between
 
 router = APIRouter()
 
@@ -100,6 +101,26 @@ def _refresh_debt_payment_suggestions(db) -> None:
             debt = dict(raw_debt)
             due_dates = _due_cycles_near(transaction_date, debt)
             for due_date in due_dates:
+                required_minimum = min(debt["minimum_payment_cents"], debt["balance_cents"])
+                already_linked = db.execute(
+                    """SELECT COALESCE(SUM(ABS(amount_cents)), 0)
+                       FROM transactions
+                       WHERE transaction_type = 'expense'
+                         AND linked_obligation_type = 'debt' AND linked_obligation_id = ?
+                         AND transaction_date >= ? AND transaction_date <= ?
+                         AND NOT (lower(category) = 'debt payment'
+                                  AND lower(COALESCE(notes, '')) LIKE '%extra debt snowball payment%')""",
+                    (debt["id"], (due_date - timedelta(days=7)).isoformat(),
+                     (due_date + timedelta(days=7)).isoformat()),
+                ).fetchone()[0]
+                if already_linked >= required_minimum:
+                    db.execute(
+                        """UPDATE debt_payment_match_suggestions
+                           SET status = 'stale', updated_at = CURRENT_TIMESTAMP
+                           WHERE transaction_id = ? AND debt_id = ? AND due_date = ? AND status = 'pending'""",
+                        (transaction["id"], debt["id"], due_date.isoformat()),
+                    )
+                    continue
                 due_debts.append((debt, due_date, debt["name"].strip().lower() in evidence_text))
         named = [item for item in due_debts if item[2]]
         candidates = named if named else due_debts
@@ -225,6 +246,220 @@ def dismiss_debt_payment_suggestion(suggestion_id: int):
     return {"suggestion_id": suggestion_id, "status": "dismissed"}
 
 
+
+def _bill_due_dates_near(transaction_date: date, bill: dict) -> list[date]:
+    """Return scheduled bill dates within seven days of an expense."""
+    start = transaction_date - timedelta(days=7)
+    end = transaction_date + timedelta(days=7)
+    anchor = date.fromisoformat(bill["next_due_date"]) if bill.get("next_due_date") else None
+    dates = []
+    if anchor:
+        try:
+            dates.extend(occurrences_between(anchor, bill.get("frequency") or "monthly", start, end))
+        except (TypeError, ValueError):
+            dates = []
+        if start <= anchor <= end:
+            dates.append(anchor)
+    if not dates and bill.get("due_day_of_month"):
+        day = int(bill["due_day_of_month"])
+        cursor = date(start.year, start.month, 1)
+        while cursor <= end:
+            due = date(cursor.year, cursor.month, min(day, monthrange(cursor.year, cursor.month)[1]))
+            if start <= due <= end:
+                dates.append(due)
+            next_month = cursor.month + 1
+            cursor = date(cursor.year + (next_month > 12), 1 if next_month > 12 else next_month, 1)
+    # A single transaction can link to only one bill. For frequent schedules,
+    # several due dates may fall inside the ±7-day search window, so use the
+    # closest due cycle rather than suggesting the same expense for each one.
+    return sorted(
+        set(dates),
+        key=lambda due: (abs((transaction_date - due).days), due),
+    )[:1]
+
+
+def _refresh_bill_payment_suggestions(db) -> None:
+    """Refresh suggestions without ever changing transaction links automatically."""
+    today = date.today()
+    transactions = db.execute(
+        """SELECT id, transaction_date, category, transaction_type, linked_obligation_type,
+                  linked_obligation_id, description, amount_cents, account_name, notes
+           FROM transactions
+           WHERE transaction_type = 'expense'
+             AND linked_obligation_type IS NULL AND linked_obligation_id IS NULL
+             AND transaction_date >= ? AND transaction_date <= ?
+             AND amount_cents != 0
+           ORDER BY transaction_date DESC, id DESC LIMIT 500""",
+        ((today - timedelta(days=180)).isoformat(), (today + timedelta(days=7)).isoformat()),
+    ).fetchall()
+    bills = db.execute(
+        """SELECT id, name, amount_cents, category, frequency, next_due_date, due_day_of_month
+           FROM bills WHERE active = 1 AND amount_cents > 0 ORDER BY id"""
+    ).fetchall()
+    for raw_transaction in transactions:
+        transaction = dict(raw_transaction)
+        transaction_date = date.fromisoformat(transaction["transaction_date"])
+        amount = abs(transaction["amount_cents"])
+        if amount < 100:
+            continue
+        name_evidence_text = " ".join(
+            str(transaction.get(key) or "")
+            for key in ("description", "account_name", "notes")
+        ).lower()
+        evidence_text = name_evidence_text + " " + str(transaction.get("category") or "").lower()
+        transaction_category = (transaction.get("category") or "").strip().lower()
+        payment_language = any(term in evidence_text for term in (
+            "bill", "payment", "utility", "electric", "water", "gas", "internet",
+            "phone", "insurance", "rent", "mortgage",
+        ))
+        for raw_bill in bills:
+            bill = dict(raw_bill)
+            bill_name = (bill["name"] or "").strip().lower()
+            name_match = bool(bill_name and bill_name in name_evidence_text)
+            category_match = bool(
+                bill.get("category") and transaction_category == str(bill["category"]).strip().lower()
+            )
+            bill_amount = bill["amount_cents"]
+            amount_near = abs(amount - bill_amount) <= max(500, bill_amount // 5)
+            if not name_match and not (amount_near and (category_match or payment_language)):
+                continue
+            for due_date in _bill_due_dates_near(transaction_date, bill):
+                due_iso = due_date.isoformat()
+                linked_total = db.execute(
+                    """SELECT COALESCE(SUM(ABS(amount_cents)), 0)
+                       FROM transactions
+                       WHERE transaction_type = 'expense'
+                         AND linked_obligation_type = 'bill' AND linked_obligation_id = ?
+                         AND transaction_date >= ? AND transaction_date <= ?""",
+                    (bill["id"], (due_date - timedelta(days=7)).isoformat(),
+                     (due_date + timedelta(days=7)).isoformat()),
+                ).fetchone()[0]
+                if linked_total >= bill_amount:
+                    db.execute(
+                        """UPDATE bill_payment_match_suggestions
+                           SET status = 'stale', updated_at = CURRENT_TIMESTAMP
+                           WHERE transaction_id = ? AND bill_id = ? AND due_date = ? AND status = 'pending'""",
+                        (transaction["id"], bill["id"], due_iso),
+                    )
+                    continue
+                if not name_match and amount > bill_amount * 2 + 500:
+                    continue
+                distance = abs((transaction_date - due_date).days)
+                evidence = (
+                    f"The transaction description/account/notes include the bill name “{bill['name']}”"
+                    if name_match else
+                    "The amount is close to the scheduled bill amount and the category/payment wording is consistent"
+                )
+                reason = (
+                    f"{evidence}. Recorded expense: ${amount / 100:.2f}; scheduled bill: "
+                    f"${bill_amount / 100:.2f}; transaction date is {distance} day(s) from "
+                    f"the {due_iso} due date. Review the transaction and bill before confirming."
+                )
+                confidence = "high" if name_match else "review"
+                existing = db.execute(
+                    """SELECT id, status FROM bill_payment_match_suggestions
+                       WHERE transaction_id = ? AND bill_id = ? AND due_date = ?""",
+                    (transaction["id"], bill["id"], due_iso),
+                ).fetchone()
+                if existing is None:
+                    db.execute(
+                        """INSERT INTO bill_payment_match_suggestions
+                           (transaction_id, bill_id, due_date, confidence, reason)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (transaction["id"], bill["id"], due_iso, confidence, reason),
+                    )
+                elif existing["status"] == "stale":
+                    db.execute(
+                        """UPDATE bill_payment_match_suggestions
+                           SET confidence = ?, reason = ?, status = 'pending',
+                               updated_at = CURRENT_TIMESTAMP WHERE id = ?""",
+                        (confidence, reason, existing["id"]),
+                    )
+                elif existing["status"] == "pending":
+                    db.execute(
+                        """UPDATE bill_payment_match_suggestions
+                           SET confidence = ?, reason = ?, updated_at = CURRENT_TIMESTAMP
+                           WHERE id = ?""",
+                        (confidence, reason, existing["id"]),
+                    )
+
+
+@router.get("/api/bill-payment-suggestions")
+def list_bill_payment_suggestions():
+    """Return possible bill matches for explicit user review."""
+    with database.connect() as db:
+        _refresh_bill_payment_suggestions(db)
+        rows = db.execute(
+            """SELECT s.id, s.transaction_id, s.bill_id, s.due_date,
+                      s.confidence, s.reason, s.status, s.created_at,
+                      t.transaction_date, t.category, t.description, t.amount_cents,
+                      t.account_name, b.name AS bill_name, b.amount_cents AS bill_amount_cents
+               FROM bill_payment_match_suggestions s
+               JOIN transactions t ON t.id = s.transaction_id
+               JOIN bills b ON b.id = s.bill_id
+               WHERE s.status = 'pending'
+               ORDER BY CASE s.confidence WHEN 'high' THEN 0 ELSE 1 END,
+                        t.transaction_date DESC, s.id"""
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@router.post("/api/bill-payment-suggestions/{suggestion_id}/confirm")
+def confirm_bill_payment_suggestion(suggestion_id: int):
+    """Link a bill expense only after the user explicitly confirms it."""
+    with database.connect() as db:
+        suggestion = db.execute(
+            """SELECT s.*, t.transaction_type, t.linked_obligation_type,
+                      t.linked_obligation_id, b.active AS bill_active
+               FROM bill_payment_match_suggestions s
+               JOIN transactions t ON t.id = s.transaction_id
+               JOIN bills b ON b.id = s.bill_id
+               WHERE s.id = ? AND s.status = 'pending'""",
+            (suggestion_id,),
+        ).fetchone()
+        if suggestion is None:
+            raise HTTPException(status_code=404, detail="Pending bill-payment suggestion not found")
+        if (suggestion["transaction_type"] != "expense"
+                or suggestion["linked_obligation_type"] is not None
+                or suggestion["linked_obligation_id"] is not None):
+            db.execute(
+                """UPDATE bill_payment_match_suggestions SET status = 'stale',
+                   updated_at = CURRENT_TIMESTAMP WHERE transaction_id = ? AND status = 'pending'""",
+                (suggestion["transaction_id"],),
+            )
+            raise HTTPException(status_code=409, detail="Transaction is no longer eligible for matching")
+        if not suggestion["bill_active"]:
+            raise HTTPException(status_code=409, detail="Bill is no longer active")
+        db.execute(
+            """UPDATE transactions SET linked_obligation_type = 'bill', linked_obligation_id = ?
+               WHERE id = ? AND linked_obligation_type IS NULL AND linked_obligation_id IS NULL""",
+            (suggestion["bill_id"], suggestion["transaction_id"]),
+        )
+        db.execute(
+            """UPDATE bill_payment_match_suggestions
+               SET status = CASE WHEN id = ? THEN 'confirmed' ELSE 'stale' END,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE transaction_id = ? AND status = 'pending'""",
+            (suggestion_id, suggestion["transaction_id"]),
+        )
+    return {"suggestion_id": suggestion_id, "transaction_id": suggestion["transaction_id"],
+            "bill_id": suggestion["bill_id"], "due_date": suggestion["due_date"], "status": "confirmed"}
+
+
+@router.post("/api/bill-payment-suggestions/{suggestion_id}/dismiss")
+def dismiss_bill_payment_suggestion(suggestion_id: int):
+    """Dismiss a possible bill match until relevant transaction data changes."""
+    with database.connect() as db:
+        cursor = db.execute(
+            """UPDATE bill_payment_match_suggestions
+               SET status = 'dismissed', updated_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND status = 'pending'""",
+            (suggestion_id,),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Pending bill-payment suggestion not found")
+    return {"suggestion_id": suggestion_id, "status": "dismissed"}
+
 def _clean(values: dict) -> dict:
     for field in ("category", "description"):
         if field in values and values[field] is not None:
@@ -349,6 +584,12 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
             # data changes; confirmed links remain immutable review history.
             db.execute(
                 """UPDATE debt_payment_match_suggestions
+                   SET status = 'stale', updated_at = CURRENT_TIMESTAMP
+                   WHERE transaction_id = ? AND status IN ('pending', 'dismissed')""",
+                (transaction_id,),
+            )
+            db.execute(
+                """UPDATE bill_payment_match_suggestions
                    SET status = 'stale', updated_at = CURRENT_TIMESTAMP
                    WHERE transaction_id = ? AND status IN ('pending', 'dismissed')""",
                 (transaction_id,),

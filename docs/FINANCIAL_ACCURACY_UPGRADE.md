@@ -146,7 +146,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 6 — More flexible recurrence options
 
 **Priority:** Medium-Low  
-**Status:** Implemented on `feature/phase-6-flexible-recurrence`; awaiting CI and review in PR #42.
+**Status:** Complete — PR #42 merged.
 
 - [x] Preserve semimonthly (1st and 15th) and existing weekly/biweekly/monthly behavior.
 - [x] Add a 15th-and-last-calendar-day option.
@@ -159,7 +159,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 7 — Income changes and end dates
 
 **Priority:** Medium-Low  
-**Status:** Implemented on `feature/phase-7-income-changes`; awaiting CI and review in PR.
+**Status:** Complete — PR #43 merged.
 
 - [x] Add optional end dates to recurring income sources and allow clearing the end date.
 - [ ] Evaluate optional end dates for recurring bills when appropriate; not included in this income-focused implementation.
@@ -174,15 +174,15 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 8 — Potentially unmatched expenses
 
 **Priority:** Medium-Low  
-**Status:** Not started
+**Status:** Implemented; GitHub Actions run #202 passed 164 tests on Python 3.11, 3.12, and 3.13; awaiting review in PR #44.
 
-- [ ] Identify possible links between recent expenses and uncovered bills/debt obligations using amount, date, payee/description when available, and obligation status.
-- [ ] Show suggestions such as **“Could this payment cover [Bill Name]?”**
-- [ ] Add a possible-unmatched-payments section to the weekly report.
-- [ ] Explain why each match was suggested and let the user review the transaction and obligation.
-- [ ] Never auto-link an uncertain match.
-- [ ] Avoid repeatedly showing dismissed suggestions unless relevant data changes.
-- [ ] Test suggestion quality, confirmed matching, dismissal, and non-matching expenses.
+- [x] Identify possible links between recent unlinked expenses and uncovered bill/debt obligations using amount, date, payee/description, account, category, and obligation status.
+- [x] Show review suggestions such as **“Could this payment cover [Bill Name]?”** for likely bill matches and retain the existing debt-payment review queue.
+- [x] Add a possible-unmatched-payments section to the weekly report with explicit confirm/dismiss controls.
+- [x] Explain the evidence behind each suggestion and show the transaction date, amount, and obligation due date.
+- [x] Never auto-link an uncertain match; only an explicit confirmation updates the transaction's obligation link.
+- [x] Keep dismissed suggestions hidden until relevant transaction data changes; transaction or obligation edits stale existing pending/dismissed suggestions for reconsideration.
+- [x] Test bill-match evidence, explicit confirmation, dismissal, unrelated expenses, already-covered bills, and weekly-report visibility.
 
 # Testing and Quality Requirements
 
@@ -266,4 +266,5 @@ Record meaningful implementation updates here. Each entry should include date, p
 
 
 - **2026-10-20 — Phase 4 merged (PR #40):** Household-wide buffer and horizon safe-to-spend semantics are merged. Earlier Phase 4 review notes are corrected in this update.
+- **2026-10-21 — Phase 8 implementation (PR pending):** Added schema-v21 bill-payment suggestion storage, evidence-based candidate generation for recent unlinked expenses, explicit confirm/dismiss endpoints, stale-on-transaction/obligation-edit behavior, and a possible-unmatched-payments review section in the weekly report. Existing debt-payment suggestions are surfaced alongside bill suggestions without changing their existing confirmation workflow. Added regression tests; GitHub Actions run #202 passed 164 tests on Python 3.11, 3.12, and 3.13. No deployment performed.
 - **2026-10-20 — Phase 5 implementation (PR pending):** Added an opt-in multi-week debt-interest estimate based on projected opening balances and APR, carried projected balances week by week, and exposed estimates in the weekly report. Estimates do not affect cash totals, saved debt balances, or recorded transactions. Regression tests cover opt-in behavior, zero APR/balance, higher APR, rounding, and unchanged cash values. CI results pending.

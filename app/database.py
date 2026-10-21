@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 
 def base_database_path() -> Path:
@@ -622,6 +622,7 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
             db.execute("DROP TABLE income_sources_phase18")
             db.execute("CREATE INDEX IF NOT EXISTS idx_income_person ON income_sources(person_id)")
 
+
     if version < 20:
         # Version 20 supports scheduled income end dates and temporary,
         # effective-dated paycheck amount overrides without rewriting history.
@@ -645,3 +646,28 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
             "CREATE INDEX IF NOT EXISTS idx_income_overrides_source_dates "
             "ON income_amount_overrides(income_source_id, start_date, end_date)"
         )
+
+    if version < 21:
+        # Version 21 adds a review queue for possible links between unlinked
+        # expense transactions and recurring bill obligations. Suggestions
+        # never alter a transaction until explicitly confirmed.
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS bill_payment_match_suggestions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+                bill_id INTEGER NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+                due_date TEXT NOT NULL,
+                confidence TEXT NOT NULL CHECK(confidence IN ('high', 'review')),
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending', 'confirmed', 'dismissed', 'stale')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(transaction_id, bill_id, due_date)
+            )"""
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_bill_match_suggestions_status "
+            "ON bill_payment_match_suggestions(status, transaction_id)"
+        )
+

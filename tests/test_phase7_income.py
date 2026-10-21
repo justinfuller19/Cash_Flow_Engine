@@ -187,4 +187,4 @@ def test_v19_migration_preserves_income_and_adds_override_storage(tmp_path, monk
         assert row["next_payday"] == "2026-10-23"
         assert row["end_date"] is None
         assert db.execute("SELECT COUNT(*) FROM income_amount_overrides").fetchone()[0] == 0
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 20
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 21

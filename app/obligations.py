@@ -97,6 +97,14 @@ def update_bill(bill_id: int, body: BillUpdate):
                 raise HTTPException(status_code=404, detail="Bill not found")
             assignments = ", ".join(f"{key} = ?" for key in updates)
             db.execute(f"UPDATE bills SET {assignments} WHERE id = ?", (*updates.values(), bill_id))
+            # Bill details affect candidate quality and due-cycle interpretation;
+            # let previously dismissed/pending suggestions be reconsidered.
+            db.execute(
+                """UPDATE bill_payment_match_suggestions
+                   SET status = 'stale', updated_at = CURRENT_TIMESTAMP
+                   WHERE bill_id = ? AND status IN ('pending', 'dismissed')""",
+                (bill_id,),
+            )
             row = db.execute(
                 """SELECT id, name, amount_cents, due_day_of_month, next_due_date,
                           flexible_window_days, category, frequency, autopay, active, created_at
@@ -176,6 +184,13 @@ def update_debt(debt_id: int, body: DebtUpdate):
                 raise HTTPException(status_code=404, detail="Debt not found")
             assignments = ", ".join(f"{key} = ?" for key in updates)
             db.execute(f"UPDATE credit_cards SET {assignments} WHERE id = ?", (*updates.values(), debt_id))
+            # Changes to debt amount/status/due date can change candidate quality.
+            db.execute(
+                """UPDATE debt_payment_match_suggestions
+                   SET status = 'stale', updated_at = CURRENT_TIMESTAMP
+                   WHERE debt_id = ? AND status IN ('pending', 'dismissed')""",
+                (debt_id,),
+            )
             row = db.execute(
                 """SELECT id, name, balance_cents, minimum_payment_cents, apr_percent,
                           due_day_of_month, next_due_date, active, created_at
