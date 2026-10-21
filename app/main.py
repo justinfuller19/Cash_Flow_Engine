@@ -11,6 +11,7 @@ from .engine import (
     generate_payday_plan,
 )
 from .household_schemas import (
+    IncomeAmountOverrideCreate, IncomeAmountOverrideOut,
     IncomeSourceCreate, IncomeSourceOut, IncomeSourceUpdate,
     PersonCreate, PersonOut, PersonUpdate,
 )
@@ -304,6 +305,7 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <label for="income-frequency">Pay frequency</label><select id="income-frequency" name="frequency" required>
 <option value="weekly">Weekly</option><option value="biweekly" selected>Every two weeks</option><option value="semimonthly">1st and 15th</option><option value="twice_monthly_last">15th and last calendar day</option><option value="first_third_friday">1st and 3rd Friday</option><option value="last_business_day">Last business day</option><option value="monthly">Monthly (same date)</option><option value="irregular">One-time / irregular</option></select>
 <label for="income-next">Next payday</label><input id="income-next" name="next_payday" type="date" required>
+<label for="income-end">Last payday (optional)</label><input id="income-end" name="end_date" type="date"><p class="muted">Leave blank if this income is expected to continue indefinitely.</p>
 <label><input id="income-active" name="active" type="checkbox" checked style="width:auto;margin-right:8px">This income is active</label>
 <button type="submit">Add income source</button></form>
 <ul id="income-list" class="list" aria-label="Saved income sources"><li class="empty">Loading income sources…</li></ul>
@@ -410,7 +412,8 @@ function renderIncome(incomes) {
     const item = document.createElement("li");
     addText(item, "div", "item-title", income.name + " · " + dollars(income.net_amount_cents));
     addText(item, "div", "item-detail", (person ? person.name : "Unknown member") + " · " +
-      income.frequency + " · next payday " + income.next_payday + (income.active ? "" : " · inactive"));
+      income.frequency + " · next payday " + income.next_payday +
+      (income.end_date ? " · ends " + income.end_date : " · no end date") + (income.active ? "" : " · inactive"));
     addSmallButton(item, "Edit income", async () => {
       const name = prompt("Income source name:", income.name);
       if (name === null) return;
@@ -420,12 +423,41 @@ function renderIncome(incomes) {
       if (frequency === null) return;
       const nextPayday = prompt("Next payday YYYY-MM-DD:", income.next_payday);
       if (nextPayday === null) return;
+      const endDate = prompt("Last scheduled payday YYYY-MM-DD (leave blank for no end date):", income.end_date || "");
+      if (endDate === null) return;
       try {
         await api("/api/income-sources/" + income.id, {method:"PATCH", body:JSON.stringify({
           name:name.trim(), net_amount_cents:centsFromInput(amount),
-          frequency:frequency.trim(), next_payday:nextPayday
+          frequency:frequency.trim(), next_payday:nextPayday,
+          end_date:endDate.trim() || null
         })});
         await refresh(); showStatus("Income source updated.");
+      } catch (error) { showStatus(error.message, true); }
+    }, true);
+    addSmallButton(item, "Temporary amount override", async () => {
+      const startDate = prompt("Override start date (YYYY-MM-DD):");
+      if (!startDate) return;
+      const endDate = prompt("Override end date (YYYY-MM-DD, inclusive):", startDate);
+      if (!endDate) return;
+      const amount = prompt("Temporary net amount per paycheck in dollars:", (income.net_amount_cents / 100).toFixed(2));
+      if (amount === null) return;
+      const reason = prompt("Reason (optional, e.g. bonus or reduced hours):", "") ?? "";
+      try {
+        await api("/api/income-sources/" + income.id + "/amount-overrides", {method:"POST", body:JSON.stringify({
+          start_date:startDate, end_date:endDate, amount_cents:centsFromInput(amount), reason
+        })});
+        await refresh(); showStatus("Temporary amount override saved.");
+      } catch (error) { showStatus(error.message, true); }
+    }, true);
+    addSmallButton(item, "Manage overrides", async () => {
+      try {
+        const overrides = await api("/api/income-sources/" + income.id + "/amount-overrides");
+        if (!overrides.length) { showStatus("No temporary overrides are set for " + income.name + "."); return; }
+        const choices = overrides.map(x => x.id + ": " + x.start_date + " to " + x.end_date + " · " + dollars(x.amount_cents) + (x.reason ? " · " + x.reason : "")).join("\\n");
+        const selected = prompt("Saved temporary overrides (enter an ID to delete one):\\n" + choices);
+        if (!selected) return;
+        await api("/api/income-sources/" + income.id + "/amount-overrides/" + Number(selected), {method:"DELETE"});
+        await refresh(); showStatus("Temporary amount override deleted.");
       } catch (error) { showStatus(error.message, true); }
     }, true);
     addSmallButton(item, income.active ? "Deactivate income" : "Reactivate income", async () => {
@@ -515,6 +547,7 @@ document.getElementById("income-form").addEventListener("submit", async (event) 
       net_amount_cents:centsFromInput(form.elements.amount.value),
       frequency:form.elements.frequency.value,
       next_payday:form.elements.next_payday.value,
+      end_date:form.elements.end_date.value || null,
       active:form.elements.active.checked
     })});
     const active = form.elements.active.checked;
@@ -615,7 +648,7 @@ def list_income_sources():
     with database.connect() as db:
         rows = db.execute(
             """SELECT id, person_id, name, net_amount_cents, frequency,
-                      next_payday, active, created_at
+                      next_payday, active, end_date, created_at
                FROM income_sources ORDER BY next_payday, id"""
         ).fetchall()
     return [dict(row) | {"active": bool(row["active"])} for row in rows]
@@ -639,16 +672,17 @@ def create_income_source(body: IncomeSourceCreate):
                 raise HTTPException(status_code=404, detail="Household member not found")
             cursor = db.execute(
                 """INSERT INTO income_sources
-                   (person_id, name, net_amount_cents, frequency, next_payday, active)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (person_id, name, net_amount_cents, frequency, next_payday, active, end_date)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     body.person_id, name, body.net_amount_cents, body.frequency,
                     body.next_payday.isoformat(), int(body.active),
+                    body.end_date.isoformat() if body.end_date else None,
                 ),
             )
             row = db.execute(
                 """SELECT id, person_id, name, net_amount_cents, frequency,
-                          next_payday, active, created_at
+                          next_payday, active, end_date, created_at
                    FROM income_sources WHERE id = ?""",
                 (cursor.lastrowid,),
             ).fetchone()
@@ -667,6 +701,8 @@ def update_income_source(income_id: int, body: IncomeSourceUpdate):
         updates["name"] = name
     if "next_payday" in updates:
         updates["next_payday"] = updates["next_payday"].isoformat()
+    if "end_date" in updates and updates["end_date"] is not None:
+        updates["end_date"] = updates["end_date"].isoformat()
     if "active" in updates:
         updates["active"] = int(updates["active"])
     if not updates:
@@ -693,7 +729,7 @@ def update_income_source(income_id: int, body: IncomeSourceUpdate):
             )
             row = db.execute(
                 """SELECT id, person_id, name, net_amount_cents, frequency,
-                          next_payday, active, created_at
+                          next_payday, active, end_date, created_at
                    FROM income_sources WHERE id = ?""",
                 (income_id,),
             ).fetchone()
@@ -702,6 +738,64 @@ def update_income_source(income_id: int, body: IncomeSourceUpdate):
             status_code=422, detail="Update violates a database constraint"
         ) from exc
     return dict(row) | {"active": bool(row["active"])}
+
+
+
+@app.get("/api/income-sources/{income_id}/amount-overrides", response_model=list[IncomeAmountOverrideOut])
+def list_income_amount_overrides(income_id: int):
+    with database.connect() as db:
+        exists = db.execute("SELECT id FROM income_sources WHERE id = ?", (income_id,)).fetchone()
+        if exists is None:
+            raise HTTPException(status_code=404, detail="Income source not found")
+        rows = db.execute(
+            """SELECT id, income_source_id, start_date, end_date, amount_cents, reason, created_at
+               FROM income_amount_overrides WHERE income_source_id = ?
+               ORDER BY start_date, end_date, id""",
+            (income_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/income-sources/{income_id}/amount-overrides", response_model=IncomeAmountOverrideOut, status_code=status.HTTP_201_CREATED)
+def create_income_amount_override(income_id: int, body: IncomeAmountOverrideCreate):
+    try:
+        with database.connect() as db:
+            exists = db.execute("SELECT id FROM income_sources WHERE id = ?", (income_id,)).fetchone()
+            if exists is None:
+                raise HTTPException(status_code=404, detail="Income source not found")
+            overlap = db.execute(
+                """SELECT id FROM income_amount_overrides
+                   WHERE income_source_id = ? AND start_date <= ? AND end_date >= ?""",
+                (income_id, body.end_date.isoformat(), body.start_date.isoformat()),
+            ).fetchone()
+            if overlap:
+                raise HTTPException(status_code=409, detail="This date range overlaps an existing amount override")
+            cursor = db.execute(
+                """INSERT INTO income_amount_overrides
+                   (income_source_id, start_date, end_date, amount_cents, reason)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (income_id, body.start_date.isoformat(), body.end_date.isoformat(),
+                 body.amount_cents, body.reason.strip()),
+            )
+            row = db.execute(
+                """SELECT id, income_source_id, start_date, end_date, amount_cents, reason, created_at
+                   FROM income_amount_overrides WHERE id = ?""", (cursor.lastrowid,)
+            ).fetchone()
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=422, detail="Amount override violates a database constraint") from exc
+    return dict(row)
+
+
+@app.delete("/api/income-sources/{income_id}/amount-overrides/{override_id}")
+def delete_income_amount_override(income_id: int, override_id: int):
+    with database.connect() as db:
+        cursor = db.execute(
+            "DELETE FROM income_amount_overrides WHERE id = ? AND income_source_id = ?",
+            (override_id, income_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Amount override not found")
+    return {"deleted": True, "id": override_id}
 
 
 @app.delete("/api/income-sources/{income_id}")

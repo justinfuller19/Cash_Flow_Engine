@@ -417,19 +417,38 @@ def _weekly_cash_flow_for_window(
         income_occurrences = []
         rows = db.execute(
             """SELECT i.id, i.name, i.net_amount_cents, i.frequency, i.next_payday,
-                      p.name AS person_name
+                      i.end_date, p.name AS person_name
                FROM income_sources i JOIN persons p ON p.id = i.person_id
                WHERE i.active = 1 AND p.active = 1
                ORDER BY i.next_payday, i.id"""
         ).fetchall()
+        override_rows = db.execute(
+            """SELECT income_source_id, start_date, end_date, amount_cents
+               FROM income_amount_overrides
+               WHERE start_date <= ? AND end_date >= ?
+               ORDER BY start_date, id""",
+            (end.isoformat(), start.isoformat()),
+        ).fetchall()
+        overrides_by_source = {}
+        for override in override_rows:
+            overrides_by_source.setdefault(override["income_source_id"], []).append(override)
+
         for row in rows:
             anchor = date.fromisoformat(row["next_payday"])
+            last_payday = date.fromisoformat(row["end_date"]) if row["end_date"] else None
             for payday in occurrences_between(anchor, row["frequency"], start, end):
+                if last_payday is not None and payday > last_payday:
+                    continue
+                amount_cents = row["net_amount_cents"]
+                for override in overrides_by_source.get(row["id"], []):
+                    if override["start_date"] <= payday.isoformat() <= override["end_date"]:
+                        amount_cents = override["amount_cents"]
+                        break
                 income_occurrences.append({
                     "source_id": row["id"],
                     "name": f'{row["person_name"]} — {row["name"]}',
                     "date": payday.isoformat(),
-                    "amount_cents": row["net_amount_cents"],
+                    "amount_cents": amount_cents,
                 })
         income_occurrences.sort(key=lambda item: (item["date"], item["name"]))
         income_schedules = {

@@ -159,15 +159,15 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 ## Phase 7 — Income changes and end dates
 
 **Priority:** Medium-Low  
-**Status:** Not started
+**Status:** Implemented on `feature/phase-7-income-changes`; awaiting CI and review in PR.
 
-- [ ] Add optional end dates to recurring income sources.
-- [ ] Evaluate optional end dates for recurring bills when appropriate.
-- [ ] Add temporary amount overrides for specified upcoming occurrences without permanently changing the recurring amount.
-- [ ] Allow users to review and remove overrides.
-- [ ] Preserve irregular income as explicit one-time dated occurrences.
-- [ ] Ensure schedule edits do not rewrite historical transactions.
-- [ ] Test that no occurrences appear after end dates and normal amounts resume after temporary overrides.
+- [x] Add optional end dates to recurring income sources and allow clearing the end date.
+- [ ] Evaluate optional end dates for recurring bills when appropriate; not included in this income-focused implementation.
+- [x] Add temporary amount overrides for specified dates without permanently changing the recurring amount.
+- [x] Allow users to review and remove overrides; overlapping override ranges are rejected.
+- [x] Preserve irregular income as explicit one-time dated occurrences through the existing recurrence rule.
+- [x] Ensure schedule edits and overrides affect projections only and do not rewrite historical transactions.
+- [x] Test that no occurrences appear after end dates and normal amounts resume outside temporary override ranges.
 
 # Milestone C — Better Error Prevention and Usability
 
