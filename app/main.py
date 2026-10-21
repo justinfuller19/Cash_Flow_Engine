@@ -3,7 +3,7 @@ import sqlite3
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
 from . import database
 from .engine import (
@@ -28,6 +28,7 @@ from .application_update import router as application_update_router
 from .household import router as household_router
 from .security import remote_access_guard
 from .auth import (household_auth_guard, initialize_auth_database, login_page, register_page, login_route, register_route, logout_route, account_page, account_update_route)
+from .ui_refresh import enhance_html
 
 
 @asynccontextmanager
@@ -56,6 +57,44 @@ app.include_router(application_update_router)
 app.include_router(household_router)
 app.middleware("http")(household_auth_guard)
 app.middleware("http")(remote_access_guard)
+
+@app.middleware("http")
+async def refresh_html_pages(request: Request, call_next):
+    """Apply the shared responsive design to browser pages only."""
+    response = await call_next(request)
+    if request.url.path in {"/docs", "/redoc", "/openapi.json"}:
+        return response
+    if "text/html" not in response.headers.get("content-type", ""):
+        return response
+    body = b"".join([chunk async for chunk in response.body_iterator])
+    try:
+        html = body.decode("utf-8")
+    except UnicodeDecodeError:
+        # The original streaming iterator has been consumed, so rebuild the
+        # response body rather than returning an exhausted response object.
+        headers = {
+            key: value for key, value in response.headers.items()
+            if key.lower() not in {"content-length", "content-encoding"}
+        }
+        return Response(
+            content=body,
+            status_code=response.status_code,
+            headers=headers,
+            media_type=response.headers.get("content-type", "text/html"),
+            background=response.background,
+        )
+    html = enhance_html(html, include_navigation=request.url.path not in {"/login", "/register"})
+    headers = {
+        key: value for key, value in response.headers.items()
+        if key.lower() not in {"content-length", "content-encoding"}
+    }
+    return HTMLResponse(
+        content=html,
+        status_code=response.status_code,
+        headers=headers,
+        background=response.background,
+    )
+
 
 
 @app.get("/login", response_class=HTMLResponse)
