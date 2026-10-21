@@ -175,8 +175,11 @@ For rollback, stop the service, check out the previous known-good commit, reinst
 Once the application updater is installed, open **Settings & Data → Update application**, type
 `UPDATE APPLICATION`, and confirm. It backs up all configured household databases using the
 existing backup service, fetches the latest merged `main` branch, installs Python requirements,
-runs the automated test suite, restarts the app, and checks its local health endpoint. The page
-shows the result after the application returns.
+runs the automated test suite, synchronizes the systemd service definition, and checks its local
+health endpoint. When the existing environment file does not already specify
+`CASHFLOW_ALLOW_LAN`, the updater enables trusted-LAN mode without overwriting other settings.
+It also attempts to install and start Avahi for hostname discovery; if that is unavailable, use the
+Pi's DHCP name or IP address. The page shows the result after the application returns.
 
 The updater is designed for the root-owned `/opt/cashflow-engine` installation created by the
 Raspberry Pi installer. The app service account can only create a fixed request marker watched by a root-owned systemd path unit;
