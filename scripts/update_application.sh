@@ -7,6 +7,9 @@ readonly INSTALL_DIR="/opt/cashflow-engine"
 readonly STATUS_FILE="/var/lib/cashflow-engine/application-update-status.json"
 readonly BACKUP_SERVICE="cashflow-engine-backup.service"
 readonly APP_SERVICE="cashflow-engine.service"
+readonly SERVICE_UNIT_FILE="/etc/systemd/system/cashflow-engine.service"
+readonly NGINX_SITE_FILE="/etc/nginx/sites-available/cashflow-engine"
+readonly ENV_FILE="/etc/cashflow-engine.env"
 
 previous_sha=""
 app_stopped=0
@@ -40,6 +43,10 @@ fail_update() {
   if [[ -n "$previous_sha" ]]; then
     git -C "$INSTALL_DIR" reset --hard "$previous_sha" >/dev/null 2>&1 || true
     "$INSTALL_DIR/.venv/bin/python" -m pip install -r "$INSTALL_DIR/requirements.txt" >/dev/null 2>&1 || true
+    if [[ -f "$INSTALL_DIR/deploy/cashflow-engine.service" ]]; then
+      install -o root -g root -m 644 "$INSTALL_DIR/deploy/cashflow-engine.service" "$SERVICE_UNIT_FILE" >/dev/null 2>&1 || true
+      systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
   fi
   if [[ "$app_stopped" -eq 1 ]]; then
     systemctl start "$APP_SERVICE" >/dev/null 2>&1 || true
@@ -77,6 +84,37 @@ app_stopped=1
 git reset --hard FETCH_HEAD
 "$INSTALL_DIR/.venv/bin/python" -m pip install -r "$INSTALL_DIR/requirements.txt"
 "$INSTALL_DIR/.venv/bin/python" -m pytest -q
+
+write_status "running" "Applying the service configuration for trusted home-network access."
+install -o root -g root -m 644 "$INSTALL_DIR/deploy/cashflow-engine.service" "$SERVICE_UNIT_FILE"
+systemctl daemon-reload
+# Preserve all existing settings and explicit choices. Add LAN mode only when
+# the setting has never been configured, so the household login replaces the
+# redundant Basic-auth prompt for private-network clients after this update.
+if [[ ! -f "$ENV_FILE" ]]; then
+  install -o root -g root -m 600 /dev/null "$ENV_FILE"
+fi
+if ! grep -Eq '^[[:space:]]*CASHFLOW_ALLOW_LAN=' "$ENV_FILE"; then
+  printf '\nCASHFLOW_ALLOW_LAN=1\n' >> "$ENV_FILE"
+fi
+chmod 600 "$ENV_FILE"
+if ! command -v nginx >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+  apt-get install -y nginx
+fi
+install -o root -g root -m 644 "$INSTALL_DIR/deploy/nginx-cashflow-engine.conf" "$NGINX_SITE_FILE"
+ln -sfn "$NGINX_SITE_FILE" /etc/nginx/sites-enabled/cashflow-engine
+if [[ -L /etc/nginx/sites-enabled/default ]]; then
+  rm -f /etc/nginx/sites-enabled/default
+fi
+nginx -t
+systemctl enable --now nginx
+systemctl reload nginx
+if ! command -v avahi-daemon >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+  apt-get install -y avahi-daemon || true
+fi
+if command -v avahi-daemon >/dev/null 2>&1; then
+  systemctl enable --now avahi-daemon || true
+fi
 
 write_status "running" "Starting the updated application."
 systemctl start "$APP_SERVICE"

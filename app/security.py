@@ -1,4 +1,4 @@
-"""Optional Basic authentication and loopback-only default access policy."""
+"""Optional Basic authentication and guarded loopback/LAN access policy."""
 import base64
 import binascii
 import ipaddress
@@ -16,6 +16,15 @@ def _is_loopback(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def _is_private_network_client(host: str) -> bool:
+    """Accept direct private-network clients only; do not trust proxy headers."""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_private or address.is_loopback
 
 
 def _valid_basic_auth(header: str, username: str, password: str) -> bool:
@@ -47,6 +56,22 @@ async def remote_access_guard(request: Request, call_next):
             content={"detail": "Set both CASHFLOW_USERNAME and CASHFLOW_PASSWORD, or unset both."},
         )
 
+    client_host = request.client.host if request.client else ""
+    forwarded = request.headers.get("x-forwarded-for")
+    allow_lan = os.environ.get("CASHFLOW_ALLOW_LAN", "").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+
+    # LAN mode is an explicit private-network boundary: never trust proxy headers
+    # and never fall back to Basic auth for public clients while it is enabled.
+    if allow_lan:
+        if forwarded or not _is_private_network_client(client_host):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "This server only accepts direct private-network clients in LAN mode."},
+            )
+        return await call_next(request)
+
     if has_username and has_password:
         if not _valid_basic_auth(request.headers.get("authorization", ""), username, password):
             return Response(
@@ -56,15 +81,14 @@ async def remote_access_guard(request: Request, call_next):
             )
         return await call_next(request)
 
-    client_host = request.client.host if request.client else ""
-    forwarded = request.headers.get("x-forwarded-for")
     if forwarded or not _is_loopback(client_host):
         return JSONResponse(
             status_code=503,
             content={
                 "detail": (
-                    "Remote access is disabled. Configure CASHFLOW_USERNAME and "
-                    "CASHFLOW_PASSWORD and use HTTPS or a trusted VPN."
+                    "Remote access is disabled. Set CASHFLOW_ALLOW_LAN=1 to allow direct "
+                    "private-network clients, or configure CASHFLOW_USERNAME and "
+                    "CASHFLOW_PASSWORD for Basic authentication."
                 )
             },
         )

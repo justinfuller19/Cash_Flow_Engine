@@ -1,6 +1,6 @@
 # Raspberry Pi deployment and backups
 
-This guide installs CashFlow Engine as a private systemd service. The service binds to `127.0.0.1` by default. Without credentials, requests from non-loopback clients are blocked. Optional Basic authentication can be enabled with `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`; use it only behind HTTPS or a trusted VPN because Basic authentication does not encrypt traffic.
+This guide installs CashFlow Engine as a private systemd service. The application listens only on loopback port 8000 behind nginx. Nginx serves it on standard HTTP port 80 (no port number in the browser URL) and allows only private-network client addresses. The app's own household login remains required for financial pages. Do not port-forward the service or expose it to the public internet.
 
 ## 1. Install prerequisites
 
@@ -8,7 +8,7 @@ On Raspberry Pi OS:
 
 ```bash
 sudo apt update
-sudo apt install -y git python3 python3-venv
+sudo apt install -y git python3 python3-venv nginx avahi-daemon
 ```
 
 Use a Python version tested by CI (3.11, 3.12, or 3.13).
@@ -44,8 +44,12 @@ Set:
 CASHFLOW_DB_PATH=/var/lib/cashflow-engine/cashflow.db
 CASHFLOW_BACKUP_DIR=/var/backups/cashflow-engine
 CASHFLOW_BACKUP_RETENTION_DAYS=30
-# Optional: set BOTH to require Basic authentication for all requests.
-# Use long random values; do not commit real credentials.
+# Allow direct connections from private LAN addresses without a second
+# Basic-auth prompt. The app's own household login still protects the app.
+CASHFLOW_ALLOW_LAN=1
+#
+# Optional: instead of LAN mode, set BOTH to require Basic authentication
+# for all remote requests. Basic auth does not encrypt traffic.
 # CASHFLOW_USERNAME=household
 # CASHFLOW_PASSWORD=replace-with-a-long-random-secret
 #
@@ -65,6 +69,11 @@ The environment file contains local configuration and may contain credentials; k
 
 ```bash
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine.service /etc/systemd/system/
+sudo install -o root -g root -m 644 /opt/cashflow-engine/deploy/nginx-cashflow-engine.conf /etc/nginx/sites-available/cashflow-engine
+sudo ln -sfn /etc/nginx/sites-available/cashflow-engine /etc/nginx/sites-enabled/cashflow-engine
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl enable --now nginx
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-backup.service /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-backup.timer /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-email-reminders.service /etc/systemd/system/
@@ -72,6 +81,7 @@ sudo cp /opt/cashflow-engine/deploy/cashflow-engine-email-reminders.timer /etc/s
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-weekly-report.service /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-weekly-report.timer /etc/systemd/system/
 sudo systemctl daemon-reload
+sudo systemctl enable --now avahi-daemon
 sudo systemctl enable --now cashflow-engine.service
 sudo systemctl enable --now cashflow-engine-backup.timer
 sudo systemctl enable --now cashflow-engine-email-reminders.timer
@@ -84,9 +94,10 @@ Check status and logs:
 sudo systemctl status cashflow-engine
 sudo journalctl -u cashflow-engine -n 100 --no-pager
 curl http://127.0.0.1:8000/health
+curl http://127.0.0.1/health
 ```
 
-Open `http://127.0.0.1:8000` in a browser running on the Pi itself. Keep the service on localhost. If accessing it through a reverse proxy, configure both credentials and TLS; the middleware treats requests carrying `X-Forwarded-For` as remote and requires authentication.
+From another device on the same Wi-Fi, open `http://<pi-hostname>.local` (replace `<pi-hostname>` with the result of running `hostname` on the Pi). No `:8000` is needed: nginx listens on port 80 and forwards requests internally to the app on `127.0.0.1:8000`. Avahi advertises the Pi hostname through local mDNS. If `.local` name resolution is not supported by a device or router, use the Pi's DHCP-reserved name or IP address. Nginx permits only private IPv4/IPv6 network ranges and denies other addresses. The app's household login remains required. The app itself is bound to loopback and cannot be reached directly from another device on port 8000.
 
 ## 5. Configure optional email reports and reminders
 
@@ -157,7 +168,8 @@ For rollback, stop the service, check out the previous known-good commit, reinst
 ## Security and privacy notes
 
 - Do not port-forward this service or expose it to the public internet.
-- Without `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`, non-loopback and forwarded requests are blocked. If credentials are configured, Basic authentication is required for every request in addition to the household login.
+- Nginx listens on port 80 and allows private-network address ranges only; the application listens on loopback port 8000 behind nginx. The household login remains required for financial pages.
+- If CASHFLOW_ALLOW_LAN is disabled, non-loopback requests are blocked unless Basic authentication is configured.
 - Basic authentication is not encryption. Use HTTPS or a trusted VPN for remote access; do not expose the service directly to the public internet.
 - Protect backups like the live database; they contain the same financial information.
 - Test a restore periodically. A backup that has never been restored is not a verified recovery plan.
@@ -169,8 +181,13 @@ For rollback, stop the service, check out the previous known-good commit, reinst
 Once the application updater is installed, open **Settings & Data → Update application**, type
 `UPDATE APPLICATION`, and confirm. It backs up all configured household databases using the
 existing backup service, fetches the latest merged `main` branch, installs Python requirements,
-runs the automated test suite, restarts the app, and checks its local health endpoint. The page
-shows the result after the application returns.
+runs the automated test suite, synchronizes the systemd service definition, and checks its local
+health endpoint. When the existing environment file does not already specify
+`CASHFLOW_ALLOW_LAN`, the updater enables trusted-LAN mode without overwriting other settings.
+It installs and configures nginx as a private-network-only reverse proxy on port 80, keeps the app
+bound to loopback port 8000, validates the nginx configuration, and starts/reloads nginx. It also
+attempts to install and start Avahi for hostname discovery; if that is unavailable, use the Pi's
+DHCP name or IP address. The page shows the result after the application returns.
 
 The updater is designed for the root-owned `/opt/cashflow-engine` installation created by the
 Raspberry Pi installer. The app service account can only create a fixed request marker watched by a root-owned systemd path unit;
