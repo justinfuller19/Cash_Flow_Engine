@@ -36,7 +36,7 @@ def test_enhance_html_does_not_duplicate_existing_main_navigation():
 
     refreshed = enhance_html(html)
 
-    assert refreshed.count('class="cfe-global-nav"') == 1
+    assert refreshed.count('aria-label="Main navigation"') == 1
     assert 'aria-label="Main navigation">Existing' in refreshed
 
 
