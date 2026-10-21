@@ -40,7 +40,22 @@ def test_enhance_html_does_not_duplicate_existing_main_navigation():
     assert 'aria-label="Main navigation">Existing' in refreshed
 
 
-def test_enhance_html_without_head_remains_valid_text():
+def test_enhance_html_without_head_gets_styles():
     html = "<body><main>Fragment</main></body>"
 
-    assert enhance_html(html).startswith("<body>")
+    refreshed = enhance_html(html)
+
+    assert refreshed.startswith("<body>")
+    assert 'id="cfe-ui-refresh"' in refreshed
+    assert 'aria-label="Main navigation"' in refreshed
+
+
+def test_auth_page_without_head_gets_styles_but_no_navigation():
+    # Matches the structure returned by app.auth._page.
+    html = '<!doctype html><html lang="en"><meta charset="utf-8"><title>Login</title><style>body{color:black}</style><body><main>Login</main></body></html>'
+
+    refreshed = enhance_html(html, include_navigation=False)
+
+    assert 'id="cfe-ui-refresh"' in refreshed
+    assert refreshed.index('id="cfe-ui-refresh"') < refreshed.index("<style>")
+    assert 'aria-label="Main navigation"' not in refreshed
