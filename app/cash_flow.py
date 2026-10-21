@@ -1056,10 +1056,10 @@ async function loadPossiblePaymentMatches(){
    li.appendChild(el("div","detail",item.description+" · "+dollars(item.amount_cents)+" · "+item.transaction_date+" · "+item.obligation_type+" due "+item.due_date));
    li.appendChild(el("div","detail",item.reason));
    const confirm=el("button","","Confirm match");confirm.type="button";
-   confirm.addEventListener("click",async()=>{confirm.disabled=true;try{await api(item.confirm_url,{method:"POST"});message("Transaction linked to "+item.obligation_name+".");await load();}catch(e){message(e.message,"error");confirm.disabled=false;}});
+   confirm.addEventListener("click",async()=>{confirm.disabled=true;try{await post(item.confirm_url,{});message("Transaction linked to "+item.obligation_name+".");await load();}catch(e){message(e.message,"error");confirm.disabled=false;}});
    li.appendChild(confirm);
    const dismiss=el("button","secondary","Dismiss");dismiss.type="button";dismiss.style.marginLeft="8px";
-   dismiss.addEventListener("click",async()=>{dismiss.disabled=true;try{await api(item.dismiss_url,{method:"POST"});message("Suggestion dismissed; it will stay hidden unless the transaction data changes.");await loadPossiblePaymentMatches();}catch(e){message(e.message,"error");dismiss.disabled=false;}});
+   dismiss.addEventListener("click",async()=>{dismiss.disabled=true;try{await post(item.dismiss_url,{});message("Suggestion dismissed; it will stay hidden unless the transaction data changes.");await loadPossiblePaymentMatches();}catch(e){message(e.message,"error");dismiss.disabled=false;}});
    li.appendChild(dismiss);
    root.appendChild(li);
   }
