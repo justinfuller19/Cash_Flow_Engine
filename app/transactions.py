@@ -269,7 +269,13 @@ def _bill_due_dates_near(transaction_date: date, bill: dict) -> list[date]:
                 dates.append(due)
             next_month = cursor.month + 1
             cursor = date(cursor.year + (next_month > 12), 1 if next_month > 12 else next_month, 1)
-    return sorted(set(dates))
+    # A single transaction can link to only one bill. For frequent schedules,
+    # several due dates may fall inside the ±7-day search window, so use the
+    # closest due cycle rather than suggesting the same expense for each one.
+    return sorted(
+        set(dates),
+        key=lambda due: (abs((transaction_date - due).days), due),
+    )[:1]
 
 
 def _refresh_bill_payment_suggestions(db) -> None:
