@@ -508,3 +508,50 @@ def test_v20_migration_adds_bill_match_queue_without_changing_transactions(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'bill_payment_match_suggestions'"
         ).fetchone()[0] == 1
         assert db.execute("PRAGMA user_version").fetchone()[0] == 21
+
+
+def test_bill_edit_reconsiders_previously_dismissed_payment_suggestion(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    bill = client.post(
+        "/api/bills",
+        json={
+            "name": "Phone",
+            "amount_cents": 9000,
+            "due_day_of_month": today.day,
+            "next_due_date": today.isoformat(),
+            "frequency": "monthly",
+            "category": "other",
+            "active": True,
+            "autopay": False,
+        },
+    )
+    assert bill.status_code == 201, bill.text
+    transaction = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today.isoformat(),
+            "transaction_type": "expense",
+            "category": "other",
+            "description": "Phone bill payment",
+            "amount_cents": -9000,
+        },
+    )
+    assert transaction.status_code == 201, transaction.text
+    suggestion = next(
+        item for item in client.get("/api/bill-payment-suggestions").json()
+        if item["bill_id"] == bill.json()["id"]
+    )
+    assert client.post(
+        f"/api/bill-payment-suggestions/{suggestion['id']}/dismiss"
+    ).status_code == 200
+    assert client.get("/api/bill-payment-suggestions").json() == []
+
+    changed = client.patch(
+        f"/api/bills/{bill.json()['id']}",
+        json={"amount_cents": 9500},
+    )
+    assert changed.status_code == 200, changed.text
+    reconsidered = client.get("/api/bill-payment-suggestions").json()
+    refreshed = next(item for item in reconsidered if item["id"] == suggestion["id"])
+    assert "$95.00" in refreshed["reason"]
