@@ -62,8 +62,14 @@ async def remote_access_guard(request: Request, call_next):
         "1", "true", "yes", "on"
     }
 
-    # Only trust direct private-network clients, never proxy-supplied addresses.
-    if allow_lan and not forwarded and _is_private_network_client(client_host):
+    # LAN mode is an explicit private-network boundary: never trust proxy headers
+    # and never fall back to Basic auth for public clients while it is enabled.
+    if allow_lan:
+        if forwarded or not _is_private_network_client(client_host):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "This server only accepts direct private-network clients in LAN mode."},
+            )
         return await call_next(request)
 
     if has_username and has_password:
