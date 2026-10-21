@@ -27,7 +27,7 @@ from .settings_data import router as settings_data_router
 from .application_update import router as application_update_router
 from .household import router as household_router
 from .security import remote_access_guard
-from .auth import (household_auth_guard, initialize_auth_database, login_page, register_page, login_route, register_route, logout_route, account_page, account_update_route)
+from .auth import (household_auth_guard, initialize_auth_database, login_page, register_page, login_route, register_route, logout_route, account_page, account_update_route)\nfrom .ui_refresh import enhance_html
 
 
 @asynccontextmanager
@@ -56,6 +56,32 @@ app.include_router(application_update_router)
 app.include_router(household_router)
 app.middleware("http")(household_auth_guard)
 app.middleware("http")(remote_access_guard)
+
+@app.middleware("http")
+async def refresh_html_pages(request: Request, call_next):
+    """Apply the shared responsive design to browser pages only."""
+    response = await call_next(request)
+    if request.url.path in {"/docs", "/redoc", "/openapi.json"}:
+        return response
+    if "text/html" not in response.headers.get("content-type", ""):
+        return response
+    body = b"".join([chunk async for chunk in response.body_iterator])
+    try:
+        html = body.decode("utf-8")
+    except UnicodeDecodeError:
+        return response
+    html = enhance_html(html, include_navigation=request.url.path not in {"/login", "/register"})
+    headers = {
+        key: value for key, value in response.headers.items()
+        if key.lower() not in {"content-length", "content-encoding"}
+    }
+    return HTMLResponse(
+        content=html,
+        status_code=response.status_code,
+        headers=headers,
+        background=response.background,
+    )
+
 
 
 @app.get("/login", response_class=HTMLResponse)
