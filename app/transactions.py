@@ -114,6 +114,12 @@ def _refresh_debt_payment_suggestions(db) -> None:
                      (due_date + timedelta(days=7)).isoformat()),
                 ).fetchone()[0]
                 if already_linked >= required_minimum:
+                    db.execute(
+                        """UPDATE debt_payment_match_suggestions
+                           SET status = 'stale', updated_at = CURRENT_TIMESTAMP
+                           WHERE transaction_id = ? AND debt_id = ? AND due_date = ? AND status = 'pending'""",
+                        (transaction["id"], debt["id"], due_date.isoformat()),
+                    )
                     continue
                 due_debts.append((debt, due_date, debt["name"].strip().lower() in evidence_text))
         named = [item for item in due_debts if item[2]]
@@ -323,6 +329,12 @@ def _refresh_bill_payment_suggestions(db) -> None:
                      (due_date + timedelta(days=7)).isoformat()),
                 ).fetchone()[0]
                 if linked_total >= bill_amount:
+                    db.execute(
+                        """UPDATE bill_payment_match_suggestions
+                           SET status = 'stale', updated_at = CURRENT_TIMESTAMP
+                           WHERE transaction_id = ? AND bill_id = ? AND due_date = ? AND status = 'pending'""",
+                        (transaction["id"], bill["id"], due_iso),
+                    )
                     continue
                 if not name_match and amount > bill_amount * 2 + 500:
                     continue
