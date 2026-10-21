@@ -94,6 +94,9 @@ if [[ -f "$ENV_FILE" ]] && ! grep -Eq '^[[:space:]]*CASHFLOW_ALLOW_LAN=' "$ENV_F
   printf '\nCASHFLOW_ALLOW_LAN=1\n' >> "$ENV_FILE"
   chmod 600 "$ENV_FILE"
 fi
+if command -v avahi-daemon >/dev/null 2>&1; then
+  systemctl enable --now avahi-daemon || true
+fi
 
 write_status "running" "Starting the updated application."
 systemctl start "$APP_SERVICE"
