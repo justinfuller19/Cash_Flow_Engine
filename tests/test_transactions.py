@@ -327,3 +327,139 @@ def test_dismissed_debt_match_can_reappear_after_transaction_data_changes(
     assert len(refreshed) == 1
     assert refreshed[0]["debt_id"] == debt_id
     assert refreshed[0]["confidence"] == "high"
+
+
+def test_bill_payment_suggestions_explain_candidates_and_require_confirmation(
+    tmp_path, monkeypatch
+):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    with database.connect() as db:
+        bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date, category, frequency, active)
+               VALUES ('Electric', 8000, ?, ?, 'other', 'monthly', 1)""",
+            (today.day, today.isoformat()),
+        ).lastrowid
+
+    transaction = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today.isoformat(),
+            "transaction_type": "expense",
+            "category": "other",
+            "description": "Electric bill payment",
+            "amount_cents": -8000,
+        },
+    )
+    assert transaction.status_code == 201, transaction.text
+    transaction_id = transaction.json()["id"]
+
+    response = client.get("/api/bill-payment-suggestions")
+    assert response.status_code == 200, response.text
+    suggestions = response.json()
+    suggestion = next(item for item in suggestions if item["bill_id"] == bill_id)
+    assert suggestion["transaction_id"] == transaction_id
+    assert suggestion["confidence"] == "high"
+    assert "include the bill name" in suggestion["reason"]
+    assert "8000" not in suggestion["reason"]  # Reason is human-readable dollars, not raw cents.
+    with database.connect() as db:
+        linked = db.execute(
+            "SELECT linked_obligation_type, linked_obligation_id FROM transactions WHERE id = ?",
+            (transaction_id,),
+        ).fetchone()
+    assert linked["linked_obligation_type"] is None
+    assert linked["linked_obligation_id"] is None
+
+    dismissed = client.post(
+        f"/api/bill-payment-suggestions/{suggestion['id']}/dismiss"
+    )
+    assert dismissed.status_code == 200, dismissed.text
+    assert dismissed.json()["status"] == "dismissed"
+    assert all(item["id"] != suggestion["id"] for item in client.get("/api/bill-payment-suggestions").json())
+
+
+def test_bill_payment_suggestion_confirmation_links_only_selected_bill(
+    tmp_path, monkeypatch
+):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    with database.connect() as db:
+        bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date, category, frequency, active)
+               VALUES ('Internet', 6500, ?, ?, 'other', 'monthly', 1)""",
+            (today.day, today.isoformat()),
+        ).lastrowid
+    transaction = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today.isoformat(),
+            "transaction_type": "expense",
+            "category": "other",
+            "description": "Internet payment",
+            "amount_cents": -6500,
+        },
+    ).json()
+    suggestions = client.get("/api/bill-payment-suggestions").json()
+    suggestion = next(item for item in suggestions if item["bill_id"] == bill_id)
+
+    confirmed = client.post(f"/api/bill-payment-suggestions/{suggestion['id']}/confirm")
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["status"] == "confirmed"
+    with database.connect() as db:
+        linked = db.execute(
+            "SELECT linked_obligation_type, linked_obligation_id FROM transactions WHERE id = ?",
+            (transaction["id"],),
+        ).fetchone()
+    assert linked["linked_obligation_type"] == "bill"
+    assert linked["linked_obligation_id"] == bill_id
+    assert client.get("/api/bill-payment-suggestions").json() == []
+
+
+def test_bill_payment_suggestions_ignore_unrelated_and_already_covered_expenses(
+    tmp_path, monkeypatch
+):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    with database.connect() as db:
+        bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date, category, frequency, active)
+               VALUES ('Water', 7000, ?, ?, 'other', 'monthly', 1)""",
+            (today.day, today.isoformat()),
+        ).lastrowid
+    unrelated = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today.isoformat(),
+            "transaction_type": "expense",
+            "category": "other",
+            "description": "Movie tickets",
+            "amount_cents": -7000,
+        },
+    )
+    assert unrelated.status_code == 201, unrelated.text
+    linked = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today.isoformat(),
+            "transaction_type": "expense",
+            "category": "other",
+            "linked_obligation_type": "bill",
+            "linked_obligation_id": bill_id,
+            "description": "Water bill payment",
+            "amount_cents": -7000,
+        },
+    )
+    assert linked.status_code == 201, linked.text
+    assert client.get("/api/bill-payment-suggestions").json() == []
+
+
+def test_weekly_report_includes_possible_unmatched_payment_review(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    page = client.get("/cash-flow")
+    assert page.status_code == 200
+    assert "Possible unmatched payments" in page.text
+    assert "/api/bill-payment-suggestions" in page.text
+    assert "/api/debt-payment-suggestions" in page.text
