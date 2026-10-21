@@ -8,6 +8,7 @@ readonly STATUS_FILE="/var/lib/cashflow-engine/application-update-status.json"
 readonly BACKUP_SERVICE="cashflow-engine-backup.service"
 readonly APP_SERVICE="cashflow-engine.service"
 readonly SERVICE_UNIT_FILE="/etc/systemd/system/cashflow-engine.service"
+readonly NGINX_SITE_FILE="/etc/nginx/sites-available/cashflow-engine"
 readonly ENV_FILE="/etc/cashflow-engine.env"
 
 previous_sha=""
@@ -97,6 +98,17 @@ if ! grep -Eq '^[[:space:]]*CASHFLOW_ALLOW_LAN=' "$ENV_FILE"; then
   printf '\nCASHFLOW_ALLOW_LAN=1\n' >> "$ENV_FILE"
 fi
 chmod 600 "$ENV_FILE"
+if ! command -v nginx >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+  apt-get install -y nginx
+fi
+install -o root -g root -m 644 "$INSTALL_DIR/deploy/nginx-cashflow-engine.conf" "$NGINX_SITE_FILE"
+ln -sfn "$NGINX_SITE_FILE" /etc/nginx/sites-enabled/cashflow-engine
+if [[ -L /etc/nginx/sites-enabled/default ]]; then
+  rm -f /etc/nginx/sites-enabled/default
+fi
+nginx -t
+systemctl enable --now nginx
+systemctl reload nginx
 if ! command -v avahi-daemon >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
   apt-get install -y avahi-daemon || true
 fi
