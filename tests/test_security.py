@@ -53,8 +53,8 @@ def test_lan_mode_allows_private_network_clients_without_basic_auth(monkeypatch)
 
 def test_lan_mode_does_not_allow_public_clients(monkeypatch):
     monkeypatch.setenv("CASHFLOW_ALLOW_LAN", "1")
-    monkeypatch.delenv("CASHFLOW_USERNAME", raising=False)
-    monkeypatch.delenv("CASHFLOW_PASSWORD", raising=False)
+    monkeypatch.setenv("CASHFLOW_USERNAME", "household")
+    monkeypatch.setenv("CASHFLOW_PASSWORD", "long-random-test-password")
     client = TestClient(app, client=("8.8.8.8", 12345))
     response = client.get("/health")
     assert response.status_code == 503
