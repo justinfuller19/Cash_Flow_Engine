@@ -3,7 +3,7 @@ import sqlite3
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
 from . import database
 from .engine import (
@@ -70,7 +70,19 @@ async def refresh_html_pages(request: Request, call_next):
     try:
         html = body.decode("utf-8")
     except UnicodeDecodeError:
-        return response
+        # The original streaming iterator has been consumed, so rebuild the
+        # response body rather than returning an exhausted response object.
+        headers = {
+            key: value for key, value in response.headers.items()
+            if key.lower() not in {"content-length", "content-encoding"}
+        }
+        return Response(
+            content=body,
+            status_code=response.status_code,
+            headers=headers,
+            media_type=response.headers.get("content-type", "text/html"),
+            background=response.background,
+        )
     html = enhance_html(html, include_navigation=request.url.path not in {"/login", "/register"})
     headers = {
         key: value for key, value in response.headers.items()
