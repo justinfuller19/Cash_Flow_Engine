@@ -98,6 +98,47 @@ def test_overrides_reject_overlapping_ranges_and_invalid_dates(tmp_path, monkeyp
 
 
 
+
+def test_dashboard_paydays_respect_end_dates_and_amount_overrides(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    person = client.post("/api/people", json={"name": "Household member"}).json()
+    next_payday = date.today() + timedelta(days=7)
+
+    ended = client.post("/api/income-sources", json={
+        "person_id": person["id"], "name": "Ended contract",
+        "net_amount_cents": 50000, "frequency": "weekly",
+        "next_payday": next_payday.isoformat(),
+        "end_date": date.today().isoformat(),
+    })
+    assert ended.status_code == 201, ended.text
+
+    ongoing = client.post("/api/income-sources", json={
+        "person_id": person["id"], "name": "Temporary reduced paycheck",
+        "net_amount_cents": 200000, "frequency": "weekly",
+        "next_payday": next_payday.isoformat(),
+        "end_date": (next_payday + timedelta(days=7)).isoformat(),
+    })
+    assert ongoing.status_code == 201, ongoing.text
+    override = client.post(
+        f"/api/income-sources/{ongoing.json()['id']}/amount-overrides",
+        json={
+            "start_date": next_payday.isoformat(),
+            "end_date": next_payday.isoformat(),
+            "amount_cents": 150000,
+            "reason": "Temporary reduction",
+        },
+    )
+    assert override.status_code == 201, override.text
+
+    response = client.get("/api/dashboard")
+    assert response.status_code == 200, response.text
+    paydays = response.json()["next_paydays"]
+    assert all("Ended contract" not in item["name"] for item in paydays)
+    temporary = next(item for item in paydays if "Temporary reduced paycheck" in item["name"])
+    assert temporary["date"] == next_payday.isoformat()
+    assert temporary["amount_cents"] == 150000
+
+
 def test_v19_migration_preserves_income_and_adds_override_storage(tmp_path, monkeypatch):
     import sqlite3
 
