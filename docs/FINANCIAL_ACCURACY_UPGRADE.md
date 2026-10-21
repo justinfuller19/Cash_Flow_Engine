@@ -181,7 +181,7 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 - [x] Add a possible-unmatched-payments section to the weekly report with explicit confirm/dismiss controls.
 - [x] Explain the evidence behind each suggestion and show the transaction date, amount, and obligation due date.
 - [x] Never auto-link an uncertain match; only an explicit confirmation updates the transaction's obligation link.
-- [x] Keep dismissed suggestions hidden until relevant transaction data changes; transaction edits stale existing pending/dismissed suggestions for reconsideration.
+- [x] Keep dismissed suggestions hidden until relevant transaction data changes; transaction or obligation edits stale existing pending/dismissed suggestions for reconsideration.
 - [x] Test bill-match evidence, explicit confirmation, dismissal, unrelated expenses, already-covered bills, and weekly-report visibility.
 
 # Testing and Quality Requirements
@@ -266,5 +266,5 @@ Record meaningful implementation updates here. Each entry should include date, p
 
 
 - **2026-10-20 — Phase 4 merged (PR #40):** Household-wide buffer and horizon safe-to-spend semantics are merged. Earlier Phase 4 review notes are corrected in this update.
-- **2026-10-21 — Phase 8 implementation (PR pending):** Added schema-v21 bill-payment suggestion storage, evidence-based candidate generation for recent unlinked expenses, explicit confirm/dismiss endpoints, stale-on-transaction-edit behavior, and a possible-unmatched-payments review section in the weekly report. Existing debt-payment suggestions are surfaced alongside bill suggestions without changing their existing confirmation workflow. Added regression tests; CI for this branch is pending. No deployment performed.
+- **2026-10-21 — Phase 8 implementation (PR pending):** Added schema-v21 bill-payment suggestion storage, evidence-based candidate generation for recent unlinked expenses, explicit confirm/dismiss endpoints, stale-on-transaction/obligation-edit behavior, and a possible-unmatched-payments review section in the weekly report. Existing debt-payment suggestions are surfaced alongside bill suggestions without changing their existing confirmation workflow. Added regression tests; CI for this branch is pending. No deployment performed.
 - **2026-10-20 — Phase 5 implementation (PR pending):** Added an opt-in multi-week debt-interest estimate based on projected opening balances and APR, carried projected balances week by week, and exposed estimates in the weekly report. Estimates do not affect cash totals, saved debt balances, or recorded transactions. Regression tests cover opt-in behavior, zero APR/balance, higher APR, rounding, and unchanged cash values. CI results pending.
