@@ -199,17 +199,39 @@ def dashboard_summary():
 
         paydays = []
         rows = db.execute(
-            """SELECT i.name, i.net_amount_cents, i.frequency, i.next_payday, p.name AS person_name
+            """SELECT i.id, i.name, i.net_amount_cents, i.frequency, i.next_payday,
+                      i.end_date, p.name AS person_name
                FROM income_sources i JOIN persons p ON p.id = i.person_id
                WHERE i.active = 1 AND p.active = 1 ORDER BY i.next_payday, i.id"""
         ).fetchall()
+        override_rows = db.execute(
+            """SELECT income_source_id, start_date, end_date, amount_cents
+               FROM income_amount_overrides
+               WHERE start_date <= ? AND end_date >= ?
+               ORDER BY start_date, id""",
+            (next_90.isoformat(), today.isoformat()),
+        ).fetchall()
+        overrides_by_source = {}
+        for override in override_rows:
+            overrides_by_source.setdefault(override["income_source_id"], []).append(override)
+
         for row in rows:
             dates = occurrences_between(date.fromisoformat(row["next_payday"]), row["frequency"], today, next_90)
+            if row["end_date"]:
+                end_date = date.fromisoformat(row["end_date"])
+                dates = [payday for payday in dates if payday <= end_date]
             if dates:
+                payday = dates[0]
+                amount_cents = row["net_amount_cents"]
+                payday_iso = payday.isoformat()
+                for override in overrides_by_source.get(row["id"], []):
+                    if override["start_date"] <= payday_iso <= override["end_date"]:
+                        amount_cents = override["amount_cents"]
+                        break
                 paydays.append({
                     "name": f'{row["person_name"]} — {row["name"]}',
-                    "amount_cents": row["net_amount_cents"],
-                    "date": dates[0].isoformat(),
+                    "amount_cents": amount_cents,
+                    "date": payday_iso,
                 })
         paydays.sort(key=lambda item: (item["date"], item["name"]))
 
