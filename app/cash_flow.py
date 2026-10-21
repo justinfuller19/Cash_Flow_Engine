@@ -1024,6 +1024,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 <section class="card"><h2>Bills due</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Minimum debt payments</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Recorded transactions</h2><ul id="transactions" class="list"><li class="muted">Loading…</li></ul></section>
+<section class="card"><h2>Possible unmatched payments</h2><p class="muted">These are review suggestions only. A transaction is never linked to a bill or debt unless you confirm the match. Suggestions explain the amount, date, and description evidence.</p><ul id="possible-payments" class="list"><li class="muted">Checking for possible matches…</li></ul></section>
 <section class="card"><h2>Spending by category</h2><ul id="category-spending" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Planned savings</h2><div id="savings" class="muted">Loading…</div></section>
 <section class="card"><h2>Upcoming weeks & buffer protection</h2><ul id="future-forecast" class="list"><li class="muted">Loading future forecast…</li></ul></section>
@@ -1038,6 +1039,32 @@ async function post(url,body){const r=await fetch(url,{method:"POST",headers:{"C
 function message(text,kind=""){statusBox.textContent=text;statusBox.className="status"+(kind?" "+kind:"");statusBox.hidden=false;}
 function renderList(id,items,empty,make){const root=document.getElementById(id);root.replaceChildren();if(!items.length){root.appendChild(el("li","muted",empty));return;}for(const item of items){const li=el("li","");make(li,item);root.appendChild(li);}}
 function metric(root,label,value){const card=el("div","metric");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));root.appendChild(card);}
+
+async function loadPossiblePaymentMatches(){
+ const root=document.getElementById("possible-payments");
+ try{
+  const [debts,bills]=await Promise.all([api("/api/debt-payment-suggestions"),api("/api/bill-payment-suggestions")]);
+  const items=[
+   ...debts.map(x=>({...x,obligation_type:"debt",obligation_id:x.debt_id,obligation_name:x.debt_name,confirm_url:"/api/debt-payment-suggestions/"+x.id+"/confirm",dismiss_url:"/api/debt-payment-suggestions/"+x.id+"/dismiss"})),
+   ...bills.map(x=>({...x,obligation_type:"bill",obligation_id:x.bill_id,obligation_name:x.bill_name,confirm_url:"/api/bill-payment-suggestions/"+x.id+"/confirm",dismiss_url:"/api/bill-payment-suggestions/"+x.id+"/dismiss"}))
+  ].sort((a,b)=>(a.transaction_date||"").localeCompare(b.transaction_date||""));
+  root.replaceChildren();
+  if(!items.length){root.appendChild(el("li","muted","No possible unmatched bill or debt payments need review."));return;}
+  for(const item of items){
+   const li=el("li","");
+   li.appendChild(el("div","item-title","Could this payment cover "+item.obligation_name+"?"));
+   li.appendChild(el("div","detail",item.description+" · "+dollars(item.amount_cents)+" · "+item.transaction_date+" · "+item.obligation_type+" due "+item.due_date));
+   li.appendChild(el("div","detail",item.reason));
+   const confirm=el("button","","Confirm match");confirm.type="button";
+   confirm.addEventListener("click",async()=>{confirm.disabled=true;try{await api(item.confirm_url,{method:"POST"});message("Transaction linked to "+item.obligation_name+".");await load();}catch(e){message(e.message,"error");confirm.disabled=false;}});
+   li.appendChild(confirm);
+   const dismiss=el("button","secondary","Dismiss");dismiss.type="button";dismiss.style.marginLeft="8px";
+   dismiss.addEventListener("click",async()=>{dismiss.disabled=true;try{await api(item.dismiss_url,{method:"POST"});message("Suggestion dismissed; it will stay hidden unless the transaction data changes.");await loadPossiblePaymentMatches();}catch(e){message(e.message,"error");dismiss.disabled=false;}});
+   li.appendChild(dismiss);
+   root.appendChild(li);
+  }
+ }catch(error){root.replaceChildren(el("li","muted","Could not load possible payment matches: "+error.message));}
+}
 async function load(){const start=document.getElementById("start").value;const end=document.getElementById("end").value;
 if(!start||!end)throw Error("Choose both report dates.");
 const estimateInterest=document.getElementById("estimate-interest").checked;
@@ -1070,6 +1097,7 @@ const billRows=report.bills.map(x=>({...x,kind:"bill"}));
 renderList("bills",billRows,"No bills due in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.due_date+" · "+x.status+(x.transaction_date?" · recorded "+x.transaction_date:"")));});
 renderList("debts",report.minimum_debt_payments,"No minimum debt payments due in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)+" remaining"));const detail=[x.due_date,x.status];if(x.qualifying_payments_cents)detail.push(dollars(x.paid_toward_minimum_cents)+" toward minimum");if(x.extra_payment_cents)detail.push(dollars(x.extra_payment_cents)+" extra");if(x.transaction_dates&&x.transaction_dates.length)detail.push("recorded "+x.transaction_dates.join(", "));li.appendChild(el("div","detail",detail.join(" · ")));});
 renderList("transactions",report.transactions,"No transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.description+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.type+" · "+x.category+(x.linked_obligation_type?" · linked "+x.linked_obligation_type:"")));});
+await loadPossiblePaymentMatches();
 renderList("category-spending",report.category_spending,"No expense transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(x.amount_cents)));});
 const savings=document.getElementById("savings");savings.replaceChildren();savings.appendChild(el("p","", "Planned: "+dollars(report.planned_savings_cents)));savings.appendChild(el("p","", "Funded after obligations and buffer: "+dollars(report.funded_savings_cents)));savings.appendChild(el("p","", "Not covered by this forecast: "+dollars(report.savings_shortfall_cents)));savings.appendChild(el("p","muted","Contributions are estimated from active savings goals and distinct scheduled payday dates."));
 renderList("notes",report.notes,"No additional assumptions.",(li,note)=>li.appendChild(el("div","detail",note)));
