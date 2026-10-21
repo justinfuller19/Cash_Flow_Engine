@@ -555,3 +555,41 @@ def test_bill_edit_reconsiders_previously_dismissed_payment_suggestion(tmp_path,
     reconsidered = client.get("/api/bill-payment-suggestions").json()
     refreshed = next(item for item in reconsidered if item["id"] == suggestion["id"])
     assert "$95.00" in refreshed["reason"]
+
+
+def test_debt_payment_suggestions_skip_a_minimum_already_covered_by_linked_payment(
+    tmp_path, monkeypatch
+):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    with database.connect() as db:
+        debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active, next_due_date)
+               VALUES ('Covered Card', 50000, 5000, ?, 19.9, 1, ?)""",
+            (today.day, today.isoformat()),
+        ).lastrowid
+    linked = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today.isoformat(),
+            "transaction_type": "expense",
+            "category": "debt",
+            "linked_obligation_type": "debt",
+            "linked_obligation_id": debt_id,
+            "description": "Covered Card payment",
+            "amount_cents": -5000,
+        },
+    )
+    assert linked.status_code == 201, linked.text
+    client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today.isoformat(),
+            "transaction_type": "expense",
+            "category": "debt",
+            "description": "Debt payment",
+            "amount_cents": -5000,
+        },
+    )
+    assert client.get("/api/debt-payment-suggestions").json() == []
