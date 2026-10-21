@@ -38,15 +38,15 @@ GLOBAL_NAV = """<nav class="cfe-global-nav" aria-label="Main navigation">
 def enhance_html(html: str, *, include_navigation: bool = True) -> str:
     """Apply shared styling and navigation without changing page data."""
     if 'id="cfe-ui-refresh"' not in html:
-        if re.search(r"</head\\s*>", html, re.I):
-            html = re.sub(r"</head\\s*>", GLOBAL_STYLES + "\\n</head>", html, count=1, flags=re.I)
+        if re.search(r"</head\s*>", html, re.I):
+            html = re.sub(r"</head\s*>", GLOBAL_STYLES + "\n</head>", html, count=1, flags=re.I)
         else:
             # Older auth pages omit a head element; insert before their inline
             # styles, falling back to immediately after the opening html tag.
-            style_match = re.search(r"<style(?:\\s[^>]*)?>", html, re.I)
-            html_match = re.search(r"<html(?:\\s[^>]*)?>", html, re.I)
+            style_match = re.search(r"<style(?:\s[^>]*)?>", html, re.I)
+            html_match = re.search(r"<html(?:\s[^>]*)?>", html, re.I)
             insertion = style_match.start() if style_match else (html_match.end() if html_match else 0)
-            html = html[:insertion] + GLOBAL_STYLES + "\\n" + html[insertion:]
+            html = html[:insertion] + GLOBAL_STYLES + "\n" + html[insertion:]
     if include_navigation and 'aria-label="Main navigation"' not in html:
         match = re.search(r"<body(?:\s[^>]*)?>", html, re.I)
         if match:
