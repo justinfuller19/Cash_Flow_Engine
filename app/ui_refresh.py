@@ -37,10 +37,10 @@ GLOBAL_NAV = """<nav class="cfe-global-nav" aria-label="Main navigation">
 
 def enhance_html(html: str, *, include_navigation: bool = True) -> str:
     """Apply shared styling and navigation without changing page data."""
-    if 'id="cfe-ui-refresh"' not in html and re.search(r"</head\\s*>", html, re.I):
-        html = re.sub(r"</head\\s*>", GLOBAL_STYLES + "\\n</head>", html, count=1, flags=re.I)
+    if 'id="cfe-ui-refresh"' not in html and re.search(r"</head\s*>", html, re.I):
+        html = re.sub(r"</head\s*>", GLOBAL_STYLES + "\n</head>", html, count=1, flags=re.I)
     if include_navigation and 'class="cfe-global-nav"' not in html:
-        match = re.search(r"<body(?:\\s[^>]*)?>", html, re.I)
+        match = re.search(r"<body(?:\s[^>]*)?>", html, re.I)
         if match:
-            html = html[:match.end()] + "\\n" + GLOBAL_NAV + "\\n" + html[match.end():]
+            html = html[:match.end()] + "\n" + GLOBAL_NAV + "\n" + html[match.end():]
     return html
