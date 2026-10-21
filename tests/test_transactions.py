@@ -362,7 +362,7 @@ def test_bill_payment_suggestions_explain_candidates_and_require_confirmation(
     assert suggestion["transaction_id"] == transaction_id
     assert suggestion["confidence"] == "high"
     assert "include the bill name" in suggestion["reason"]
-    assert "8000" not in suggestion["reason"]  # Reason is human-readable dollars, not raw cents.
+    assert "$80.00" in suggestion["reason"]
     with database.connect() as db:
         linked = db.execute(
             "SELECT linked_obligation_type, linked_obligation_id FROM transactions WHERE id = ?",
@@ -377,6 +377,14 @@ def test_bill_payment_suggestions_explain_candidates_and_require_confirmation(
     assert dismissed.status_code == 200, dismissed.text
     assert dismissed.json()["status"] == "dismissed"
     assert all(item["id"] != suggestion["id"] for item in client.get("/api/bill-payment-suggestions").json())
+
+    changed = client.patch(
+        f"/api/transactions/{transaction_id}",
+        json={"description": "Electric payment corrected"},
+    )
+    assert changed.status_code == 200, changed.text
+    reconsidered = client.get("/api/bill-payment-suggestions").json()
+    assert any(item["id"] == suggestion["id"] for item in reconsidered)
 
 
 def test_bill_payment_suggestion_confirmation_links_only_selected_bill(
@@ -463,3 +471,40 @@ def test_weekly_report_includes_possible_unmatched_payment_review(tmp_path, monk
     assert "Possible unmatched payments" in page.text
     assert "/api/bill-payment-suggestions" in page.text
     assert "/api/debt-payment-suggestions" in page.text
+
+
+def test_v20_migration_adds_bill_match_queue_without_changing_transactions(
+    tmp_path, monkeypatch
+):
+    import sqlite3
+
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today().isoformat()
+    created = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today,
+            "transaction_type": "expense",
+            "category": "other",
+            "description": "Water payment",
+            "amount_cents": -7000,
+        },
+    )
+    assert created.status_code == 201, created.text
+    path = tmp_path / "transactions.db"
+    with sqlite3.connect(path) as db:
+        db.execute("DROP TABLE bill_payment_match_suggestions")
+        db.execute("PRAGMA user_version = 20")
+
+    database.initialize_database()
+    with database.connect() as db:
+        row = db.execute(
+            "SELECT description, amount_cents FROM transactions WHERE id = ?",
+            (created.json()["id"],),
+        ).fetchone()
+        assert row["description"] == "Water payment"
+        assert row["amount_cents"] == -7000
+        assert db.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'bill_payment_match_suggestions'"
+        ).fetchone()[0] == 1
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 21
