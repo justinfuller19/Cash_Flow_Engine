@@ -1,6 +1,6 @@
 # Raspberry Pi deployment and backups
 
-This guide installs CashFlow Engine as a private systemd service. The service binds to `127.0.0.1` by default. Without credentials, requests from non-loopback clients are blocked. Optional Basic authentication can be enabled with `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`; use it only behind HTTPS or a trusted VPN because Basic authentication does not encrypt traffic.
+This guide installs CashFlow Engine as a private systemd service. The service listens on the Pi network interfaces, but remote requests are blocked unless you explicitly enable trusted-LAN access or configure Basic authentication. The app's own household login remains required for financial pages. Do not port-forward the app or expose it to the public internet.
 
 ## 1. Install prerequisites
 
@@ -8,7 +8,7 @@ On Raspberry Pi OS:
 
 ```bash
 sudo apt update
-sudo apt install -y git python3 python3-venv
+sudo apt install -y git python3 python3-venv avahi-daemon
 ```
 
 Use a Python version tested by CI (3.11, 3.12, or 3.13).
@@ -44,8 +44,12 @@ Set:
 CASHFLOW_DB_PATH=/var/lib/cashflow-engine/cashflow.db
 CASHFLOW_BACKUP_DIR=/var/backups/cashflow-engine
 CASHFLOW_BACKUP_RETENTION_DAYS=30
-# Optional: set BOTH to require Basic authentication for all requests.
-# Use long random values; do not commit real credentials.
+# Allow direct connections from private LAN addresses without a second
+# Basic-auth prompt. The app's own household login still protects the app.
+CASHFLOW_ALLOW_LAN=1
+#
+# Optional: instead of LAN mode, set BOTH to require Basic authentication
+# for all remote requests. Basic auth does not encrypt traffic.
 # CASHFLOW_USERNAME=household
 # CASHFLOW_PASSWORD=replace-with-a-long-random-secret
 #
@@ -72,6 +76,7 @@ sudo cp /opt/cashflow-engine/deploy/cashflow-engine-email-reminders.timer /etc/s
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-weekly-report.service /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-weekly-report.timer /etc/systemd/system/
 sudo systemctl daemon-reload
+sudo systemctl enable --now avahi-daemon
 sudo systemctl enable --now cashflow-engine.service
 sudo systemctl enable --now cashflow-engine-backup.timer
 sudo systemctl enable --now cashflow-engine-email-reminders.timer
@@ -86,7 +91,7 @@ sudo journalctl -u cashflow-engine -n 100 --no-pager
 curl http://127.0.0.1:8000/health
 ```
 
-Open `http://127.0.0.1:8000` in a browser running on the Pi itself. Keep the service on localhost. If accessing it through a reverse proxy, configure both credentials and TLS; the middleware treats requests carrying `X-Forwarded-For` as remote and requires authentication.
+Open http://127.0.0.1:8000 in a browser running on the Pi itself. From another device on the same Wi-Fi, try http://<pi-hostname>.local:8000 (replace <pi-hostname> with the result of running hostname on the Pi). avahi-daemon advertises the Pi hostname through local mDNS, so you usually do not need to remember its IP address. If .local name resolution is not supported by a device or router, use the Pi DHCP-reserved name or IP address. With CASHFLOW_ALLOW_LAN=1, direct private-network clients bypass the extra Basic-auth prompt, but must still sign in to CashFlow Engine. Forwarded requests and public IP clients remain blocked by LAN mode.
 
 ## 5. Configure optional email reports and reminders
 
@@ -157,7 +162,8 @@ For rollback, stop the service, check out the previous known-good commit, reinst
 ## Security and privacy notes
 
 - Do not port-forward this service or expose it to the public internet.
-- Without `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`, non-loopback and forwarded requests are blocked. If credentials are configured, Basic authentication is required for every request in addition to the household login.
+- With CASHFLOW_ALLOW_LAN=1, direct private-network clients can reach the app without the extra Basic-auth prompt; the household login remains required for financial pages. Forwarded requests and public IP clients are not allowed by LAN mode.
+- If CASHFLOW_ALLOW_LAN is disabled, non-loopback requests are blocked unless Basic authentication is configured.
 - Basic authentication is not encryption. Use HTTPS or a trusted VPN for remote access; do not expose the service directly to the public internet.
 - Protect backups like the live database; they contain the same financial information.
 - Test a restore periodically. A backup that has never been restored is not a verified recovery plan.
