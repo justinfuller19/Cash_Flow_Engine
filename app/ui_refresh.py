@@ -45,7 +45,7 @@ def enhance_html(html: str, *, include_navigation: bool = True) -> str:
             # styles, falling back to immediately after the opening html tag.
             style_match = re.search(r"<style(?:\s[^>]*)?>", html, re.I)
             html_match = re.search(r"<html(?:\s[^>]*)?>", html, re.I)
-            body_match = re.search(r"<body(?:\\s[^>]*)?>", html, re.I)
+            body_match = re.search(r"<body[^>]*>", html, re.I)
             insertion = (
                 style_match.start() if style_match
                 else html_match.end() if html_match
