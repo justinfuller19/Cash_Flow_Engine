@@ -68,7 +68,12 @@ The environment file contains local configuration and may contain credentials; k
 ## 4. Install the systemd service
 
 ```bash
-sudo cp /opt/cashflow-engine/deploy/cashflow-engine.service /etc/systemd/system/\nsudo install -o root -g root -m 644 /opt/cashflow-engine/deploy/nginx-cashflow-engine.conf /etc/nginx/sites-available/cashflow-engine\nsudo ln -sfn /etc/nginx/sites-available/cashflow-engine /etc/nginx/sites-enabled/cashflow-engine\nsudo rm -f /etc/nginx/sites-enabled/default\nsudo nginx -t\nsudo systemctl enable --now nginx
+sudo cp /opt/cashflow-engine/deploy/cashflow-engine.service /etc/systemd/system/
+sudo install -o root -g root -m 644 /opt/cashflow-engine/deploy/nginx-cashflow-engine.conf /etc/nginx/sites-available/cashflow-engine
+sudo ln -sfn /etc/nginx/sites-available/cashflow-engine /etc/nginx/sites-enabled/cashflow-engine
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl enable --now nginx
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-backup.service /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-backup.timer /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-email-reminders.service /etc/systemd/system/
@@ -88,7 +93,8 @@ Check status and logs:
 ```bash
 sudo systemctl status cashflow-engine
 sudo journalctl -u cashflow-engine -n 100 --no-pager
-curl http://127.0.0.1:8000/health\ncurl http://127.0.0.1/health
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1/health
 ```
 
 From another device on the same Wi-Fi, open `http://<pi-hostname>.local` (replace `<pi-hostname>` with the result of running `hostname` on the Pi). No `:8000` is needed: nginx listens on port 80 and forwards requests internally to the app on `127.0.0.1:8000`. Avahi advertises the Pi hostname through local mDNS. If `.local` name resolution is not supported by a device or router, use the Pi's DHCP-reserved name or IP address. Nginx permits only private IPv4/IPv6 network ranges and denies other addresses. The app's household login remains required. The app itself is bound to loopback and cannot be reached directly from another device on port 8000.
