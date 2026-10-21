@@ -101,6 +101,20 @@ def _refresh_debt_payment_suggestions(db) -> None:
             debt = dict(raw_debt)
             due_dates = _due_cycles_near(transaction_date, debt)
             for due_date in due_dates:
+                required_minimum = min(debt["minimum_payment_cents"], debt["balance_cents"])
+                already_linked = db.execute(
+                    """SELECT COALESCE(SUM(ABS(amount_cents)), 0)
+                       FROM transactions
+                       WHERE transaction_type = 'expense'
+                         AND linked_obligation_type = 'debt' AND linked_obligation_id = ?
+                         AND transaction_date >= ? AND transaction_date <= ?
+                         AND NOT (lower(category) = 'debt payment'
+                                  AND lower(COALESCE(notes, '')) LIKE '%extra debt snowball payment%')""",
+                    (debt["id"], (due_date - timedelta(days=7)).isoformat(),
+                     (due_date + timedelta(days=7)).isoformat()),
+                ).fetchone()[0]
+                if already_linked >= required_minimum:
+                    continue
                 due_debts.append((debt, due_date, debt["name"].strip().lower() in evidence_text))
         named = [item for item in due_debts if item[2]]
         candidates = named if named else due_debts
@@ -276,10 +290,11 @@ def _refresh_bill_payment_suggestions(db) -> None:
         amount = abs(transaction["amount_cents"])
         if amount < 100:
             continue
-        evidence_text = " ".join(
+        name_evidence_text = " ".join(
             str(transaction.get(key) or "")
-            for key in ("description", "account_name", "notes", "category")
+            for key in ("description", "account_name", "notes")
         ).lower()
+        evidence_text = name_evidence_text + " " + str(transaction.get("category") or "").lower()
         transaction_category = (transaction.get("category") or "").strip().lower()
         payment_language = any(term in evidence_text for term in (
             "bill", "payment", "utility", "electric", "water", "gas", "internet",
@@ -288,7 +303,7 @@ def _refresh_bill_payment_suggestions(db) -> None:
         for raw_bill in bills:
             bill = dict(raw_bill)
             bill_name = (bill["name"] or "").strip().lower()
-            name_match = bool(bill_name and bill_name in evidence_text)
+            name_match = bool(bill_name and bill_name in name_evidence_text)
             category_match = bool(
                 bill.get("category") and transaction_category == str(bill["category"]).strip().lower()
             )
