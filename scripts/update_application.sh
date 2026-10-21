@@ -90,10 +90,13 @@ systemctl daemon-reload
 # Preserve all existing settings and explicit choices. Add LAN mode only when
 # the setting has never been configured, so the household login replaces the
 # redundant Basic-auth prompt for private-network clients after this update.
-if [[ -f "$ENV_FILE" ]] && ! grep -Eq '^[[:space:]]*CASHFLOW_ALLOW_LAN=' "$ENV_FILE"; then
-  printf '\nCASHFLOW_ALLOW_LAN=1\n' >> "$ENV_FILE"
-  chmod 600 "$ENV_FILE"
+if [[ ! -f "$ENV_FILE" ]]; then
+  install -o root -g root -m 600 /dev/null "$ENV_FILE"
 fi
+if ! grep -Eq '^[[:space:]]*CASHFLOW_ALLOW_LAN=' "$ENV_FILE"; then
+  printf '\nCASHFLOW_ALLOW_LAN=1\n' >> "$ENV_FILE"
+fi
+chmod 600 "$ENV_FILE"
 if ! command -v avahi-daemon >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
   apt-get install -y avahi-daemon || true
 fi
