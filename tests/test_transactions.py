@@ -458,7 +458,7 @@ def test_bill_payment_suggestions_ignore_unrelated_and_already_covered_expenses(
 
 def test_weekly_report_includes_possible_unmatched_payment_review(tmp_path, monkeypatch):
     client = client_for(tmp_path, monkeypatch)
-    page = client.get("/cash-flow")
+    page = client.get("/weekly")
     assert page.status_code == 200
     assert "Possible unmatched payments" in page.text
     assert "/api/bill-payment-suggestions" in page.text
