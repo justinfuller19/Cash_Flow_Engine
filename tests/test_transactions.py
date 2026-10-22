@@ -598,7 +598,7 @@ def test_debt_payment_suggestions_skip_a_minimum_already_covered_by_linked_payme
 def test_positive_expense_is_rejected_and_linked_debt_payment_balance_tracks_crud(
     tmp_path, monkeypatch
 ):
-    client = setup_client(tmp_path, monkeypatch)
+    client = client_for(tmp_path, monkeypatch)
     with database.connect() as db:
         card_id = db.execute(
             """INSERT INTO credit_cards
