@@ -520,38 +520,8 @@ def _weekly_cash_flow_for_window(
             # before a weekly due date cannot suppress the following occurrence.
             occurrence_start = start - timedelta(days=match_window + 7)
             for due in occurrences_between(anchor, row["frequency"], occurrence_start, end):
-                # A transaction can fall inside two adjacent weekly windows.
-                # Assign it only to its nearest scheduled occurrence, with ties
-                # going to the earlier due date, so a payment on this Friday is
-                # not also consumed by next Friday's bill.
-                eligible_transactions = []
-                for transaction in all_transactions:
-                    if (
-                        transaction["id"] in used_transactions
-                        or transaction["transaction_type"] != "expense"
-                        or transaction["linked_obligation_type"] != "bill"
-                        or transaction["linked_obligation_id"] != row["id"]
-                    ):
-                        continue
-                    transaction_date = date.fromisoformat(transaction["transaction_date"])
-                    if not _within_window(transaction_date, due, match_window):
-                        continue
-                    nearby_due_dates = occurrences_between(
-                        anchor, row["frequency"],
-                        transaction_date - timedelta(days=match_window),
-                        transaction_date + timedelta(days=match_window),
-                    )
-                    if nearby_due_dates:
-                        nearest_due = min(
-                            nearby_due_dates,
-                            key=lambda candidate: (
-                                abs((candidate - transaction_date).days), candidate,
-                            ),
-                        )
-                        if nearest_due == due:
-                            eligible_transactions.append(transaction)
                 matches = _take_matching_transactions(
-                    eligible_transactions, used_transactions, "bill", row["id"], due,
+                    all_transactions, used_transactions, "bill", row["id"], due,
                     match_window,
                 )
                 paid_cents = sum(abs(item["amount_cents"]) for item in matches)

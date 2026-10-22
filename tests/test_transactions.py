@@ -68,7 +68,7 @@ def test_transaction_validation_and_missing_records(tmp_path, monkeypatch):
         "transaction_date": today,
         "category": "other",
         "description": "Something",
-        "amount_cents": 100,
+        "amount_cents": -100,
     }
     for invalid in (
         {**payload, "category": " "},
