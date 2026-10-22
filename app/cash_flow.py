@@ -515,17 +515,34 @@ def _weekly_cash_flow_for_window(
             anchor = _date(row["next_due_date"])
             if anchor is None:
                 continue
-            for due in occurrences_between(anchor, row["frequency"], start, end):
-                match = _take_matching_transaction(
+            match_window = max(7, row["flexible_window_days"] or 0)
+            # Consume earlier occurrences first so a payment exactly seven days
+            # before a weekly due date cannot suppress the following occurrence.
+            occurrence_start = start - timedelta(days=match_window + 7)
+            for due in occurrences_between(anchor, row["frequency"], occurrence_start, end):
+                matches = _take_matching_transactions(
                     all_transactions, used_transactions, "bill", row["id"], due,
-                    max(7, row["flexible_window_days"] or 0),
+                    match_window,
                 )
+                paid_cents = sum(abs(item["amount_cents"]) for item in matches)
+                covered_cents = min(row["amount_cents"], paid_cents)
+                remaining_cents = max(0, row["amount_cents"] - covered_cents)
+                if due < start:
+                    continue
                 bills.append({
                     "id": row["id"], "name": row["name"], "category": row["category"],
-                    "due_date": due.isoformat(), "amount_cents": row["amount_cents"],
-                    "status": "recorded" if match else "due",
-                    "covered_by_transaction_id": match["id"] if match else None,
-                    "transaction_date": match["transaction_date"] if match else None,
+                    "due_date": due.isoformat(), "amount_cents": remaining_cents,
+                    "scheduled_amount_cents": row["amount_cents"],
+                    "covered_amount_cents": covered_cents,
+                    "status": (
+                        "recorded" if remaining_cents == 0 and covered_cents > 0
+                        else "partial" if covered_cents > 0
+                        else "due"
+                    ),
+                    "covered_by_transaction_id": matches[0]["id"] if len(matches) == 1 else None,
+                    "covered_by_transaction_ids": [item["id"] for item in matches],
+                    "transaction_date": matches[0]["transaction_date"] if len(matches) == 1 else None,
+                    "transaction_dates": [item["transaction_date"] for item in matches],
                 })
         bills.sort(key=lambda item: (item["due_date"], item["name"]))
 
@@ -614,7 +631,7 @@ def _weekly_cash_flow_for_window(
         )
     ]
 
-    uncovered_bills = [item for item in bills if item["status"] == "due"]
+    uncovered_bills = [item for item in bills if item["amount_cents"] > 0]
     uncovered_debts = [item for item in debts if item["amount_cents"] > 0]
     expected_income_cents = sum(item["amount_cents"] for item in expected_income)
     bills_due_cents = sum(item["amount_cents"] for item in uncovered_bills)
@@ -736,7 +753,7 @@ def _weekly_cash_flow_for_window(
         "bills": bills,
         "bills_due_cents": bills_due_cents,
         "bills_covered_by_transactions_cents": sum(
-            item["amount_cents"] for item in bills if item["status"] == "recorded"
+            item.get("covered_amount_cents", 0) for item in bills
         ),
         "minimum_debt_payments": debts,
         "minimum_debt_payments_cents": minimum_debt_cents,

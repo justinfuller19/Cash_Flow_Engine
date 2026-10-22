@@ -473,6 +473,18 @@ def _clean(values: dict) -> dict:
     return values
 
 
+def _adjust_linked_debt_balance(db, link_type: str | None, link_id: int | None,
+                               transaction_type: str, amount_cents: int, direction: int) -> None:
+    """Apply or reverse a linked expense payment against the saved card balance."""
+    if link_type != "debt" or link_id is None or transaction_type != "expense":
+        return
+    payment_cents = abs(amount_cents) * direction
+    db.execute(
+        "UPDATE credit_cards SET balance_cents = MAX(0, balance_cents - ?) WHERE id = ?",
+        (payment_cents, link_id),
+    )
+
+
 def _validate_category(db, category: str, transaction_type: str) -> None:
     exists = db.execute(
         "SELECT id FROM categories WHERE lower(name) = lower(?) AND transaction_type = ?",
@@ -530,6 +542,13 @@ def create_transaction(body: TransactionCreate):
             "income", "paycheck", "paychecks", "side income", "reimbursements", "other income"
         } else "expense"
     )
+    if values["amount_cents"] == 0 or (
+        transaction_type == "expense" and values["amount_cents"] >= 0
+    ) or (transaction_type == "income" and values["amount_cents"] <= 0):
+        raise HTTPException(
+            status_code=422,
+            detail="Expenses must be negative and income positive; record refunds as income.",
+        )
     try:
         with database.connect() as db:
             _validate_category(db, values["category"], transaction_type)
@@ -540,6 +559,10 @@ def create_transaction(body: TransactionCreate):
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (values["transaction_date"], values["category"], transaction_type, values["linked_obligation_type"],
                  values["linked_obligation_id"], values["description"], values["amount_cents"], values["account_name"], values["notes"]),
+            )
+            _adjust_linked_debt_balance(
+                db, values["linked_obligation_type"], values["linked_obligation_id"],
+                transaction_type, values["amount_cents"], 1,
             )
             row = db.execute(
                 """SELECT id, transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, description, amount_cents,
@@ -562,14 +585,25 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
     try:
         with database.connect() as db:
             current = db.execute(
-                "SELECT id, category, transaction_type, linked_obligation_type, linked_obligation_id "
+                "SELECT id, category, transaction_type, linked_obligation_type, linked_obligation_id, amount_cents "
                 "FROM transactions WHERE id = ?",
                 (transaction_id,),
             ).fetchone()
             if current is None:
                 raise HTTPException(status_code=404, detail="Transaction not found")
+            _adjust_linked_debt_balance(
+                db, current["linked_obligation_type"], current["linked_obligation_id"],
+                current["transaction_type"], current["amount_cents"], -1,
+            )
             category = updates.get("category", current["category"])
             transaction_type = updates.get("transaction_type", current["transaction_type"])
+            if amount_cents == 0 or (
+                transaction_type == "expense" and amount_cents >= 0
+            ) or (transaction_type == "income" and amount_cents <= 0):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Expenses must be negative and income positive; record refunds as income.",
+                )
             link_type = updates.get("linked_obligation_type", current["linked_obligation_type"])
             link_id = updates.get("linked_obligation_id", current["linked_obligation_id"])
             _validate_category(db, category, transaction_type)
@@ -580,6 +614,8 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
             updates["linked_obligation_id"] = link_id
             assignments = ", ".join(f"{key} = ?" for key in updates)
             db.execute(f"UPDATE transactions SET {assignments} WHERE id = ?", (*updates.values(), transaction_id))
+            updated_amount = updates.get("amount_cents", current["amount_cents"])
+            _adjust_linked_debt_balance(db, link_type, link_id, transaction_type, updated_amount, 1)
             # A dismissed suggestion may be reconsidered only after transaction
             # data changes; confirmed links remain immutable review history.
             db.execute(
@@ -607,9 +643,17 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
 @router.delete("/api/transactions/{transaction_id}")
 def delete_transaction(transaction_id: int):
     with database.connect() as db:
-        cursor = db.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
-        if cursor.rowcount == 0:
+        current = db.execute(
+            "SELECT transaction_type, linked_obligation_type, linked_obligation_id, amount_cents "
+            "FROM transactions WHERE id = ?", (transaction_id,)
+        ).fetchone()
+        if current is None:
             raise HTTPException(status_code=404, detail="Transaction not found")
+        _adjust_linked_debt_balance(
+            db, current["linked_obligation_type"], current["linked_obligation_id"],
+            current["transaction_type"], current["amount_cents"], -1,
+        )
+        db.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
     return {"deleted": True, "id": transaction_id}
 
 

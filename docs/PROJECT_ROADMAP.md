@@ -213,3 +213,8 @@ As the application grows, consider organizing code into route modules, schemas, 
 - [x] Generate the current financial week's checklist from the live safe cash-flow forecast when the dashboard or checklist is opened.
 - [x] Refresh pending actions when schedules, savings targets, or the shared buffer change while preserving recorded completion and actual amounts.
 - [x] Keep existing manually generated plan history intact and redirect the obsolete planner page to the checklist.
+
+
+## Financial simulation follow-up — October 21, 2026
+
+The independent 91-day simulation identified reconciliation edge cases addressed in this reliability change: weekly bill matching consumes earlier occurrences before matching the selected week; bill payments support partial coverage and preserve the remaining due amount; transaction amounts are validated by type to prevent positive expenses from silently increasing spending; and linked credit-card transaction create/edit/delete operations keep the saved balance synchronized. Regression tests cover weekly carryover, partial bills, refund-sign validation, and card-balance reversals. Await CI/review before deployment.
