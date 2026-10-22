@@ -91,3 +91,31 @@ def test_future_forecast_gap_has_a_visible_warning_and_forecast_link():
     assert "Future cash-flow gap detected" in INTERACTION_SCRIPT
     assert "href='/weekly'" in INTERACTION_SCRIPT
     assert "numeric<=0" in INTERACTION_SCRIPT
+
+
+def test_global_navigation_avoids_duplicate_brand_and_account_actions():
+    from app.ui_refresh import GLOBAL_NAV, INTERACTION_SCRIPT
+
+    assert 'CashFlow Engine</span>' not in GLOBAL_NAV
+    assert 'cfe-nav-brand' not in GLOBAL_NAV
+    more_menu = GLOBAL_NAV.split('class="cfe-more-menu">', 1)[1]
+    assert 'href="/account">Account settings</a>' in more_menu
+    assert 'href="/logout">Log out</a>' in more_menu
+    assert 'Account settings' not in GLOBAL_NAV.split('class="cfe-more-menu">', 1)[0]
+    assert 'Log out' not in GLOBAL_NAV.split('class="cfe-more-menu">', 1)[0]
+    assert 'CashFlow Engine</span>' not in INTERACTION_SCRIPT
+
+
+def test_enhance_html_keeps_top_title_but_removes_duplicate_account_header_links():
+    html = '''<html><head></head><body><header class="app-header"><h1 class="brand">CashFlow Engine</h1><div class="account-links"><a href="/account">Account settings</a><a href="/logout">Log out</a></div></header><main>Page</main></body></html>'''
+    refreshed = enhance_html(html)
+    markup = _markup_before_script(refreshed)
+
+    assert '<h1 class="brand">CashFlow Engine</h1>' in markup
+    assert 'class="account-links"' not in markup
+    assert 'href="/account">Account settings</a>' in markup
+    assert 'href="/logout">Log out</a>' in markup
+    nav = markup.split('aria-label="Main navigation"', 1)[1].split('</nav>', 1)[0]
+    assert 'CashFlow Engine' not in nav
+    assert nav.index('class="cfe-more-menu"') < nav.index('Account settings')
+    assert nav.index('class="cfe-more-menu"') < nav.index('Log out')

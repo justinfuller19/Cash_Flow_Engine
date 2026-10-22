@@ -6,6 +6,7 @@ Deliver one cohesive pull request that makes daily household money management ea
 ## Design decisions
 - Lead with the existing safe-to-spend figure and a clear next-action path.
 - Use four primary destinations: Home, Checklist, Activity, and More.
+- Keep the CashFlow Engine title in the existing top title bar only; keep Account settings and Log out exclusively inside More.
 - Put secondary reports and management pages under More.
 - On mobile, use a persistent bottom navigation with accessible touch targets.
 - Collapse secondary dashboard metrics under “At a glance.”
@@ -16,6 +17,7 @@ Deliver one cohesive pull request that makes daily household money management ea
 ## Implementation checklist
 - [x] Shared responsive design tokens and common component styling.
 - [x] Consistent primary navigation and mobile navigation behavior.
+- [x] Remove the duplicate navbar brand and keep account actions only in the More dropdown.
 - [x] Home dashboard hierarchy and progressive disclosure for secondary metrics.
 - [x] Quick paths to checklist, transactions, and weekly forecast.
 - [x] In-place explanation of the existing safe-to-spend calculation and buffer role.
@@ -27,4 +29,4 @@ Deliver one cohesive pull request that makes daily household money management ea
 - [x] Review PR feedback and address both non-blocking suggestions: regression coverage for label-based metric hooks and a visible future-buffer-gap warning.
 
 ## Safety and validation
-No financial formulas, allocation priorities, database schema, transaction semantics, or deployment configuration are intentionally changed in this UI refresh. The UI displays existing API values. CI passed the full test suite on Python 3.11, 3.12, and 3.13 before these follow-up review fixes. The follow-up adds a visible Home warning when the forecast buffer gap is positive; the warning links to the weekly forecast and disappears when the gap is zero, negative, or unavailable. Label-hook regression tests pin the metric names used by the presentation script. Re-run CI on this follow-up before merge. These remain presentation-only changes; the PR has not been deployed to the Raspberry Pi.
+No financial formulas, allocation priorities, database schema, transaction semantics, or deployment configuration are intentionally changed in this UI refresh. The UI displays existing API values. CI passed the full test suite on Python 3.11, 3.12, and 3.13 before these follow-up review fixes. The follow-up adds a visible Home warning when the forecast buffer gap is positive; the warning links to the weekly forecast and disappears when the gap is zero, negative, or unavailable. Label-hook regression tests pin the metric names used by the presentation script. Re-run CI on this follow-up before merge. The follow-up navigation cleanup preserves the top title bar, removes its duplicate Account settings / Log out links, and keeps those actions only inside More. The navbar no longer repeats the CashFlow Engine brand. These remain presentation-only changes; the PR has not been deployed to the Raspberry Pi.
