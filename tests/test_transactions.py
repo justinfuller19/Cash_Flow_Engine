@@ -283,6 +283,11 @@ def test_debt_payment_suggestions_need_confirmation_and_dismissed_matches_stay_h
         ).fetchall()
     assert row["linked_obligation_type"] == "debt"
     assert row["linked_obligation_id"] == second_debt_id
+    with database.connect() as db:
+        balance = db.execute(
+            "SELECT balance_cents FROM credit_cards WHERE id = ?", (second_debt_id,)
+        ).fetchone()["balance_cents"]
+    assert balance == 85000  # the confirmed $50 payment reduces $900 balance to $850
     assert {item["status"] for item in statuses} == {"dismissed", "confirmed"}
     assert client.get("/api/debt-payment-suggestions").json() == []
 

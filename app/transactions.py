@@ -196,7 +196,7 @@ def confirm_debt_payment_suggestion(suggestion_id: int):
     with database.connect() as db:
         suggestion = db.execute(
             """SELECT s.*, t.transaction_type, t.linked_obligation_type,
-                      t.linked_obligation_id, t.transaction_date,
+                      t.linked_obligation_id, t.transaction_date, t.amount_cents,
                       c.active AS debt_active
                FROM debt_payment_match_suggestions s
                JOIN transactions t ON t.id = s.transaction_id
@@ -219,6 +219,13 @@ def confirm_debt_payment_suggestion(suggestion_id: int):
                SET linked_obligation_type = 'debt', linked_obligation_id = ?
                WHERE id = ? AND linked_obligation_type IS NULL AND linked_obligation_id IS NULL""",
             (suggestion["debt_id"], suggestion["transaction_id"]),
+        )
+        # Confirming a suggestion creates the debt link outside the ordinary
+        # transaction create/edit handlers, so apply the same balance effect
+        # here. The transaction remains the sole record of the cash payment.
+        _adjust_linked_debt_balance(
+            db, "debt", suggestion["debt_id"], suggestion["transaction_type"],
+            suggestion["amount_cents"], 1,
         )
         db.execute(
             """UPDATE debt_payment_match_suggestions

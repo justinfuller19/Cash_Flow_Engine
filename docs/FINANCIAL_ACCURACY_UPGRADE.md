@@ -276,7 +276,8 @@ Record meaningful implementation updates here. Each entry should include date, p
 - [x] Represent partial bill coverage explicitly; retain the unpaid remainder in bills due and report only the amount actually covered.
 - [x] Reject zero-value transactions, positive expenses, and non-positive income so a refund cannot silently be classified as extra spending. Record refunds as income.
 - [x] Synchronize linked credit-card balances when linked payment transactions are created, edited, or deleted, reversing the prior effect before applying edits.
-- [x] Add regression tests for the reported failure modes.
+- [x] Apply the same balance update when an existing payment is linked through the explicit debt-suggestion confirmation flow.
+- [x] Add regression tests for the reported failure modes, including confirmation-path balance reconciliation.
 - [ ] Run the full Python 3.11/3.12/3.13 CI matrix and inspect results before merge/deployment.
 
 The API-only simulation findings did not establish a browser-rendering regression. This change does not alter the production database schema.
