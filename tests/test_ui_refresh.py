@@ -69,3 +69,25 @@ def test_home_page_gets_action_first_ui_and_buffer_explanation():
     assert 'household buffer' in refreshed.lower()
     assert '/api/dashboard' not in refreshed
     assert 'free_to_spend_cents' not in refreshed
+
+
+def test_dashboard_metric_labels_are_pinned_to_the_script_hooks():
+    # The script currently discovers these metrics by their existing labels.
+    # Keep this regression test so a dashboard label change is noticed during review.
+    from app.ui_refresh import INTERACTION_SCRIPT
+
+    assert "includes('safe to spend')" in INTERACTION_SCRIPT
+    assert "includes('actions needing attention')" in INTERACTION_SCRIPT
+    assert "Safe to spend this week" in INTERACTION_SCRIPT
+    assert "Checklist actions left" in INTERACTION_SCRIPT
+    assert "Forecast buffer gap" in INTERACTION_SCRIPT
+
+
+def test_future_forecast_gap_has_a_visible_warning_and_forecast_link():
+    from app.ui_refresh import GLOBAL_STYLES, INTERACTION_SCRIPT
+
+    assert 'cfe-forecast-warning' in GLOBAL_STYLES
+    assert "id='cfe-forecast-warning'" in INTERACTION_SCRIPT
+    assert "Future cash-flow gap detected" in INTERACTION_SCRIPT
+    assert "href='/weekly'" in INTERACTION_SCRIPT
+    assert "numeric<=0" in INTERACTION_SCRIPT
