@@ -218,3 +218,11 @@ As the application grows, consider organizing code into route modules, schemas, 
 ## Financial simulation follow-up — October 21, 2026
 
 The independent 91-day simulation identified reconciliation edge cases addressed in this reliability change: weekly bill matching consumes earlier occurrences before matching the selected week; bill payments support partial coverage and preserve the remaining due amount; transaction amounts are validated by type to prevent positive expenses from silently increasing spending; and linked credit-card transaction create/edit/delete operations keep the saved balance synchronized. Regression tests cover weekly carryover, partial bills, refund-sign validation, and card-balance reversals. Await CI/review before deployment.
+
+
+## Dashboard savings progress display — October 22, 2026
+
+- [x] Use the current `weekly_target_cents` field for dashboard savings progress instead of the retired per-payday contribution field.
+- [x] Label the amount as a per-financial-week target to match the savings model.
+- [x] Render zero-target goals as ongoing savings rather than falsely showing 100% saved or a meaningless progress bar.
+- [x] Add regression coverage for dated savings goals and zero-target ongoing goals.
