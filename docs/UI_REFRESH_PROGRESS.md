@@ -1,0 +1,28 @@
+# CashFlow Engine UI Refresh — Progress Log
+
+## Goal
+Deliver one cohesive pull request that makes daily household money management easier without changing the financial engine, API contracts, stored data, or allocation rules.
+
+## Design decisions
+- Lead with the existing safe-to-spend figure and a clear next-action path.
+- Use four primary destinations: Home, Checklist, Activity, and More.
+- Put secondary reports and management pages under More.
+- On mobile, use a persistent bottom navigation with accessible touch targets.
+- Collapse secondary dashboard metrics under “At a glance.”
+- Explain the existing forecast and household buffer in plain language; the buffer is a forecast-protection rule, not an extra deduction to apply again.
+- Retain existing routes, detailed reports, management controls, account settings, and API documentation.
+- Respect reduced-motion preferences, visible keyboard focus, and light/dark system preferences.
+
+## Implementation checklist
+- [x] Shared responsive design tokens and common component styling.
+- [x] Consistent primary navigation and mobile navigation behavior.
+- [x] Home dashboard hierarchy and progressive disclosure for secondary metrics.
+- [x] Quick paths to checklist, transactions, and weekly forecast.
+- [x] In-place explanation of the existing safe-to-spend calculation and buffer role.
+- [x] Preserve existing financial API values and calculation paths.
+- [x] Add focused UI injection and dashboard-enhancement tests.
+- [ ] Run full test suite and resolve failures.
+- [ ] Review GitHub Actions results and pull request feedback.
+
+## Safety and validation
+No financial formulas, allocation priorities, database schema, transaction semantics, or deployment configuration are intentionally changed in this UI refresh. The UI displays existing API values. Automated tests must pass in CI before merge; review actual workflow results before declaring validation complete.
