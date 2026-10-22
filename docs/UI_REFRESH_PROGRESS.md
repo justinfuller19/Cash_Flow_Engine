@@ -21,8 +21,8 @@ Deliver one cohesive pull request that makes daily household money management ea
 - [x] In-place explanation of the existing safe-to-spend calculation and buffer role.
 - [x] Preserve existing financial API values and calculation paths.
 - [x] Add focused UI injection and dashboard-enhancement tests.
-- [ ] Run full test suite and resolve failures.
-- [ ] Review GitHub Actions results and pull request feedback.
+- [x] Run the full pytest suite successfully on Python 3.11, 3.12, and 3.13.
+- [x] Review GitHub Actions results; no PR feedback comments were present at the time of this update.
 
 ## Safety and validation
-No financial formulas, allocation priorities, database schema, transaction semantics, or deployment configuration are intentionally changed in this UI refresh. The UI displays existing API values. Automated tests must pass in CI before merge; review actual workflow results before declaring validation complete.
+No financial formulas, allocation priorities, database schema, transaction semantics, or deployment configuration are intentionally changed in this UI refresh. The UI displays existing API values. CI passed the full test suite on Python 3.11, 3.12, and 3.13 after correcting test assertions to distinguish injected markup from strings inside the enhancement script. The PR has not been deployed to the Raspberry Pi.
