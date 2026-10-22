@@ -7,6 +7,10 @@ from fastapi.testclient import TestClient
 def authenticated_test_clients(request, tmp_path, monkeypatch):
     # Keep every test's financial and auth databases isolated from real user data.
     monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "cashflow.db"))
+    # The updater runs under systemd, which may provide production LAN-mode
+    # settings through EnvironmentFile. Tests must opt into LAN mode explicitly
+    # so the host's deployment configuration cannot block TestClient requests.
+    monkeypatch.delenv("CASHFLOW_ALLOW_LAN", raising=False)
     filename = str(request.node.path).replace("\\", "/")
     if filename.endswith("/test_security.py") or filename.endswith("/test_auth.py"):
         return
