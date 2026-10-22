@@ -597,7 +597,6 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
             )
             category = updates.get("category", current["category"])
             transaction_type = updates.get("transaction_type", current["transaction_type"])
-            amount_cents = updates.get("amount_cents", current["amount_cents"])
             if amount_cents == 0 or (
                 transaction_type == "expense" and amount_cents >= 0
             ) or (transaction_type == "income" and amount_cents <= 0):
