@@ -16,6 +16,16 @@ class TransactionCreate(BaseModel):
     account_name: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=1000)
 
+    @model_validator(mode="after")
+    def validate_amount_sign(self):
+        if self.transaction_type == "expense" and self.amount_cents >= 0:
+            raise ValueError("Expense amounts must be negative; record refunds as income.")
+        if self.transaction_type == "income" and self.amount_cents <= 0:
+            raise ValueError("Income amounts must be positive.")
+        if self.amount_cents == 0:
+            raise ValueError("Transaction amount must not be zero.")
+        return self
+
 
 class TransactionUpdate(BaseModel):
     transaction_date: date | None = None
@@ -37,6 +47,16 @@ class TransactionUpdate(BaseModel):
         ):
             raise ValueError("Only account_name and notes may be cleared with null")
         return value
+
+    @model_validator(mode="after")
+    def validate_amount_sign(self):
+        if self.amount_cents is not None and self.transaction_type == "expense" and self.amount_cents >= 0:
+            raise ValueError("Expense amounts must be negative; record refunds as income.")
+        if self.amount_cents is not None and self.transaction_type == "income" and self.amount_cents <= 0:
+            raise ValueError("Income amounts must be positive.")
+        if self.amount_cents == 0:
+            raise ValueError("Transaction amount must not be zero.")
+        return self
 
 
 class TransactionOut(BaseModel):

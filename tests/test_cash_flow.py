@@ -1014,3 +1014,49 @@ def test_estimated_interest_uses_each_weeks_projected_balance(tmp_path, monkeypa
     assert second["estimated_debt_interest_cents"] == 192
     assert second["projected_debt_balances"][0]["projected_balance_cents"] == 100384
     assert report["estimated_debt_interest_cents"] == 384
+
+
+def test_weekly_bill_payment_does_not_cover_next_occurrence_and_partial_bill_stays_due(
+    tmp_path, monkeypatch
+):
+    client = setup_client(tmp_path, monkeypatch)
+    first = date(2026, 10, 23)
+    next_week = first + timedelta(days=7)
+    with database.connect() as db:
+        db.execute("UPDATE household_settings SET starting_cash_cents = 200000 WHERE id = 1")
+        weekly_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, next_due_date, flexible_window_days, active, category, frequency, autopay)
+               VALUES ('Cleaning', 6500, ?, 0, 1, 'utilities', 'weekly', 0)""",
+            (first.isoformat(),),
+        ).lastrowid
+        partial_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, next_due_date, flexible_window_days, active, category, frequency, autopay)
+               VALUES ('Electric', 14200, ?, 0, 1, 'utilities', 'monthly', 0)""",
+            (next_week.isoformat(),),
+        ).lastrowid
+    response = client.post("/api/transactions", json={
+        "transaction_date": first.isoformat(), "transaction_type": "expense",
+        "linked_obligation_type": "bill", "linked_obligation_id": weekly_id,
+        "category": "utilities", "description": "Cleaning paid", "amount_cents": -6500,
+    })
+    assert response.status_code == 201, response.text
+    partial = client.post("/api/transactions", json={
+        "transaction_date": next_week.isoformat(), "transaction_type": "expense",
+        "linked_obligation_type": "bill", "linked_obligation_id": partial_id,
+        "category": "utilities", "description": "Partial electric payment", "amount_cents": -5000,
+    })
+    assert partial.status_code == 201, partial.text
+    report = client.get("/api/cash-flow/weekly", params={
+        "start_date": next_week.isoformat(),
+        "end_date": (next_week + timedelta(days=6)).isoformat(),
+    }).json()
+    bills = {item["name"]: item for item in report["bills"]}
+    assert bills["Cleaning"]["status"] == "due"
+    assert bills["Cleaning"]["amount_cents"] == 6500
+    assert bills["Electric"]["status"] == "partial"
+    assert bills["Electric"]["amount_cents"] == 9200
+    assert bills["Electric"]["covered_amount_cents"] == 5000
+    assert report["bills_due_cents"] == 15700
+    assert report["bills_covered_by_transactions_cents"] == 5000

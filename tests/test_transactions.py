@@ -68,7 +68,7 @@ def test_transaction_validation_and_missing_records(tmp_path, monkeypatch):
         "transaction_date": today,
         "category": "other",
         "description": "Something",
-        "amount_cents": 100,
+        "amount_cents": -100,
     }
     for invalid in (
         {**payload, "category": " "},
@@ -164,7 +164,7 @@ def test_category_types_are_validated_and_transfers_do_not_count_as_income_or_ex
         json={
             "transaction_date": today,
             "transaction_type": "income",
-            "category": "groceries",
+            "category": "food",
             "description": "Wrong category type",
             "amount_cents": 5000,
         },
@@ -173,7 +173,7 @@ def test_category_types_are_validated_and_transfers_do_not_count_as_income_or_ex
 
     for payload in (
         {"transaction_type": "income", "category": "paychecks", "amount_cents": 120000},
-        {"transaction_type": "expense", "category": "groceries", "amount_cents": -2500},
+        {"transaction_type": "expense", "category": "food", "amount_cents": -2500},
         {"transaction_type": "transfer", "category": "account transfer", "amount_cents": 5000},
     ):
         response = client.post(
@@ -283,6 +283,11 @@ def test_debt_payment_suggestions_need_confirmation_and_dismissed_matches_stay_h
         ).fetchall()
     assert row["linked_obligation_type"] == "debt"
     assert row["linked_obligation_id"] == second_debt_id
+    with database.connect() as db:
+        balance = db.execute(
+            "SELECT balance_cents FROM credit_cards WHERE id = ?", (second_debt_id,)
+        ).fetchone()["balance_cents"]
+    assert balance == 85000  # the confirmed $50 payment reduces $900 balance to $850
     assert {item["status"] for item in statuses} == {"dismissed", "confirmed"}
     assert client.get("/api/debt-payment-suggestions").json() == []
 
@@ -593,3 +598,36 @@ def test_debt_payment_suggestions_skip_a_minimum_already_covered_by_linked_payme
         },
     )
     assert client.get("/api/debt-payment-suggestions").json() == []
+
+
+def test_positive_expense_is_rejected_and_linked_debt_payment_balance_tracks_crud(
+    tmp_path, monkeypatch
+):
+    client = client_for(tmp_path, monkeypatch)
+    with database.connect() as db:
+        card_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, due_day_of_month, apr_percent, active)
+               VALUES ('Test Visa', 428000, 9600, 27, 24.99, 1)"""
+        ).lastrowid
+    invalid = client.post("/api/transactions", json={
+        "transaction_date": "2026-10-23", "transaction_type": "expense",
+        "category": "food", "description": "Store refund", "amount_cents": 4500,
+    })
+    assert invalid.status_code == 422
+    payment = client.post("/api/transactions", json={
+        "transaction_date": "2026-10-23", "transaction_type": "expense",
+        "linked_obligation_type": "debt", "linked_obligation_id": card_id,
+        "category": "food", "description": "Visa payment", "amount_cents": -9600,
+    })
+    assert payment.status_code == 201, payment.text
+    with database.connect() as db:
+        assert db.execute("SELECT balance_cents FROM credit_cards WHERE id = ?", (card_id,)).fetchone()[0] == 418400
+    updated = client.patch(f"/api/transactions/{payment.json()['id']}", json={"amount_cents": -5000})
+    assert updated.status_code == 200, updated.text
+    with database.connect() as db:
+        assert db.execute("SELECT balance_cents FROM credit_cards WHERE id = ?", (card_id,)).fetchone()[0] == 423000
+    deleted = client.delete(f"/api/transactions/{payment.json()['id']}")
+    assert deleted.status_code == 200
+    with database.connect() as db:
+        assert db.execute("SELECT balance_cents FROM credit_cards WHERE id = ?", (card_id,)).fetchone()[0] == 428000

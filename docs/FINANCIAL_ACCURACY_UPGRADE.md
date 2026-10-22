@@ -268,3 +268,16 @@ Record meaningful implementation updates here. Each entry should include date, p
 - **2026-10-20 — Phase 4 merged (PR #40):** Household-wide buffer and horizon safe-to-spend semantics are merged. Earlier Phase 4 review notes are corrected in this update.
 - **2026-10-21 — Phase 8 implementation (PR pending):** Added schema-v21 bill-payment suggestion storage, evidence-based candidate generation for recent unlinked expenses, explicit confirm/dismiss endpoints, stale-on-transaction/obligation-edit behavior, and a possible-unmatched-payments review section in the weekly report. Existing debt-payment suggestions are surfaced alongside bill suggestions without changing their existing confirmation workflow. Added regression tests; GitHub Actions run #202 passed 164 tests on Python 3.11, 3.12, and 3.13. No deployment performed.
 - **2026-10-20 — Phase 5 implementation (PR pending):** Added an opt-in multi-week debt-interest estimate based on projected opening balances and APR, carried projected balances week by week, and exposed estimates in the weekly report. Estimates do not affect cash totals, saved debt balances, or recorded transactions. Regression tests cover opt-in behavior, zero APR/balance, higher APR, rounding, and unchanged cash values. CI results pending.
+
+
+## Simulation verification follow-up — 2026-10-21
+
+- [x] Consume prior weekly bill occurrences before matching transactions to the selected window, preventing a payment from suppressing the following week's occurrence.
+- [x] Represent partial bill coverage explicitly; retain the unpaid remainder in bills due and report only the amount actually covered.
+- [x] Reject zero-value transactions, positive expenses, and non-positive income so a refund cannot silently be classified as extra spending. Record refunds as income.
+- [x] Synchronize linked credit-card balances when linked payment transactions are created, edited, or deleted, reversing the prior effect before applying edits.
+- [x] Apply the same balance update when an existing payment is linked through the explicit debt-suggestion confirmation flow.
+- [x] Add regression tests for the reported failure modes, including confirmation-path balance reconciliation.
+- [ ] Run the full Python 3.11/3.12/3.13 CI matrix and inspect results before merge/deployment.
+
+The API-only simulation findings did not establish a browser-rendering regression. This change does not alter the production database schema.
