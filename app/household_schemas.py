@@ -38,7 +38,6 @@ class PersonUpdate(BaseModel):
 class HouseholdSettingsOut(BaseModel):
     """The single shared household cash configuration row."""
 
-    buffer_target_cents: int
     starting_cash_cents: int
     financial_week_start: Weekday = "Friday"
     updated_at: str
@@ -54,7 +53,6 @@ class HouseholdSettingsOut(BaseModel):
 class HouseholdSettingsUpdate(BaseModel):
     """Partial update for household settings; only provided fields change."""
 
-    buffer_target_cents: int | None = Field(default=None, ge=0)
     starting_cash_cents: int | None = Field(default=None, ge=0)
     starting_cash_effective_week: date | None = None
     financial_week_start: Weekday | None = None
