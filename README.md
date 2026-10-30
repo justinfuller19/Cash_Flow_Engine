@@ -9,18 +9,18 @@ A lightweight, self-hosted household cash-flow planner designed to run on Raspbe
 - Pure Python payday allocation engine using integer cents.
 - FastAPI app with a health check and interactive API docs at `/docs`.
 - SQLite database initialized automatically at app startup.
-- Browser-based Household Setup page for household members, income sources, and the shared household cash buffer target.
+- Browser-based Household Setup page for household members, income sources, and a confirmed starting-cash snapshot.
 - Browser-based Bills & Debt page for recurring bills, credit-card balances, APRs, minimum payments, and due dates.
 - Browser-based Savings Goals page with per-financial-week targets, optional deadlines, separate recorded contributions and catch-up amounts, carried arrears, safe-funding amounts, and deadline warnings. Multi-week forecasts keep existing arrears visible but reserve catch-up cash only once; future unfunded targets do not become new arrears before those weeks occur. Undated goals support ongoing general savings with no target amount or finish date.
 - Automatically generated weekly checklist based on saved pay schedules, bills, debt minimums, savings goals, recorded transactions, and the safe cash-flow forecast. The old planner URL redirects to this checklist; historical manual plans remain available through the API.
 - Live dashboard for upcoming paydays, bills, debt minimums, savings progress, and recent plans.
 - Payday checklist for marking actions complete, skipped, or needing attention and recording actual amounts/dates.
 - Manual transaction ledger with typed income, expense, and transfer entries, user-managed categories, safe category renaming/deletion, and optional links to scheduled income, bills, and debt payments for reconciliation.
-- Weekly cash-flow calculation API plus a dedicated `/weekly` report page and dashboard summary for expected income, due bills and debt minimums, recorded transactions, spending by category, the shared buffer, planned savings, shortfalls, and safe available surplus after looking ahead across future weeks. The weekly report offers an opt-in estimated-interest projection that never changes saved balances or cash-flow totals. The financial week is configurable (Friday by default).
-- Safe-surplus allocation workflow: reserve a user-chosen amount for debt snowball (recommending the smallest active balance), the household buffer, a savings goal, or intentionally unallocated cash; reject allocations that exceed forecast-safe surplus, and release cancelled allocations.
+- Weekly cash-flow calculation API plus a dedicated `/weekly` report page and dashboard summary for expected income, due bills and debt minimums, recorded transactions, spending by category, planned savings, daily cash shortfalls, and safe available surplus after looking ahead across future weeks. The weekly report offers an opt-in estimated-interest projection that never changes saved balances or cash-flow totals. The financial week is configurable (Friday by default).
+- Safe-surplus allocation workflow: reserve a user-chosen amount for debt snowball (recommending the smallest active balance), a savings goal, or intentionally unallocated cash; reject allocations that exceed forecast-safe surplus, and release cancelled allocations.
 - Record the actual amount paid for a planned extra debt payment or savings contribution. The app logs it as a transaction, updates the debt balance or savings-goal balance, and reconciles the planned allocation so the same money is not counted twice. Extra debt payments remain separate from minimum-payment matching. Buffer allocations apply only to the selected financial week and expire from the safe-surplus reservation when that week passes.
 - Settings & Data page with a downloadable database backup and a typed, backup-first Clear All Data workflow that preserves the application schema and category definitions.
-- Optional SMTP email delivery for weekly cash-flow reports, upcoming bill/debt reminders, and projected shortfall or buffer alerts.
+- Optional SMTP email delivery for weekly cash-flow reports, upcoming bill/debt reminders, and projected cash shortfall alerts.
 - Shared household login accounts with scrypt password hashes, expiring opaque sessions, and a separate SQLite database file per household.
 - Persistent household-member and income-source APIs.
 - Initial schema for recurring bills, credit cards, savings accounts and goals, transactions, payday plans, and checklist items.
@@ -75,8 +75,8 @@ The database file is excluded from Git by `.gitignore`. Back it up regularly and
 - `GET /api/people` — list household members.
 - `POST /api/people` — create a household member.
 - `PATCH /api/people/{id}` — edit a household member's name or `active` flag (deactivate instead of deleting).
-- `GET /api/household/settings` — read the shared cash buffer target and starting cash balance.
-- `PATCH /api/household/settings` — update the shared cash buffer target or starting cash balance.
+- `GET /api/household/settings` — read the confirmed starting cash balance and financial week start.
+- `PATCH /api/household/settings` — update the confirmed starting cash balance or financial week start.
 - `GET /api/income-sources` — list saved income sources.
 - `POST /api/income-sources` — create an income source linked to a household member.
 - `GET/POST /api/bills` and `PATCH /api/bills/{id}` — manage recurring bills and deactivate/reactivate them.
@@ -98,9 +98,8 @@ Money values use integer cents: `$1,234.56` is `123456`. Income frequency option
 
 1. Fund bills due during the pay-period window, ordered by due date.
 2. Fund credit-card minimums due during the window, ordered by due date.
-3. Restore the shared household cash buffer toward its target.
-4. Contribute to savings goals by priority.
-5. Apply remaining cash to extra debt payoff using avalanche or snowball order.
+3. Contribute to savings goals by priority when the dated cash forecast can fund them.
+4. Apply remaining safe cash to extra debt payoff using avalanche or snowball order.
 
 Unfunded amounts are explicitly shown. This is a planning tool, not a bank connection; it does not move money or verify that a payment happened.
 
@@ -110,7 +109,7 @@ See [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md) for the systemd s
 
 ## Current limitations and security
 
-Household members and income sources can be added, edited, and deactivated/reactivated through both the API and the browser setup page. Transactions can be entered manually, but automatic imports and reconciliation against bank activity are not yet implemented. The cash-flow forecast plans savings per financial week rather than per payday. Goals with deadlines receive calculated weekly targets; undated goals use the chosen weekly amount for ongoing savings, with missed weekly amounts carried forward based on recorded contributions. The weekly report separately estimates safe available surplus by looking ahead across future weeks; the intended dashboard workflow is to report that safe amount and let the household decide how to allocate it among extra debt payments, buffer additions, savings goals, or leaving it unallocated. Irregular income is only forecast for its explicitly saved date. The Raspberry Pi systemd and backup/restore guide is in [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md). Remote requests are blocked by default. To allow trusted home-network devices without a second login prompt, configure `CASHFLOW_ALLOW_LAN=1`; the household login still protects financial pages. Optional Basic authentication is available via `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`. Keep the service on a trusted private network and do not expose it to the public internet.
+Household members and income sources can be added, edited, and deactivated/reactivated through both the API and the browser setup page. Transactions can be entered manually, but automatic imports and reconciliation against bank activity are not yet implemented. The cash-flow forecast plans savings per financial week rather than per payday. Goals with deadlines receive calculated weekly targets; undated goals use the chosen weekly amount for ongoing savings, with missed weekly amounts carried forward based on recorded contributions. The weekly report estimates safe available surplus from daily cash checkpoints across future weeks. Same-day outflows are tested before inflows because exact posting times are unknown. The household can allocate safe surplus to extra debt payments, savings goals, or leave it unallocated. The former buffer target remains in the database only for upgrade compatibility and no longer affects calculations. Irregular income is only forecast for its explicitly saved date. The Raspberry Pi systemd and backup/restore guide is in [docs/DEPLOY_RASPBERRY_PI.md](docs/DEPLOY_RASPBERRY_PI.md). Remote requests are blocked by default. To allow trusted home-network devices without a second login prompt, configure `CASHFLOW_ALLOW_LAN=1`; the household login still protects financial pages. Optional Basic authentication is available via `CASHFLOW_USERNAME` and `CASHFLOW_PASSWORD`. Keep the service on a trusted private network and do not expose it to the public internet.
 
 
 ### Deleting records
