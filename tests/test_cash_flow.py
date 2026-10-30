@@ -110,8 +110,10 @@ def test_weekly_forecast_reconciles_linked_income_and_bill_transactions(tmp_path
     assert report["funded_savings_cents"] == 5000
     assert report["projected_cash_before_buffer_cents"] == 106000
     assert report["buffer_replenishment_cents"] == 0
-    assert report["free_to_spend_cents"] == 81000
-    assert report["extra_debt_payoff_capacity_cents"] == 81000
+    # The bill is tested before the same-day paycheck, so $70,000 is the
+    # lowest safe daily balance even though the weekly ending balance is higher.
+    assert report["free_to_spend_cents"] == 70000
+    assert report["extra_debt_payoff_capacity_cents"] == 70000
     assert len(report["transfers"]) == 1
 
 
@@ -224,6 +226,7 @@ def test_future_rent_reserves_current_surplus_and_flags_buffer_shortfall(tmp_pat
     assert report["future_buffer_shortfall_cents"] == 0
     assert report["free_to_spend_cents"] == 10000
     assert report["extra_debt_payoff_capacity_cents"] == 10000
+    assert report["future_obligation_reservation_cents"] == 90000
     assert report["future_buffer_reservation_cents"] == 90000
 
 
