@@ -52,7 +52,7 @@ INTERACTION_SCRIPT = """<script id="cfe-ui-interactions">
    if(attention){attention.classList.add('cfe-attention-metric');const label=attention.querySelector('span');if(label)label.textContent='Checklist actions left';if(safe)safe.after(attention);else metrics.prepend(attention);}
    const secondary=Array.from(metrics.querySelectorAll('.metric')).filter(c=>c!==safe&&c!==attention);
    if(secondary.length){const details=document.createElement('details');details.id='cfe-at-a-glance';const summary=document.createElement('summary');summary.textContent='At a glance · household and monthly totals';details.appendChild(summary);const grid=document.createElement('div');grid.className='metrics';
-    secondary.forEach(card=>{const label=card.querySelector('span');if(label){if(label.textContent.trim()==='Household cash buffer')label.textContent='';if(label.textContent.trim()==='Forecast buffer gap'){card.classList.add('cfe-forecast-gap-metric');label.textContent='Projected cash shortfall';}}grid.appendChild(card);});
+    secondary.forEach(card=>{const label=card.querySelector('span');if(label){if(label.textContent.trim()==='Projected cash shortfall'){card.classList.add('cfe-forecast-gap-metric');}}grid.appendChild(card);});
     details.appendChild(grid);metrics.after(details);
    }
   }
