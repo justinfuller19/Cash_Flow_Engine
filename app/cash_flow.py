@@ -1108,6 +1108,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 <div class="field"><label for="end">End date</label><input id="end" type="date" required></div><label><input id="estimate-interest" type="checkbox"> Estimate future debt interest</label><button id="refresh" type="button">Update report</button></div>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div id="metrics" class="metrics"></div>
+<section class="card"><h2>Daily cash checkpoints</h2><p class="muted">Each day shows the lowest cash position after that day’s scheduled outflows and before later income. Same-day timing is treated conservatively.</p><ul id="daily-checkpoints" class="list"><li class="muted">Loading daily cash…</li></ul></section>
 <section class="card"><h2>Confirm starting cash</h2>
 <p class="muted">Confirm the household cash balance at the start of the current financial week. An estimate is based only on recorded transactions since the previous snapshot; verify it against actual cash. Confirming a balance does not change or delete transactions.</p>
 <p id="weekly-cash-estimate" class="muted" role="status">Checking whether an estimate is available…</p>
@@ -1208,6 +1209,7 @@ renderList("transactions",report.transactions,"No transactions recorded in this 
 await loadPossiblePaymentMatches();
 renderList("category-spending",report.category_spending,"No expense transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(x.amount_cents)));});
 const savings=document.getElementById("savings");savings.replaceChildren();savings.appendChild(el("p","", "Planned: "+dollars(report.planned_savings_cents)));savings.appendChild(el("p","", "Funded after obligations: "+dollars(report.funded_savings_cents)));savings.appendChild(el("p","", "Not covered by this forecast: "+dollars(report.savings_shortfall_cents)));savings.appendChild(el("p","muted","Contributions are estimated from active savings goals and distinct scheduled payday dates."));
+renderList("daily-checkpoints",report.daily_forecast,"No daily cash checkpoints available.",(li,day)=>{li.appendChild(el("div","item-title",day.date+" · lowest "+dollars(day.lowest_cash_cents)+" · ending "+dollars(day.ending_cash_cents)));li.appendChild(el("div","detail","Income "+dollars(day.income_cents)+" · outflows "+dollars(day.outflows_cents)));if(day.projected_shortfall_cents>0)li.appendChild(el("div","detail","Projected shortfall "+dollars(day.projected_shortfall_cents)));});
 renderList("notes",report.notes,"No additional assumptions.",(li,note)=>li.appendChild(el("div","detail",note)));
 const recommendation=report.recommended_snowball_debt;
 document.getElementById("snowball-suggestion").textContent=recommendation
