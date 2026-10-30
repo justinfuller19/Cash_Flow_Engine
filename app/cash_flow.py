@@ -300,7 +300,7 @@ def weekly_cash_flow(
                 item["arrears_cents"] for item in future["savings_plan"]
             ),
             "projected_ending_cash_cents": ending_cash,
-            "projected_shortfall_cents": max(0, -ending_cash),
+            "projected_shortfall_cents": max(0, -future_daily_low),
             "buffer_shortfall_cents": 0,
             "lowest_projected_cash_cents": future_daily_low,
             "daily_forecast": future_daily_forecast,
@@ -375,6 +375,7 @@ def weekly_cash_flow(
     report["projected_shortfall_cents"] = max(
         report["projected_shortfall_cents"],
         max((item["projected_shortfall_cents"] for item in current_daily_forecast), default=0),
+        max((item["projected_shortfall_cents"] for item in future_forecast), default=0),
     )
     report["buffer_shortfall_cents"] = 0
     report["buffer_replenishment_cents"] = 0
@@ -902,7 +903,7 @@ def _weekly_cash_flow_for_window(
 
 
 class SurplusAllocationCreate(BaseModel):
-    allocation_type: str = Field(pattern=r"^(debt|buffer|savings|unallocated)$")
+    allocation_type: str = Field(pattern=r"^(debt|savings|unallocated)$")
     amount_cents: int = Field(gt=0)
     allocation_date: date = Field(default_factory=date.today)
     target_debt_id: int | None = Field(default=None, gt=0)
@@ -1119,7 +1120,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 <p id="weekly-cash-status" class="muted" role="status">Loading cash confirmation…</p>
 </section>
 <section class="card"><h2>Allocate safe available money</h2>
-<p class="muted">The forecast reports the amount you can allocate without dropping below the household buffer in any forecast week. You decide where it goes; planned allocations reduce what remains available. The default debt suggestion follows the snowball method.</p>
+<p class="muted">The forecast reports the amount left after dated obligations and planned savings across the forecast horizon. You decide where it goes; planned allocations reduce what remains available. The default debt suggestion follows the snowball method.</p>
 <p id="snowball-suggestion" class="muted">Loading debt recommendation…</p>
 <form id="allocation-form" class="toolbar">
 <div class="field"><label for="allocation-type">Use money for</label><select id="allocation-type"><option value="debt">Extra debt payment (snowball)</option><option value="savings">Savings goal</option><option value="unallocated">Leave unallocated</option></select></div>
@@ -1138,7 +1139,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 <section class="card"><h2>Possible unmatched payments</h2><p class="muted">These are review suggestions only. A transaction is never linked to a bill or debt unless you confirm the match. Suggestions explain the amount, date, and description evidence.</p><ul id="possible-payments" class="list"><li class="muted">Checking for possible matches…</li></ul></section>
 <section class="card"><h2>Spending by category</h2><ul id="category-spending" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Planned savings</h2><div id="savings" class="muted">Loading…</div></section>
-<section class="card"><h2>Upcoming weeks & buffer protection</h2><ul id="future-forecast" class="list"><li class="muted">Loading future forecast…</li></ul></section>
+<section class="card"><h2>Upcoming weeks & daily cash forecast</h2><ul id="future-forecast" class="list"><li class="muted">Loading future forecast…</li></ul></section>
 <section class="card"><h2>Forecast assumptions</h2><ul id="notes" class="list"></ul></section>
 </div></main>
 <script>
@@ -1223,8 +1224,8 @@ goalSelect.replaceChildren();for(const goal of goals.filter(x=>x.active)){const 
 const typeSelect=document.getElementById("allocation-type");
 function updateAllocationFields(){document.getElementById("debt-field").hidden=typeSelect.value!=="debt";document.getElementById("savings-field").hidden=typeSelect.value!=="savings";}
 typeSelect.onchange=updateAllocationFields;updateAllocationFields();
-renderList("allocations",allocations.filter(a=>a.status!=="planned"||a.allocation_type!=="buffer"||a.allocation_date>=report.start_date),"No allocations yet. Choose an amount above to reserve part of your safe surplus.",(li,a)=>{
- const label={debt:"Debt snowball",buffer:"Household buffer",savings:"Savings goal",unallocated:"Leave unallocated"}[a.allocation_type]||a.allocation_type;
+renderList("allocations",allocations.filter(a=>a.allocation_type!=="buffer"&&(a.status!=="planned"||a.allocation_date>=report.start_date)),"No allocations yet. Choose an amount above to reserve part of your safe surplus.",(li,a)=>{
+ const label={debt:"Debt snowball",savings:"Savings goal",unallocated:"Leave unallocated"}[a.allocation_type]||a.allocation_type;
  li.appendChild(el("div","item-title",label+" · "+dollars(a.amount_cents)+" · "+a.status));
  li.appendChild(el("div","detail",(a.target_debt_name||a.savings_goal_name||a.description||"No note")+" · "+a.allocation_date+(a.actual_amount_cents!==null&&a.actual_amount_cents!==undefined?" · actually paid "+dollars(a.actual_amount_cents):"")));
  if(a.status==="planned"){
