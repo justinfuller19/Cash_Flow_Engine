@@ -467,8 +467,8 @@ def _weekly_cash_flow_for_window(
             except (TypeError, ValueError):
                 starting_cash_is_stale = True
         # Retain the legacy database column for upgrade compatibility; it no longer
-    # constrains safe-to-spend or savings funding.
-    buffer_target = 0
+        # constrains safe-to-spend or savings funding.
+        buffer_target = 0
 
         # Include a short look-back for payments recorded just before the window
         # so they can mark a scheduled obligation as already covered.
