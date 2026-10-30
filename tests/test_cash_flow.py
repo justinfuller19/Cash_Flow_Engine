@@ -137,7 +137,9 @@ def test_weekly_forecast_flags_shortfalls_and_validates_window(tmp_path, monkeyp
     assert response.status_code == 200
     report = response.json()
     assert report["projected_cash_before_buffer_cents"] == -19000
-    assert report["projected_shortfall_cents"] == 19000
+    # The 13-week look-ahead includes three monthly rent occurrences.
+    assert report["projected_shortfall_cents"] == 59000
+    assert report["lowest_projected_cash_cents"] == -59000
     assert report["buffer_shortfall_cents"] == 0
     assert report["free_to_spend_cents"] == 0
 
