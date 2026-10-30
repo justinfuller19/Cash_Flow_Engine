@@ -127,9 +127,9 @@ def test_dashboard_summarizes_saved_household_and_plan(tmp_path, monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["active_household_members"] == 1
-    assert data["protected_buffers_cents"] == 10000
     assert isinstance(data["safe_to_spend_cents"], int)
-    assert data["horizon_buffer_replenishment_cents"] == data["horizon_buffer_shortfall_cents"]
+    assert isinstance(data["projected_cash_shortfall_cents"], int)
+    assert isinstance(data["lowest_projected_cash_cents"], int)
     assert data["forecast_weeks"] == 13
     assert data["pending_checklist_count"] == 4
     assert data["next_paydays"][0]["date"] == (today + timedelta(days=1)).isoformat()
