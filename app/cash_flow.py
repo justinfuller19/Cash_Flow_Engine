@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 from . import database
 from .household import CASH_SNAPSHOT_STALE_DAYS
 from .forecast import occurrences_between
-from .buffer import buffer_shortfall_cents, safe_surplus_cents
 
 router = APIRouter()
 
@@ -100,6 +99,55 @@ def _take_matching_transactions(
     return candidates
 
 
+def _daily_cash_forecast(report: dict) -> list[dict]:
+    """Project cash by date, conservatively applying outflows before inflows."""
+    start = date.fromisoformat(report["start_date"])
+    end = date.fromisoformat(report["end_date"])
+    events: dict[date, dict[str, int]] = {}
+
+    def add(day_value, key: str, amount: int) -> None:
+        if not day_value or amount <= 0:
+            return
+        day = date.fromisoformat(day_value) if isinstance(day_value, str) else day_value
+        bucket = events.setdefault(day, {"income_cents": 0, "expense_cents": 0})
+        bucket[key] += amount
+
+    for item in report.get("expected_income", []):
+        add(item.get("date"), "income_cents", item.get("amount_cents", 0))
+    for item in report.get("transactions", []):
+        if item.get("type") == "income":
+            add(item.get("date"), "income_cents", abs(item.get("amount_cents", 0)))
+        elif item.get("type") == "expense":
+            add(item.get("date"), "expense_cents", abs(item.get("amount_cents", 0)))
+    for item in report.get("bills", []):
+        add(item.get("due_date"), "expense_cents", item.get("amount_cents", 0))
+    for item in report.get("minimum_debt_payments", []):
+        add(item.get("due_date"), "expense_cents", item.get("amount_cents", 0))
+    add(end, "expense_cents", report.get("funded_savings_cents", 0))
+
+    balance = report.get("starting_cash_cents", 0)
+    daily = []
+    cursor = start
+    while cursor <= end:
+        bucket = events.get(cursor, {"income_cents": 0, "expense_cents": 0})
+        opening = balance
+        after_outflows = opening - bucket["expense_cents"]
+        ending = after_outflows + bucket["income_cents"]
+        lowest = min(opening, after_outflows, ending)
+        daily.append({
+            "date": cursor.isoformat(),
+            "opening_cash_cents": opening,
+            "income_cents": bucket["income_cents"],
+            "outflows_cents": bucket["expense_cents"],
+            "lowest_cash_cents": lowest,
+            "ending_cash_cents": ending,
+            "projected_shortfall_cents": max(0, -lowest),
+        })
+        balance = ending
+        cursor += timedelta(days=1)
+    return daily
+
+
 @router.get("/api/cash-flow/weekly")
 def weekly_cash_flow(
     start_date: date | None = Query(default=None),
@@ -131,11 +179,12 @@ def weekly_cash_flow(
         raise HTTPException(status_code=422, detail="forecast_weeks must be between 1 and 52")
 
     report = _weekly_cash_flow_for_window(start, end)
-    buffer_target = report["buffer_target_cents"]
     current_ending_cash = (
         report["projected_cash_before_buffer_cents"] - report["funded_savings_cents"]
     )
-    lowest_projected_cash = current_ending_cash
+    current_daily_forecast = _daily_cash_forecast(report)
+    current_daily_low = min((item["lowest_cash_cents"] for item in current_daily_forecast), default=current_ending_cash)
+    lowest_projected_cash = current_daily_low
     future_forecast = []
     carried_cash = current_ending_cash
 
@@ -214,7 +263,9 @@ def weekly_cash_flow(
         ending_cash = (
             future["projected_cash_before_buffer_cents"] - future["funded_savings_cents"]
         )
-        lowest_projected_cash = min(lowest_projected_cash, ending_cash)
+        future_daily_forecast = _daily_cash_forecast(future)
+        future_daily_low = min((item["lowest_cash_cents"] for item in future_daily_forecast), default=ending_cash)
+        lowest_projected_cash = min(lowest_projected_cash, future_daily_low)
         if estimate_interest:
             payments_by_debt = {
                 payment["id"]: payment["qualifying_payments_cents"] + payment["amount_cents"]
@@ -250,7 +301,9 @@ def weekly_cash_flow(
             ),
             "projected_ending_cash_cents": ending_cash,
             "projected_shortfall_cents": max(0, -ending_cash),
-            "buffer_shortfall_cents": max(0, buffer_target - ending_cash),
+            "buffer_shortfall_cents": 0,
+            "lowest_projected_cash_cents": future_daily_low,
+            "daily_forecast": future_daily_forecast,
             "estimated_debt_interest_cents": weekly_estimated_interest_cents,
             "estimated_debt_interest": estimated_debt_interest,
             "projected_debt_balances": (
@@ -277,14 +330,13 @@ def weekly_cash_flow(
         }
         future_start = future_end + timedelta(days=1)
 
-    # The lowest balance in the entire horizon limits discretionary spending now.
-    # One shared buffer floor applies to every projected week. Only the lowest
-    # projected ending balance determines today's safe discretionary surplus.
-    safe_to_spend = safe_surplus_cents(lowest_projected_cash, buffer_target)
+    # The lowest daily balance across the horizon limits discretionary spending.
+    safe_to_spend = max(0, lowest_projected_cash)
     report["projected_ending_cash_cents"] = current_ending_cash
-    report["free_to_spend_before_future_reserve_cents"] = report["free_to_spend_cents"]
+    report["daily_forecast"] = current_daily_forecast
+    report["free_to_spend_before_future_reserve_cents"] = max(0, current_ending_cash)
     report["future_buffer_reservation_cents"] = max(
-        0, report["free_to_spend_cents"] - safe_to_spend
+        0, report["free_to_spend_before_future_reserve_cents"] - safe_to_spend
     )
     with database.connect() as db:
         allocations = db.execute(
@@ -293,7 +345,8 @@ def weekly_cash_flow(
                       actual_amount_cents, transaction_id
                FROM surplus_allocations
                WHERE status = 'planned'
-                 AND (allocation_type <> 'buffer' OR allocation_date >= ?)
+                 AND allocation_type <> 'buffer'
+                 AND allocation_date >= ?
                ORDER BY allocation_date, id""",
             (start.isoformat(),),
         ).fetchall()
@@ -317,18 +370,28 @@ def weekly_cash_flow(
     report["estimated_interest_enabled"] = estimate_interest
     report["estimated_debt_interest_cents"] = total_estimated_interest_cents
     report["lowest_projected_cash_cents"] = lowest_projected_cash
-    report["future_buffer_shortfall_cents"] = buffer_shortfall_cents(lowest_projected_cash, buffer_target)
-    report["horizon_buffer_replenishment_cents"] = buffer_shortfall_cents(
-        lowest_projected_cash, buffer_target
+    report["future_buffer_shortfall_cents"] = 0
+    report["horizon_buffer_replenishment_cents"] = 0
+    report["projected_shortfall_cents"] = max(
+        report["projected_shortfall_cents"],
+        max((item["projected_shortfall_cents"] for item in current_daily_forecast), default=0),
     )
+    report["buffer_shortfall_cents"] = 0
+    report["buffer_replenishment_cents"] = 0
+    report["buffer_target_cents"] = 0
     report["safe_to_spend_before_allocations_cents"] = safe_before_allocations
     report["future_forecast"] = future_forecast
     report["notes"].append(
-        "One household-wide buffer is a protected minimum cash floor after required bills "
-        "and debt minimums. Safe-to-spend is limited by the lowest projected ending balance "
-        "across " + str(forecast_weeks) + " forecast week(s), less that buffer; future "
-        "weeks carry forward prior ending cash. Planned surplus allocations are reserved "
-        "once and remain plans until recorded."
+        "Safe-to-spend is the lowest projected daily cash balance across "
+        + str(forecast_weeks) + " forecast week(s), after scheduled income, bills, "
+        "minimum debt payments, recorded transactions, and planned savings. Same-day "
+        "outflows are tested before inflows because exact posting times are unknown. "
+        "There is no mandatory household buffer; savings goals remain separate commitments."
+    )
+    report["notes"].append(
+        "Daily checkpoints expose an earlier-in-the-week shortfall that a weekly net "
+        "total could hide. A negative daily checkpoint means the schedule requires more "
+        "cash before later income arrives."
     )
     if estimate_interest:
         report["notes"].append(
@@ -393,7 +456,9 @@ def _weekly_cash_flow_for_window(
                 ).days > CASH_SNAPSHOT_STALE_DAYS
             except (TypeError, ValueError):
                 starting_cash_is_stale = True
-        buffer_target = settings["buffer_target_cents"] if settings else 0
+        # Retain the legacy database column for upgrade compatibility; it no longer
+    # constrains safe-to-spend or savings funding.
+    buffer_target = 0
 
         # Include a short look-back for payments recorded just before the window
         # so they can mark a scheduled obligation as already covered.
@@ -746,9 +811,8 @@ def _weekly_cash_flow_for_window(
         starting_cash + expected_income_cents + transaction_income
         - bills_due_cents - minimum_debt_cents - transaction_expenses
     )
-    buffer_replenishment = buffer_shortfall_cents(projected_cash, buffer_target)
-    available_after_buffer = safe_surplus_cents(projected_cash, buffer_target)
-    funded_savings = min(planned_savings, available_after_buffer)
+    available_cash = max(0, projected_cash)
+    funded_savings = min(planned_savings, available_cash)
     savings_shortfall = planned_savings - funded_savings
     remaining_savings_capacity = funded_savings
     for item in savings_plan:
@@ -765,7 +829,7 @@ def _weekly_cash_flow_for_window(
         item["deadline_warning"] = bool(
             item["behind_schedule"] or item["unfunded_this_week_cents"] > 0
         )
-    free_to_spend = max(0, available_after_buffer - funded_savings)
+    free_to_spend = max(0, available_cash - funded_savings)
 
     return {
         "start_date": start.isoformat(),
@@ -811,9 +875,9 @@ def _weekly_cash_flow_for_window(
         "funded_savings_cents": funded_savings,
         "savings_shortfall_cents": savings_shortfall,
         "projected_cash_before_buffer_cents": projected_cash,
-        "buffer_replenishment_cents": buffer_replenishment,
+        "buffer_replenishment_cents": 0,
         "projected_shortfall_cents": max(0, -projected_cash),
-        "buffer_shortfall_cents": max(0, buffer_target - projected_cash),
+        "buffer_shortfall_cents": 0,
         "free_to_spend_cents": free_to_spend,
         "extra_debt_payoff_capacity_cents": free_to_spend,
         "notes": [
@@ -1038,7 +1102,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 .list li:first-child{border-top:0}.item-title{font-weight:700}.detail{font-size:.9rem;color:#5c687a;margin-top:4px}
 .status{padding:12px;border-radius:9px;background:#e0f2fe;color:#075985;margin-top:16px}.warning{background:#fff7ed;color:#9a3412}.error{background:#fee2e2;color:#991b1b}.status[hidden]{display:none}
 </style></head><body><main><a href="/">← Dashboard</a><h1>Weekly Cash Flow</h1>
-<p class="muted">Review what is expected, what is already recorded, and what remains after required payments, the household buffer, and planned savings. Forecasts are estimates and never move money.</p>
+<p class="muted">Review what is expected, what is already recorded, and what remains after upcoming obligations and planned savings. Forecasts are estimates and never move money.</p>
 <div class="toolbar"><div class="field"><label for="week-start">Start of financial week</label><select id="week-start"><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option selected>Friday</option><option>Saturday</option><option>Sunday</option></select></div><button id="save-week-start" type="button">Save week start</button><div class="field"><label for="start">Start date</label><input id="start" type="date" required></div>
 <div class="field"><label for="end">End date</label><input id="end" type="date" required></div><label><input id="estimate-interest" type="checkbox"> Estimate future debt interest</label><button id="refresh" type="button">Update report</button></div>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
@@ -1058,7 +1122,7 @@ button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:whi
 <p class="muted">The forecast reports the amount you can allocate without dropping below the household buffer in any forecast week. You decide where it goes; planned allocations reduce what remains available. The default debt suggestion follows the snowball method.</p>
 <p id="snowball-suggestion" class="muted">Loading debt recommendation…</p>
 <form id="allocation-form" class="toolbar">
-<div class="field"><label for="allocation-type">Use money for</label><select id="allocation-type"><option value="debt">Extra debt payment (snowball)</option><option value="buffer">Add to household buffer</option><option value="savings">Savings goal</option><option value="unallocated">Leave unallocated</option></select></div>
+<div class="field"><label for="allocation-type">Use money for</label><select id="allocation-type"><option value="debt">Extra debt payment (snowball)</option><option value="savings">Savings goal</option><option value="unallocated">Leave unallocated</option></select></div>
 <div class="field"><label for="allocation-amount">Amount ($)</label><input id="allocation-amount" type="number" min="0.01" step="0.01" required></div>
 <div class="field" id="debt-field"><label for="allocation-debt">Debt target</label><select id="allocation-debt"></select></div>
 <div class="field" id="savings-field" hidden><label for="allocation-savings">Savings goal</label><select id="allocation-savings"></select></div>
@@ -1122,22 +1186,18 @@ for(const [label,value] of [
 ["Recorded income",report.recorded_income_cents],["Bills still due",report.bills_due_cents],
 ["Minimum debt payments",report.minimum_debt_payments_cents],["Recorded expenses",report.transaction_expenses_cents],
 ...(report.estimated_interest_enabled?[["Estimated future debt interest",report.estimated_debt_interest_cents]]:[]),
-["Projected cash before buffer",report.projected_cash_before_buffer_cents],["Buffer target",report.buffer_target_cents],
-["Buffer replenishment needed",report.buffer_replenishment_cents],["Planned savings",report.planned_savings_cents],
+["Projected cash after obligations",report.projected_cash_before_buffer_cents],["Lowest daily cash balance",report.lowest_projected_cash_cents],["Planned savings",report.planned_savings_cents],
 ["Savings funded",report.funded_savings_cents],
-["Available before future reserve",report.free_to_spend_before_future_reserve_cents],
 ["Reserved for future shortfalls",report.future_buffer_reservation_cents],
-["Horizon buffer replenishment needed",report.horizon_buffer_replenishment_cents],
 ["Safe available surplus",report.free_to_spend_cents],
 ["Already allocated",report.planned_allocations_cents],
 ["Still available to allocate",report.free_to_spend_cents]
 ])metric(metrics,label,dollars(value));
 if(report.projected_shortfall_cents>0)message("Projected shortfall: "+dollars(report.projected_shortfall_cents)+". Required obligations exceed projected cash.","warning");
-else if(report.buffer_shortfall_cents>0)message("Projected cash is below the household buffer target by "+dollars(report.buffer_shortfall_cents)+". Extra spending and savings are not available until the buffer is restored.","warning");
-else if(report.future_buffer_shortfall_cents>0)message("Future weeks would fall below the household buffer by as much as "+dollars(report.future_buffer_shortfall_cents)+". Safe-to-spend has been reduced to $0 until the forecast gap is addressed.","warning");
+
 else if(report.allocation_shortfall_cents>0)message("Your planned allocations now exceed safe available surplus by "+dollars(report.allocation_shortfall_cents)+". Review or cancel planned allocations before making more payments.","warning");
-else if(report.future_buffer_reservation_cents>0)message(dollars(report.future_buffer_reservation_cents)+" is reserved for upcoming obligations so the projected household balance can stay above its buffer.","warning");
-else if(report.savings_shortfall_cents>0)message("Required obligations and the buffer are covered, but planned savings are short by "+dollars(report.savings_shortfall_cents)+".","warning");
+else if(report.future_buffer_reservation_cents>0)message(dollars(report.future_buffer_reservation_cents)+" is reserved for upcoming obligations before they come due.","warning");
+else if(report.savings_shortfall_cents>0)message("Required obligations are covered, but planned savings are short by "+dollars(report.savings_shortfall_cents)+".","warning");
 else {statusBox.hidden=true;}
 renderList("income",report.expected_income,"No scheduled income remains expected in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date));});
 const billRows=report.bills.map(x=>({...x,kind:"bill"}));
@@ -1146,7 +1206,7 @@ renderList("debts",report.minimum_debt_payments,"No minimum debt payments due in
 renderList("transactions",report.transactions,"No transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.description+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.type+" · "+x.category+(x.linked_obligation_type?" · linked "+x.linked_obligation_type:"")));});
 await loadPossiblePaymentMatches();
 renderList("category-spending",report.category_spending,"No expense transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(x.amount_cents)));});
-const savings=document.getElementById("savings");savings.replaceChildren();savings.appendChild(el("p","", "Planned: "+dollars(report.planned_savings_cents)));savings.appendChild(el("p","", "Funded after obligations and buffer: "+dollars(report.funded_savings_cents)));savings.appendChild(el("p","", "Not covered by this forecast: "+dollars(report.savings_shortfall_cents)));savings.appendChild(el("p","muted","Contributions are estimated from active savings goals and distinct scheduled payday dates."));
+const savings=document.getElementById("savings");savings.replaceChildren();savings.appendChild(el("p","", "Planned: "+dollars(report.planned_savings_cents)));savings.appendChild(el("p","", "Funded after obligations: "+dollars(report.funded_savings_cents)));savings.appendChild(el("p","", "Not covered by this forecast: "+dollars(report.savings_shortfall_cents)));savings.appendChild(el("p","muted","Contributions are estimated from active savings goals and distinct scheduled payday dates."));
 renderList("notes",report.notes,"No additional assumptions.",(li,note)=>li.appendChild(el("div","detail",note)));
 const recommendation=report.recommended_snowball_debt;
 document.getElementById("snowball-suggestion").textContent=recommendation
@@ -1188,7 +1248,8 @@ renderList("future-forecast",report.future_forecast,"No future weeks included in
   li.appendChild(el("div","detail","Starting cash "+dollars(x.starting_cash_cents)+" · income "+dollars(x.expected_income_cents+x.recorded_income_cents)+" · bills "+dollars(x.bills_due_cents)+" · minimum debt "+dollars(x.minimum_debt_payments_cents)));
   li.appendChild(el("div","detail","Savings target "+dollars(x.planned_savings_cents)+" · safely funded "+dollars(x.funded_savings_cents)+" · arrears carried "+dollars(x.savings_arrears_cents)));
   if(x.savings_shortfall_cents>0)li.appendChild(el("div","detail","Savings target not currently affordable: "+dollars(x.savings_shortfall_cents)));
-  if(x.buffer_shortfall_cents>0)li.appendChild(el("div","detail","Buffer shortfall: "+dollars(x.buffer_shortfall_cents)));
+  if(x.lowest_projected_cash_cents<0)li.appendChild(el("div","detail","Lowest daily cash: "+dollars(x.lowest_projected_cash_cents)+" · shortfall "+dollars(x.projected_shortfall_cents)));
+  if(x.daily_forecast&&x.daily_forecast.some(day=>day.projected_shortfall_cents>0))li.appendChild(el("div","detail","Daily cash shortfall detected on "+x.daily_forecast.filter(day=>day.projected_shortfall_cents>0).map(day=>day.date).join(", ")));
   if(report.estimated_interest_enabled){
     li.appendChild(el("div","detail","Estimated debt interest this week: "+dollars(x.estimated_debt_interest_cents)));
     for(const debt of x.projected_debt_balances||[])li.appendChild(el("div","detail",debt.debt_name+" projected balance: "+dollars(debt.projected_balance_cents)));
