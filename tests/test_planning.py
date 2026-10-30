@@ -45,7 +45,6 @@ def test_generate_plan_uses_saved_household_records_and_saves_history(tmp_path, 
     client = TestClient(app)
 
     person = client.post("/api/people", json={"name": "Member"}).json()
-    client.patch("/api/household/settings", json={"buffer_target_cents": 10000})
     client.post(
         "/api/income-sources",
         json={
@@ -101,20 +100,20 @@ def test_generate_plan_uses_saved_household_records_and_saves_history(tmp_path, 
     plan = response.json()
     assert plan["income_cents"] == 100000
     assert plan["total_available_cents"] == 150000
-    assert plan["unallocated_cents"] == 25000
+    assert plan["unallocated_cents"] == 35000
     assert plan["unfunded_cents"] == 0
     assert plan["is_fully_funded"] is True
     assert [item["category"] for item in plan["items"]] == [
-        "bill", "debt_minimum", "buffer", "savings", "debt_extra"
+        "bill", "debt_minimum", "savings", "debt_extra"
     ]
-    assert plan["items"][3]["requested_cents"] == 10000
+    assert plan["items"][2]["requested_cents"] == 10000
 
     history = client.get("/api/plans")
     assert history.status_code == 200
     assert history.json()[0]["id"] == plan["id"]
     detail = client.get(f"/api/plans/{plan['id']}")
     assert detail.status_code == 200
-    assert len(detail.json()["items"]) == 5
+    assert len(detail.json()["items"]) == 4
     assert client.get("/api/plans/9999").status_code == 404
 
 
@@ -153,15 +152,14 @@ def test_schema_v4_adds_contributions_and_plan_totals(tmp_path, monkeypatch):
     assert version == database.SCHEMA_VERSION
 
 
-def test_required_obligations_are_funded_before_underfunded_household_buffer():
-    """A low buffer must not starve bills or debt minimums."""
+def test_required_obligations_and_savings_are_funded_without_buffer():
+    """Bills and debt minimums retain priority without a mandatory buffer."""
     plan = generate_payday_plan(
         PaydayRequest(
             plan_date=date(2026, 11, 20),
             period_start=date(2026, 11, 20),
             period_end=date(2026, 11, 26),
             starting_cash_cents=50000,
-            buffers=[BufferReservation(name="Household cash buffer", amount_cents=20000)],
             bills=[Bill(name="Rent", amount_cents=45000, due_date=date(2026, 11, 22))],
             credit_cards=[
                 CreditCard(
@@ -185,16 +183,15 @@ def test_required_obligations_are_funded_before_underfunded_household_buffer():
     )
 
     assert [item.category for item in plan.items] == [
-        "bill", "debt_minimum", "buffer", "savings"
+        "bill", "debt_minimum", "savings"
     ]
-    bill, minimum, buffer, savings = plan.items
+    bill, minimum, savings = plan.items
     assert (bill.funded_cents, bill.unfunded_cents) == (45000, 0)
     assert (minimum.funded_cents, minimum.unfunded_cents) == (5000, 5000)
-    assert (buffer.funded_cents, buffer.unfunded_cents) == (0, 20000)
     assert (savings.funded_cents, savings.unfunded_cents) == (0, 5000)
     assert plan.allocated_cents == 50000
     assert plan.unallocated_cents == 0
-    assert plan.unfunded_cents == 30000
+    assert plan.unfunded_cents == 10000
     assert plan.total_available_cents == plan.allocated_cents + plan.unallocated_cents
 
 
