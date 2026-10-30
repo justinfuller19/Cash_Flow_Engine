@@ -436,7 +436,7 @@ def _weekly_cash_flow_for_window(
     """Calculate one period, optionally carrying known savings arrears and cash."""
     with database.connect() as db:
         settings = db.execute(
-            "SELECT starting_cash_cents, buffer_target_cents, financial_week_start FROM household_settings WHERE id = 1"
+            "SELECT starting_cash_cents, financial_week_start FROM household_settings WHERE id = 1"
         ).fetchone()
         snapshot = db.execute(
             """SELECT effective_week_start, balance_cents, confirmed_at
