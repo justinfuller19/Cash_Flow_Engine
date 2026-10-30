@@ -138,6 +138,16 @@ async def account_post(request: Request):
     return await account_update_route(request)
 
 
+@app.get("/brand/logo.svg")
+def brand_logo():
+    """Serve the Cash Flow Engine logo as a scalable SVG."""
+    return Response(
+        content=BRAND_LOGO_SVG,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "app": "CashFlow Engine"}
