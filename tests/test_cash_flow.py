@@ -686,7 +686,7 @@ def test_legacy_household_buffer_setting_does_not_change_savings_funding(tmp_pat
         "/api/household/settings",
         json={"buffer_target_cents": 20000},
     )
-    assert changed.status_code == 200, changed.text
+    assert changed.status_code == 422
     after = client.get("/api/cash-flow/weekly", params=params).json()
     assert after["funded_savings_cents"] == 50000
     assert after["savings_plan"][0]["funded_this_week_cents"] == 50000
