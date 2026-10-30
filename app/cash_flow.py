@@ -330,14 +330,23 @@ def weekly_cash_flow(
         }
         future_start = future_end + timedelta(days=1)
 
-    # The lowest daily balance across the horizon limits discretionary spending.
-    safe_to_spend = max(0, lowest_projected_cash)
+    # Today's daily low is the current-period spending ceiling. Future weeks
+    # can reserve part of that amount when their own daily low is lower.
+    future_daily_lows = [
+        item["lowest_projected_cash_cents"] for item in future_forecast
+    ]
+    future_lowest_cash = min(future_daily_lows, default=current_daily_low)
+    safe_before_future_reserve = max(0, current_daily_low)
+    safe_to_spend = max(0, min(current_daily_low, future_lowest_cash))
+    future_obligation_reservation = max(
+        0, safe_before_future_reserve - max(0, future_lowest_cash)
+    )
     report["projected_ending_cash_cents"] = current_ending_cash
     report["daily_forecast"] = current_daily_forecast
-    report["free_to_spend_before_future_reserve_cents"] = max(0, current_ending_cash)
-    report["future_buffer_reservation_cents"] = max(
-        0, report["free_to_spend_before_future_reserve_cents"] - safe_to_spend
-    )
+    report["free_to_spend_before_future_reserve_cents"] = safe_before_future_reserve
+    report["future_obligation_reservation_cents"] = future_obligation_reservation
+    # Legacy response alias retained for clients upgrading from the buffer model.
+    report["future_buffer_reservation_cents"] = future_obligation_reservation
     with database.connect() as db:
         allocations = db.execute(
             """SELECT id, allocation_date, allocation_type, amount_cents,
