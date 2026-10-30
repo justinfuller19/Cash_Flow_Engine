@@ -60,13 +60,13 @@ def test_auth_page_without_head_gets_styles_but_no_navigation():
     assert 'class="cfe-global-nav"' not in markup
 
 
-def test_home_page_gets_action_first_ui_and_buffer_explanation():
+def test_home_page_gets_action_first_ui_and_cash_floor_explanation():
     html = '<html><head></head><body><nav aria-label="Main navigation">old nav</nav><form id="dashboard-cash-snapshot-form"></form><div id="metrics"></div><div id="weekly-summary"></div></body></html>'
     refreshed = enhance_html(html)
     assert 'id="cfe-ui-interactions"' in refreshed
     assert "actions.id='cfe-home-actions'" in refreshed
     assert 'Safe to spend this week' in refreshed
-    assert 'household buffer' in refreshed.lower()
+    assert 'there is no mandatory household cash floor' in refreshed.lower()
     assert '/api/dashboard' not in refreshed
     assert 'free_to_spend_cents' not in refreshed
 
@@ -80,7 +80,7 @@ def test_dashboard_metric_labels_are_pinned_to_the_script_hooks():
     assert "includes('actions needing attention')" in INTERACTION_SCRIPT
     assert "Safe to spend this week" in INTERACTION_SCRIPT
     assert "Checklist actions left" in INTERACTION_SCRIPT
-    assert "Forecast buffer gap" in INTERACTION_SCRIPT
+    assert "Projected cash shortfall" in INTERACTION_SCRIPT
 
 
 def test_future_forecast_gap_has_a_visible_warning_and_forecast_link():
@@ -119,3 +119,41 @@ def test_enhance_html_keeps_top_title_but_removes_duplicate_account_header_links
     assert 'CashFlow Engine' not in nav
     assert nav.index('class="cfe-more-menu"') < nav.index('Account settings')
     assert nav.index('class="cfe-more-menu"') < nav.index('Log out')
+
+
+def test_shared_styles_include_responsive_brand_logo():
+    from app.ui_refresh import GLOBAL_STYLES
+
+    assert ".cfe-brand-lockup" in GLOBAL_STYLES
+    assert "max-height:124px" in GLOBAL_STYLES
+
+
+def test_brand_logo_route_serves_svg():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    response = TestClient(app).get("/brand/logo.svg")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    assert "<svg" in response.text
+    assert "Cash Flow" in response.text
+
+
+def test_dashboard_uses_the_brand_logo_in_its_header():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    response = TestClient(app).get("/")
+
+    assert response.status_code == 200
+    assert 'class="cfe-brand-lockup"' in response.text
+    assert 'src="/brand/logo.svg"' in response.text
+
+
+def test_non_dashboard_pages_get_shared_brand_header():
+    html = "<html><head></head><body><main>Page</main></body></html>"
+    refreshed = enhance_html(html)
+
+    assert 'class="cfe-site-brand"' in refreshed
+    assert 'src="/brand/logo.svg"' in refreshed

@@ -29,6 +29,7 @@ from .household import router as household_router
 from .security import remote_access_guard
 from .auth import (household_auth_guard, initialize_auth_database, login_page, register_page, login_route, register_route, logout_route, account_page, account_update_route)
 from .ui_refresh import enhance_html
+from .brand import BRAND_LOGO_SVG
 
 
 @asynccontextmanager
@@ -137,6 +138,16 @@ async def account_post(request: Request):
     return await account_update_route(request)
 
 
+@app.get("/brand/logo.svg")
+def brand_logo():
+    """Serve the Cash Flow Engine logo as a scalable SVG."""
+    return Response(
+        content=BRAND_LOGO_SVG,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "app": "CashFlow Engine"}
@@ -178,7 +189,7 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 </style></head><body><main>
 <header class="app-header">
 <div class="brand-row">
-<div><h1 class="brand">CashFlow Engine</h1><p class="brand-subtitle">A clearer view of your household money.</p></div>
+<div class="cfe-brand-lockup"><img src="/brand/logo.svg" alt="Cash Flow Engine" width="170" height="124"><p class="brand-subtitle">A clearer view of your household money.</p></div>
 <div class="account-links"><a href="/account">Account settings</a><a href="/logout">Log out</a></div>
 </div>
 <nav aria-label="Main navigation">
@@ -221,7 +232,9 @@ async function api(url){const r=await fetch(url);const d=await r.json().catch(()
 function renderList(id,items,empty,make){const list=document.getElementById(id);list.replaceChildren();if(!items.length){list.appendChild(el("li","muted",empty));return;}for(const item of items){const li=el("li","");make(li,item);list.appendChild(li);}}
 async function load(){const d=await api("/api/dashboard");
 const metrics=document.getElementById("metrics");metrics.replaceChildren();
-for(const [label,value] of [["Active household members",String(d.active_household_members)],["Household cash buffer",dollars(d.protected_buffers_cents)],["Safe to spend (13-week forecast)",dollars(d.safe_to_spend_cents)],["Forecast buffer gap",dollars(d.horizon_buffer_replenishment_cents)],["Actions needing attention",String(d.pending_checklist_count)],["Recorded income this month",dollars(d.month_income_cents)],["Recorded expenses this month",dollars(d.month_expenses_cents)]]){const card=el("div","metric","");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));metrics.appendChild(card);}
+const metricValues=[["Active household members",String(d.active_household_members)],["Safe to spend (13-week forecast)",dollars(d.safe_to_spend_cents)],["Actions needing attention",String(d.pending_checklist_count)],["Recorded income this month",dollars(d.month_income_cents)],["Recorded expenses this month",dollars(d.month_expenses_cents)]];
+if(d.projected_cash_shortfall_cents>0)metricValues.push(["Projected cash shortfall",dollars(d.projected_cash_shortfall_cents)]);
+for(const [label,value] of metricValues){const card=el("div","metric","");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));metrics.appendChild(card);}
 renderList("paydays",d.next_paydays,"No upcoming paydays found.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date));});
 renderList("bills",d.upcoming_bills,"No saved bills due in the next 30 days.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.category+(x.autopay?" · autopay":"")));});
 renderList("debts",d.upcoming_debts,"No debt due dates found in the next 30 days.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · minimum "+dollars(x.minimum_payment_cents)));li.appendChild(el("div","detail",x.date+" · balance "+dollars(x.balance_cents)));});
@@ -231,20 +244,17 @@ document.getElementById("checklist-summary").textContent=d.pending_checklist_cou
 renderList("transactions",d.recent_transactions,"No transactions recorded yet.",(li,x)=>{const sign=x.amount_cents<0?"−":"";li.appendChild(el("div","item-title",x.description+" · "+sign+dollars(Math.abs(x.amount_cents))));li.appendChild(el("div","detail",x.transaction_date+" · "+x.category+(x.account_name?" · "+x.account_name:"")));});
 try{const weekly=await api("/api/cash-flow/weekly");const root=document.getElementById("weekly-summary");root.replaceChildren();
 root.appendChild(el("div","item-title",dollars(weekly.free_to_spend_cents)+" safe available surplus"));
-root.appendChild(el("div","detail","After upcoming obligations, planned savings, existing allocations, and future weekly buffer protection."));
+root.appendChild(el("div","detail","After upcoming obligations, planned savings, existing allocations, and future daily cash checkpoints."));
 root.appendChild(el("div","detail","Suggested debt snowball: "+(weekly.recommended_snowball_debt?weekly.recommended_snowball_debt.name:"Add a debt to get a recommendation")+" · Allocated so far "+dollars(weekly.planned_allocations_cents)));
 root.appendChild(el("div","detail","Starting cash "+dollars(weekly.starting_cash_cents)+" · expected income "+dollars(weekly.expected_income_cents)));
 if(weekly.starting_cash_is_stale)root.appendChild(el("div","detail",weekly.starting_cash_confirmed_at?"Warning: starting cash was last confirmed "+weekly.starting_cash_confirmed_at+". Please reconfirm it in Household & income.":"Warning: no starting-cash snapshot is confirmed yet. Set it in Household & income."));
 root.appendChild(el("div","detail","Bills still due "+dollars(weekly.bills_due_cents)+" · minimum debt payments "+dollars(weekly.minimum_debt_payments_cents)));
-root.appendChild(el("div","detail","You choose how much to allocate to debt, savings, the household buffer, or leave unallocated."));
+root.appendChild(el("div","detail","You choose how much to allocate to debt, savings, or leave unallocated."));
 const categoryRoot=document.getElementById("weekly-category-spending");categoryRoot.replaceChildren();
 const topCategories=weekly.category_spending.slice(0,3);
 if(!topCategories.length)categoryRoot.appendChild(el("li","muted","No recorded expenses this week."));
 else for(const item of topCategories){const li=el("li","");li.appendChild(el("div","item-title",item.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(item.amount_cents)));categoryRoot.appendChild(li);}
-if(weekly.projected_shortfall_cents>0)root.appendChild(el("div","detail","Warning: projected shortfall "+dollars(weekly.projected_shortfall_cents)));
-else if(weekly.buffer_shortfall_cents>0)root.appendChild(el("div","detail","Warning: buffer short by "+dollars(weekly.buffer_shortfall_cents)));
-else if(weekly.future_buffer_shortfall_cents>0)root.appendChild(el("div","detail","Warning: future weeks would fall below the household buffer by up to "+dollars(weekly.future_buffer_shortfall_cents)+". Safe-to-spend is reduced to $0 until the gap is addressed."));
-else if(weekly.future_buffer_reservation_cents>0)root.appendChild(el("div","detail",dollars(weekly.future_buffer_reservation_cents)+" reserved for upcoming bills to protect the household buffer."));
+if(weekly.projected_shortfall_cents>0)root.appendChild(el("div","detail","A daily cash shortfall of "+dollars(weekly.projected_shortfall_cents)+" is projected before later income arrives."));
 }catch(error){document.getElementById("weekly-summary").textContent="Weekly forecast unavailable: "+error.message;}
 }
 async function loadCashSnapshotControl(){
@@ -321,10 +331,9 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <p class="muted">Start by adding the people in your household and their take-home pay. Amounts are saved as cents in your local SQLite database.</p></header>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div class="layout">
-<section class="card"><h2>Household cash settings</h2><p class="muted">One shared cash buffer target for the whole household. Confirm cash on hand at the beginning of a financial week; transactions recorded during that week are then reflected in the forecast separately.</p>
+<section class="card"><h2>Starting cash</h2><p class="muted">Confirm cash on hand at the beginning of a financial week; transactions recorded during that week are then reflected in the forecast separately.</p>
 <p id="cash-confirmation-status" class="muted" role="status">Loading cash confirmation…</p>
 <form id="settings-form">
-<label for="settings-buffer">Cash buffer target ($)</label><input id="settings-buffer" name="buffer_target" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
 <label for="settings-cash">Cash on hand at week start ($)</label><input id="settings-cash" name="starting_cash" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
 <label for="settings-cash-week">Effective financial week starts</label><input id="settings-cash-week" name="starting_cash_effective_week" type="date" required>
 <p class="muted">Choose the first day of the financial week. Confirmed snapshots are saved with their effective date so older weekly reports can use the matching balance. Confirm again if the balance is more than 10 days old.</p>
@@ -492,8 +501,10 @@ function renderIncome(incomes) {
       try {
         const overrides = await api("/api/income-sources/" + income.id + "/amount-overrides");
         if (!overrides.length) { showStatus("No temporary overrides are set for " + income.name + "."); return; }
-        const choices = overrides.map(x => x.id + ": " + x.start_date + " to " + x.end_date + " · " + dollars(x.amount_cents) + (x.reason ? " · " + x.reason : "")).join("\\n");
-        const selected = prompt("Saved temporary overrides (enter an ID to delete one):\\n" + choices);
+        const choices = overrides.map(x => x.id + ": " + x.start_date + " to " + x.end_date + " · " + dollars(x.amount_cents) + (x.reason ? " · " + x.reason : "")).join("\
+");
+        const selected = prompt("Saved temporary overrides (enter an ID to delete one):\
+" + choices);
         if (!selected) return;
         await api("/api/income-sources/" + income.id + "/amount-overrides/" + Number(selected), {method:"DELETE"});
         await refresh(); showStatus("Temporary amount override deleted.");
@@ -523,7 +534,6 @@ async function refresh() {
   renderIncome(incomes);
   try {
     const settings = await api("/api/household/settings");
-    document.getElementById("settings-buffer").value = (settings.buffer_target_cents / 100).toFixed(2);
     document.getElementById("settings-cash").value = (settings.starting_cash_cents / 100).toFixed(2);
     const weekInput = document.getElementById("settings-cash-week");
     const today = new Date();
@@ -550,7 +560,6 @@ document.getElementById("settings-form").addEventListener("submit", async (event
   button.disabled = true;
   try {
     await api("/api/household/settings", {method:"PATCH", body:JSON.stringify({
-      buffer_target_cents:centsFromInput(form.elements.buffer_target.value),
       starting_cash_cents:centsFromInput(form.elements.starting_cash.value),
       starting_cash_effective_week:form.elements.starting_cash_effective_week.value
     })});

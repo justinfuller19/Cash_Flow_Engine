@@ -1,4 +1,4 @@
-"""Household-wide cash buffer target and starting cash balance (schema v6)."""
+"""Household starting-cash settings and legacy buffer compatibility."""
 import sqlite3
 from datetime import date, timedelta
 
@@ -17,8 +17,8 @@ def _client(tmp_path, monkeypatch):
 def test_fresh_database_has_zeroed_household_settings(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     settings = client.get("/api/household/settings").json()
-    assert settings["buffer_target_cents"] == 0
     assert settings["starting_cash_cents"] == 0
+    assert "buffer_target_cents" not in settings
     assert settings["suggested_cash_balance_cents"] is None
 
 
@@ -26,39 +26,29 @@ def test_update_household_settings(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     updated = client.patch(
         "/api/household/settings",
-        json={"buffer_target_cents": 20000, "starting_cash_cents": 80000},
+        json={"starting_cash_cents": 80000},
     ).json()
-    assert updated["buffer_target_cents"] == 20000
     assert updated["starting_cash_cents"] == 80000
     assert client.get("/api/household/settings").json() == updated
 
 
 def test_partial_update_keeps_other_field(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
-    client.patch("/api/household/settings", json={"buffer_target_cents": 15000})
+    client.patch("/api/household/settings", json={"starting_cash_cents": 15000})
     settings = client.get("/api/household/settings").json()
-    assert settings["buffer_target_cents"] == 15000
-    assert settings["starting_cash_cents"] == 0
+    assert settings["starting_cash_cents"] == 15000
 
 
 def test_update_rejects_negative_and_null_and_empty(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     assert (
-        client.patch("/api/household/settings", json={"buffer_target_cents": -1}).status_code
-        == 422
-    )
-    assert (
         client.patch("/api/household/settings", json={"starting_cash_cents": -50}).status_code
-        == 422
-    )
-    assert (
-        client.patch("/api/household/settings", json={"buffer_target_cents": None}).status_code
         == 422
     )
     assert client.patch("/api/household/settings", json={}).status_code == 422
 
 
-def test_migration_seeds_buffer_from_active_person_buffers(tmp_path, monkeypatch):
+def test_migration_preserves_legacy_buffer_column_from_active_person_buffers(tmp_path, monkeypatch):
     path = tmp_path / "v5.db"
     monkeypatch.setenv("CASHFLOW_DB_PATH", str(path))
 
@@ -96,7 +86,7 @@ def test_migration_seeds_buffer_from_active_person_buffers(tmp_path, monkeypatch
         assert version == database.SCHEMA_VERSION
 
 
-def test_generated_plan_uses_single_household_buffer(tmp_path, monkeypatch):
+def test_generated_plan_does_not_reserve_a_household_buffer(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     person = client.post("/api/people", json={"name": "Member"}).json()
     client.post(
@@ -109,8 +99,6 @@ def test_generated_plan_uses_single_household_buffer(tmp_path, monkeypatch):
             "next_payday": "2026-11-21",
         },
     )
-    client.patch("/api/household/settings", json={"buffer_target_cents": 20000})
-
     plan = client.post(
         "/api/plans/generate",
         json={
@@ -122,19 +110,16 @@ def test_generated_plan_uses_single_household_buffer(tmp_path, monkeypatch):
         },
     ).json()
 
-    buffer_items = [item for item in plan["items"] if item["category"] == "buffer"]
-    assert len(buffer_items) == 1
-    assert buffer_items[0]["name"] == "Household cash buffer"
-    assert buffer_items[0]["requested_cents"] == 20000
-    assert buffer_items[0]["funded_cents"] == 20000
+    assert all(item["category"] != "buffer" for item in plan["items"])
+    assert plan["unallocated_cents"] == 150000
 
 
-def test_dashboard_reports_household_buffer(tmp_path, monkeypatch):
+def test_dashboard_reports_daily_cash_forecast(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     client.post("/api/people", json={"name": "Member"})
-    client.patch("/api/household/settings", json={"buffer_target_cents": 20000})
     summary = client.get("/api/dashboard").json()
-    assert summary["protected_buffers_cents"] == 20000
+    assert "projected_cash_shortfall_cents" in summary
+    assert "lowest_projected_cash_cents" in summary
 
 
 
@@ -269,7 +254,6 @@ def test_snapshot_week_counts_only_transactions_after_week_start_once(tmp_path, 
     client.patch(
         "/api/household/settings",
         json={
-            "buffer_target_cents": 20000,
             "starting_cash_cents": 100000,
             "starting_cash_effective_week": effective_week.isoformat(),
         },
@@ -308,7 +292,7 @@ def test_snapshot_week_counts_only_transactions_after_week_start_once(tmp_path, 
     assert data["projected_ending_cash_cents"] == 85000
     assert data["future_forecast"][0]["starting_cash_cents"] == 85000
     assert data["future_forecast"][0]["projected_ending_cash_cents"] == 85000
-    assert data["free_to_spend_cents"] == 65000
+    assert data["free_to_spend_cents"] == 85000
 
 
 

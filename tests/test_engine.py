@@ -38,12 +38,12 @@ def test_waterfall_order_and_balances():
     categories = [item.category for item in plan.items]
     assert categories[0] == "bill"
     assert categories.index("bill") < categories.index("debt_minimum")
-    assert categories.index("debt_minimum") < categories.index("buffer")
-    assert categories.index("buffer") < categories.index("savings")
+    assert categories.index("debt_minimum") < categories.index("savings")
+    assert "buffer" not in categories
     assert categories[-1] == "debt_extra"
     assert plan.target_card == "Chase Sapphire"
     assert plan.total_available_cents == plan.allocated_cents + plan.unallocated_cents
-    assert plan.unallocated_cents == 0
+    assert plan.unallocated_cents == 21000
     assert plan.unfunded_cents == 0
 
 
@@ -60,22 +60,19 @@ def test_only_income_received_inside_window_counts():
     assert plan.unallocated_cents == 100000
 
 
-def test_shortfalls_are_explicit_and_never_make_cash_negative():
+def test_shortfalls_are_explicit_without_mandatory_buffer():
     plan = generate_payday_plan(sample_request(
         incomes=[Income("Small paycheck", 10000, START)],
-        buffers=[BufferReservation("Buffer", 7000)],
+        buffers=[BufferReservation("Legacy buffer", 7000)],
         bills=[Bill("Rent", 8000, date(2026, 11, 18))],
         credit_cards=[], savings_goals=[],
     ))
-    assert plan.items[0].category == "bill"
+    assert [item.category for item in plan.items] == ["bill"]
     assert plan.items[0].funded_cents == 8000
     assert plan.items[0].unfunded_cents == 0
-    assert plan.items[1].category == "buffer"
-    assert plan.items[1].funded_cents == 2000
-    assert plan.items[1].unfunded_cents == 5000
-    assert plan.unallocated_cents == 0
-    assert plan.unfunded_cents == 5000
-    assert plan.is_fully_funded is False
+    assert plan.unallocated_cents == 2000
+    assert plan.unfunded_cents == 0
+    assert plan.is_fully_funded is True
 
 
 def test_snowball_targets_lowest_balance_card():
@@ -96,33 +93,14 @@ def test_invalid_pay_period_is_rejected():
     with pytest.raises(ValueError, match="period_end"):
         generate_payday_plan(sample_request(period_start=END, period_end=START))
 
-
-
-def test_buffer_is_a_protected_floor_and_shortfall_is_explicit():
-    plan = generate_payday_plan(sample_request(
-        starting_cash_cents=0,
-        incomes=[Income("Paycheck", 10000, START)],
-        buffers=[BufferReservation("Household buffer", 7000)],
-        bills=[Bill("Rent", 8000, date(2026, 11, 18))],
-        credit_cards=[], savings_goals=[],
-    ))
-    buffer_item = next(item for item in plan.items if item.category == "buffer")
-    assert buffer_item.requested_cents == 7000
-    assert buffer_item.funded_cents == 2000
-    assert buffer_item.unfunded_cents == 5000
-    assert plan.unallocated_cents == 0
-    assert plan.unfunded_cents == 5000
-
-
-def test_buffer_reservation_does_not_consume_cash_twice():
+def test_legacy_buffer_input_is_ignored():
     plan = generate_payday_plan(sample_request(
         starting_cash_cents=5000,
         incomes=[Income("Paycheck", 10000, START)],
-        buffers=[BufferReservation("Household buffer", 5000)],
+        buffers=[BufferReservation("Old target", 5000)],
         bills=[Bill("Rent", 4000, date(2026, 11, 18))],
         credit_cards=[], savings_goals=[],
     ))
-    buffer_item = next(item for item in plan.items if item.category == "buffer")
-    assert buffer_item.funded_cents == 5000
+    assert all(item.category != "buffer" for item in plan.items)
+    assert plan.unallocated_cents == 11000
     assert plan.total_available_cents == plan.allocated_cents + plan.unallocated_cents
-    assert plan.unallocated_cents == 6000

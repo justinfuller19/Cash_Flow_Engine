@@ -226,3 +226,14 @@ The independent 91-day simulation identified reconciliation edge cases addressed
 - [x] Label the amount as a per-financial-week target to match the savings model.
 - [x] Render zero-target goals as ongoing savings rather than falsely showing 100% saved or a meaningless progress bar.
 - [x] Add regression coverage for dated savings goals and zero-target ongoing goals.
+
+
+
+## Buffer removal and daily forecast reliability — October 29, 2026
+
+- [x] Remove the mandatory shared cash-buffer floor from safe-to-spend and savings funding.
+- [x] Remove buffer reservations from the payday allocation waterfall and remove buffer allocation choices from the weekly report.
+- [x] Retain the legacy database column and old allocation rows for upgrade compatibility without using them in calculations.
+- [x] Calculate dated cash checkpoints and test outflows before same-day inflows to expose shortfalls hidden by weekly net totals.
+- [x] Keep savings goals, arrears, and actual contribution reconciliation separate from the former buffer.
+- [x] Full test suite passed: 181 tests on Python 3.11, 3.12, and 3.13.

@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal, Sequence
 
-from .buffer import buffer_reservation_cents
 
 DebtStrategy = Literal["avalanche", "snowball"]
 
@@ -143,10 +142,9 @@ def generate_payday_plan(request: PaydayRequest) -> PaydayPlan:
     """Generate an ordered allocation plan for a single pay period.
 
     Waterfall: bills due in the window, card minimums due in the window,
-    household buffer reservation, savings goals in priority order, then extra
-    payment to the avalanche/snowball target. Required obligations take
-    priority over rebuilding the buffer. Each item distinguishes its requested
-    amount from the amount actually funded, so shortfalls are explicit.
+    savings goals in priority order, then extra payment to the avalanche/snowball
+    target. There is no mandatory cash-buffer reservation. Each item distinguishes
+    its requested amount from the amount actually funded, so shortfalls are explicit.
     """
     _validate_request(request)
 
@@ -198,24 +196,8 @@ def generate_payday_plan(request: PaydayRequest) -> PaydayPlan:
                           due_date=card.due_date)
         minimum_funded_by_card[card.name] = funded
 
-    # 3. Protect the shared household buffer only after required obligations.
-    # Keep the requested target visible when cash is insufficient, but only
-    # leave cash above the target available for later discretionary categories.
-    for buffer in request.buffers:
-        funded, shortfall, remaining = buffer_reservation_cents(
-            available, buffer.amount_cents
-        )
-        items.append(PlanItem(
-            category="buffer",
-            name=buffer.name,
-            requested_cents=buffer.amount_cents,
-            funded_cents=funded,
-            unfunded_cents=shortfall,
-            note="Household buffer protected after bills and minimum debt payments",
-        ))
-        available = remaining
-
-    # 4. Goal contributions: priority ascending, then name for deterministic results.
+    # 3. Savings goals are separate planned commitments; no cash floor is withheld.
+    # Goal contributions follow priority, then name for deterministic results.
     goals = sorted(request.savings_goals, key=lambda g: (g.priority, g.name.casefold()))
     for goal in goals:
         requested = _cents_for_goal(goal)
@@ -223,7 +205,7 @@ def generate_payday_plan(request: PaydayRequest) -> PaydayPlan:
             allocate("savings", goal.name, requested,
                      note=f"Required per-period contribution; {goal.remaining_periods} periods remaining")
 
-    # 5. Route all remaining cash to the chosen eligible debt target.
+    # 4. Route all remaining cash to the chosen eligible debt target.
     # Use one active card per unique name to keep payment accounting unambiguous.
     if request.debt_strategy == "avalanche":
         ordered_cards = sorted(cards, key=lambda c: (-c.apr_percent, c.balance_cents, c.name.casefold()))

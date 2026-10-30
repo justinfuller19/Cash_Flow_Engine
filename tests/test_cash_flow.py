@@ -110,8 +110,10 @@ def test_weekly_forecast_reconciles_linked_income_and_bill_transactions(tmp_path
     assert report["funded_savings_cents"] == 5000
     assert report["projected_cash_before_buffer_cents"] == 106000
     assert report["buffer_replenishment_cents"] == 0
-    assert report["free_to_spend_cents"] == 81000
-    assert report["extra_debt_payoff_capacity_cents"] == 81000
+    # The bill is tested before the same-day paycheck, so $70,000 is the
+    # lowest safe daily balance even though the weekly ending balance is higher.
+    assert report["free_to_spend_cents"] == 70000
+    assert report["extra_debt_payoff_capacity_cents"] == 70000
     assert len(report["transfers"]) == 1
 
 
@@ -135,8 +137,10 @@ def test_weekly_forecast_flags_shortfalls_and_validates_window(tmp_path, monkeyp
     assert response.status_code == 200
     report = response.json()
     assert report["projected_cash_before_buffer_cents"] == -19000
-    assert report["projected_shortfall_cents"] == 19000
-    assert report["buffer_shortfall_cents"] == 24000
+    # The 13-week look-ahead includes three monthly rent occurrences.
+    assert report["projected_shortfall_cents"] == 59000
+    assert report["lowest_projected_cash_cents"] == -59000
+    assert report["buffer_shortfall_cents"] == 0
     assert report["free_to_spend_cents"] == 0
 
     assert client.get(
@@ -216,16 +220,16 @@ def test_future_rent_reserves_current_surplus_and_flags_buffer_shortfall(tmp_pat
     assert response.status_code == 200, response.text
     report = response.json()
 
-    # Without lookahead, this week would incorrectly show $800 as spendable.
-    assert report["free_to_spend_before_future_reserve_cents"] == 80000
-    # Next week's $900 rent leaves only $100, below the $200 household buffer.
+    # The future rent reserves $900 of this week's $1,000; no arbitrary floor is withheld.
+    assert report["free_to_spend_before_future_reserve_cents"] == 100000
     assert report["future_forecast"][0]["starting_cash_cents"] == 100000
     assert report["future_forecast"][0]["projected_ending_cash_cents"] == 10000
-    assert report["future_forecast"][0]["buffer_shortfall_cents"] == 10000
-    assert report["future_buffer_shortfall_cents"] == 10000
-    assert report["free_to_spend_cents"] == 0
-    assert report["extra_debt_payoff_capacity_cents"] == 0
-    assert report["future_buffer_reservation_cents"] == 80000
+    assert report["future_forecast"][0]["buffer_shortfall_cents"] == 0
+    assert report["future_buffer_shortfall_cents"] == 0
+    assert report["free_to_spend_cents"] == 10000
+    assert report["extra_debt_payoff_capacity_cents"] == 10000
+    assert report["future_obligation_reservation_cents"] == 90000
+    assert report["future_buffer_reservation_cents"] == 90000
 
 
 def test_future_forecast_carries_ending_cash_and_limits_safe_spending(tmp_path, monkeypatch):
@@ -248,10 +252,10 @@ def test_future_forecast_carries_ending_cash_and_limits_safe_spending(tmp_path, 
     assert response.status_code == 200, response.text
     report = response.json()
 
-    # $1,500 cash less $900 rent leaves $600; only $400 is above the buffer.
+    # $1,500 cash less $900 rent leaves $600, all of which is available.
     assert report["future_forecast"][0]["starting_cash_cents"] == 150000
     assert report["future_forecast"][0]["projected_ending_cash_cents"] == 60000
-    assert report["free_to_spend_cents"] == 40000
+    assert report["free_to_spend_cents"] == 60000
     assert report["future_buffer_reservation_cents"] == 90000
 
 
@@ -297,12 +301,12 @@ def test_early_linked_paycheck_within_seven_days_is_not_double_counted(tmp_path,
     assert report["covered_income"][0]["covered_by_transaction_id"]
 
 
-def test_dashboard_explains_future_buffer_reservation(tmp_path, monkeypatch):
+def test_dashboard_explains_daily_cash_forecast(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
     response = client.get("/")
     assert response.status_code == 200
-    assert "future_buffer_reservation_cents" in response.text
-    assert "reserved for upcoming bills to protect the household buffer." in response.text
+    assert "projected_shortfall_cents" in response.text
+    assert "future daily cash checkpoints" in response.text
 
 def test_household_financial_week_start_defaults_to_friday_and_is_editable(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
@@ -657,7 +661,7 @@ def test_unfunded_future_savings_targets_do_not_create_future_arrears(tmp_path, 
     assert report["free_to_spend_cents"] == 0
 
 
-def test_changing_household_buffer_recalculates_weekly_savings_funding(tmp_path, monkeypatch):
+def test_legacy_household_buffer_setting_does_not_change_savings_funding(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
     today = date.today()
     start = today - timedelta(days=(today.weekday() - 4) % 7)
@@ -681,16 +685,16 @@ def test_changing_household_buffer_recalculates_weekly_savings_funding(tmp_path,
         "forecast_weeks": 1,
     }
     before = client.get("/api/cash-flow/weekly", params=params).json()
-    assert before["funded_savings_cents"] == 10000
+    assert before["funded_savings_cents"] == 50000
 
     changed = client.patch(
         "/api/household/settings",
         json={"buffer_target_cents": 20000},
     )
-    assert changed.status_code == 200, changed.text
+    assert changed.status_code == 422
     after = client.get("/api/cash-flow/weekly", params=params).json()
-    assert after["funded_savings_cents"] == 30000
-    assert after["savings_plan"][0]["funded_this_week_cents"] == 30000
+    assert after["funded_savings_cents"] == 50000
+    assert after["savings_plan"][0]["funded_this_week_cents"] == 50000
 
 
 def test_debt_minimum_uses_balance_cap_when_balance_is_below_stated_minimum(tmp_path, monkeypatch):
@@ -910,8 +914,8 @@ def test_horizon_buffer_replenishment_uses_lowest_projected_week(tmp_path, monke
     assert report["buffer_replenishment_cents"] == 0
     assert report["future_forecast"][0]["projected_ending_cash_cents"] == 60000
     assert report["horizon_buffer_replenishment_cents"] == 0
-    assert report["safe_to_spend_before_allocations_cents"] == 40000
-    assert report["free_to_spend_cents"] == 40000
+    assert report["safe_to_spend_before_allocations_cents"] == 60000
+    assert report["free_to_spend_cents"] == 60000
 
 
 def test_horizon_buffer_gap_reports_shortfall_without_negative_safe_spend(tmp_path, monkeypatch):
@@ -932,10 +936,10 @@ def test_horizon_buffer_gap_reports_shortfall_without_negative_safe_spend(tmp_pa
         params={"start_date": "2026-10-19", "end_date": "2026-10-25", "forecast_weeks": 2},
     ).json()
     assert report["future_forecast"][0]["projected_ending_cash_cents"] == 10000
-    assert report["future_buffer_shortfall_cents"] == 10000
-    assert report["horizon_buffer_replenishment_cents"] == 10000
-    assert report["safe_to_spend_before_allocations_cents"] == 0
-    assert report["free_to_spend_cents"] == 0
+    assert report["future_buffer_shortfall_cents"] == 0
+    assert report["horizon_buffer_replenishment_cents"] == 0
+    assert report["safe_to_spend_before_allocations_cents"] == 10000
+    assert report["free_to_spend_cents"] == 10000
 
 
 def test_estimated_interest_is_opt_in_and_does_not_change_saved_balance(tmp_path, monkeypatch):
@@ -1060,3 +1064,36 @@ def test_weekly_bill_payment_does_not_cover_next_occurrence_and_partial_bill_sta
     assert bills["Electric"]["covered_amount_cents"] == 5000
     assert report["bills_due_cents"] == 15700
     assert report["bills_covered_by_transactions_cents"] == 5000
+
+
+
+def test_daily_forecast_catches_bill_before_later_paycheck(tmp_path, monkeypatch):
+    client = setup_client(tmp_path, monkeypatch)
+    start = date(2026, 10, 19)
+    person_id = client.post("/api/people", json={"name": "Household"}).json()["id"]
+    client.post("/api/income-sources", json={
+        "person_id": person_id, "name": "Friday paycheck",
+        "net_amount_cents": 20000, "frequency": "irregular",
+        "next_payday": "2026-10-23",
+    })
+    with database.connect() as db:
+        db.execute("UPDATE household_settings SET starting_cash_cents = 10000 WHERE id = 1")
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, next_due_date, flexible_window_days, active,
+                category, frequency, autopay)
+               VALUES ('Early rent', 15000, '2026-10-20', 0, 1, 'housing', 'monthly', 0)"""
+        )
+
+    report = client.get("/api/cash-flow/weekly", params={
+        "start_date": start.isoformat(),
+        "end_date": (start + timedelta(days=6)).isoformat(),
+        "forecast_weeks": 1,
+    }).json()
+
+    assert report["projected_cash_before_buffer_cents"] == 15000
+    assert report["daily_forecast"][1]["date"] == "2026-10-20"
+    assert report["daily_forecast"][1]["lowest_cash_cents"] == -5000
+    assert report["projected_shortfall_cents"] == 5000
+    assert report["lowest_projected_cash_cents"] == -5000
+    assert report["free_to_spend_cents"] == 0

@@ -191,10 +191,6 @@ def dashboard_summary():
     next_90 = today + timedelta(days=90)
     next_30 = today + timedelta(days=30)
     with database.connect() as db:
-        buffer_total = db.execute(
-            "SELECT COALESCE(buffer_target_cents, 0) FROM household_settings WHERE id = 1"
-        ).fetchone()
-        buffer_total = buffer_total[0] if buffer_total else 0
         people_count = db.execute("SELECT COUNT(*) FROM persons WHERE active = 1").fetchone()[0]
 
         paydays = []
@@ -309,11 +305,9 @@ def dashboard_summary():
     return {
         "today": today.isoformat(),
         "active_household_members": people_count,
-        "protected_buffers_cents": buffer_total,
         "safe_to_spend_cents": cash_report["free_to_spend_cents"],
-        "current_buffer_shortfall_cents": cash_report["buffer_shortfall_cents"],
-        "horizon_buffer_shortfall_cents": cash_report["future_buffer_shortfall_cents"],
-        "horizon_buffer_replenishment_cents": cash_report["horizon_buffer_replenishment_cents"],
+        "projected_cash_shortfall_cents": cash_report["projected_shortfall_cents"],
+        "lowest_projected_cash_cents": cash_report["lowest_projected_cash_cents"],
         "forecast_weeks": cash_report["forecast_weeks"],
         "next_paydays": paydays[:6],
         "upcoming_bills": bills[:8],

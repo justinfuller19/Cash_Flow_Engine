@@ -88,19 +88,27 @@ def build_weekly_email(today: date) -> tuple[str, str, str, str]:
         f"Bills still due: {_money(report['bills_due_cents'])}",
         f"Minimum debt payments still due: {_money(report['minimum_debt_payments_cents'])}",
         f"Recorded expenses: {_money(report['transaction_expenses_cents'])}",
-        f"Projected cash before buffer: {_money(report['projected_cash_before_buffer_cents'])}",
-        f"Household buffer target: {_money(report['buffer_target_cents'])}",
-        f"Buffer replenishment needed: {_money(report['buffer_replenishment_cents'])}",
+        f"Projected cash after obligations: {_money(report['projected_cash_before_buffer_cents'])}",
+        f"Lowest projected daily cash: {_money(report['lowest_projected_cash_cents'])}",
         f"Planned savings: {_money(report['planned_savings_cents'])}",
         f"Savings funded in forecast: {_money(report['funded_savings_cents'])}",
-        f"Free to spend above buffer and planned savings: {_money(report['free_to_spend_cents'])}",
+        f"Safe to spend after future obligations and planned savings: {_money(report['free_to_spend_cents'])}",
         f"Extra debt payoff capacity: {_money(report['extra_debt_payoff_capacity_cents'])}",
         "",
     ]
     if report["projected_shortfall_cents"]:
         lines.append(f"WARNING: projected shortfall of {_money(report['projected_shortfall_cents'])}.")
-    elif report["buffer_shortfall_cents"]:
-        lines.append(f"WARNING: projected cash is below the buffer target by {_money(report['buffer_shortfall_cents'])}.")
+    shortfall_days = [
+        day for day in report.get("daily_forecast", [])
+        if day["projected_shortfall_cents"] > 0
+    ]
+    for week in report.get("future_forecast", []):
+        shortfall_days.extend(
+            day for day in week.get("daily_forecast", [])
+            if day["projected_shortfall_cents"] > 0
+        )
+    if shortfall_days:
+        lines.append("Projected cash shortfall dates: " + ", ".join(day["date"] for day in shortfall_days))
     lines.extend(["", "Bills due:"])
     due_bills = [item for item in report["bills"] if item["status"] == "due"]
     lines.extend(
@@ -175,11 +183,11 @@ def build_daily_digest(today: date, reminder_days: int = 3) -> tuple[str, list[t
                 log_items.append((key, digest))
 
     alert_key = "shortfall:household"
-    has_shortfall = report["projected_shortfall_cents"] > 0 or report["buffer_shortfall_cents"] > 0
+    has_shortfall = report["projected_shortfall_cents"] > 0
     alert = None
     if has_shortfall:
         alert_payload = (
-            f"{report['projected_shortfall_cents']}|{report['buffer_shortfall_cents']}|"
+            f"{report['projected_shortfall_cents']}|{report['lowest_projected_cash_cents']}|"
             f"{report['projected_cash_before_buffer_cents']}"
         )
         alert_hash = _hash(alert_payload)
@@ -204,8 +212,8 @@ def build_daily_digest(today: date, reminder_days: int = 3) -> tuple[str, list[t
         lines.extend([
             "CASH-FLOW WARNING",
             f"Projected shortfall: {_money(report['projected_shortfall_cents'])}",
-            f"Amount below household buffer target: {_money(report['buffer_shortfall_cents'])}",
-            f"Projected cash before buffer: {_money(report['projected_cash_before_buffer_cents'])}",
+            f"Lowest projected daily cash: {_money(report['lowest_projected_cash_cents'])}",
+            f"Projected cash after obligations: {_money(report['projected_cash_before_buffer_cents'])}",
             "",
         ])
     lines.append("Review the weekly report in CashFlow Engine before making financial decisions.")
