@@ -299,11 +299,11 @@ def test_early_linked_paycheck_within_seven_days_is_not_double_counted(tmp_path,
     assert report["covered_income"][0]["covered_by_transaction_id"]
 
 
-def test_dashboard_explains_future_buffer_reservation(tmp_path, monkeypatch):
+def test_dashboard_explains_daily_cash_forecast(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
     response = client.get("/")
     assert response.status_code == 200
-    assert "future_buffer_reservation_cents" in response.text
+    assert "projected_shortfall_cents" in response.text
     assert "future daily cash checkpoints" in response.text
 
 def test_household_financial_week_start_defaults_to_friday_and_is_editable(tmp_path, monkeypatch):
