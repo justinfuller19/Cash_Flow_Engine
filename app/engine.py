@@ -197,7 +197,7 @@ def generate_payday_plan(request: PaydayRequest) -> PaydayPlan:
         minimum_funded_by_card[card.name] = funded
 
     # 3. Savings goals are separate planned commitments; no cash floor is withheld.
-    # 3. Goal contributions: priority ascending, then name for deterministic results.
+    # Goal contributions follow priority, then name for deterministic results.
     goals = sorted(request.savings_goals, key=lambda g: (g.priority, g.name.casefold()))
     for goal in goals:
         requested = _cents_for_goal(goal)
