@@ -94,8 +94,8 @@ def test_clear_all_data_requires_exact_phrase_and_preserves_a_verified_backup(tm
     assert client.get("/api/income-sources").json() == []
     assert client.get("/api/transactions").json() == []
     settings = client.get("/api/household/settings").json()
-    assert settings["buffer_target_cents"] == 0
     assert settings["starting_cash_cents"] == 0
+    assert "buffer_target_cents" not in settings
     assert client.get("/api/categories").json() == original_categories
     with sqlite3.connect(_db_path) as db:
         assert db.execute("SELECT COUNT(*) FROM payday_plans").fetchone()[0] == 0
