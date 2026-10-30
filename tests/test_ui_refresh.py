@@ -119,3 +119,10 @@ def test_enhance_html_keeps_top_title_but_removes_duplicate_account_header_links
     assert 'CashFlow Engine' not in nav
     assert nav.index('class="cfe-more-menu"') < nav.index('Account settings')
     assert nav.index('class="cfe-more-menu"') < nav.index('Log out')
+
+
+def test_shared_styles_include_responsive_brand_logo():
+    from app.ui_refresh import GLOBAL_STYLES
+
+    assert ".cfe-brand-lockup" in GLOBAL_STYLES
+    assert "max-height:124px" in GLOBAL_STYLES
