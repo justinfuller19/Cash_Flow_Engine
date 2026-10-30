@@ -1,4 +1,4 @@
-"""Household-wide cash buffer target and starting cash balance (schema v6)."""
+"""Household starting-cash settings and legacy buffer compatibility."""
 import sqlite3
 from datetime import date, timedelta
 
@@ -18,6 +18,7 @@ def test_fresh_database_has_zeroed_household_settings(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
     settings = client.get("/api/household/settings").json()
     assert settings["starting_cash_cents"] == 0
+    assert "buffer_target_cents" not in settings
     assert settings["suggested_cash_balance_cents"] is None
 
 
