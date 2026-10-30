@@ -1,7 +1,8 @@
 """Shared presentation layer for the CashFlow Engine UI."""
 import re
 
-GLOBAL_STYLES = """<style id="cfe-ui-refresh">\n.cfe-brand-lockup{display:flex;align-items:center;gap:18px;min-width:0}.cfe-brand-lockup img{display:block;width:170px;height:auto;max-height:124px;object-fit:contain}.cfe-brand-lockup .brand-subtitle{margin:0;color:#c5dce2;font-size:.94rem}@media(max-width:600px){.cfe-brand-lockup{gap:12px}.cfe-brand-lockup img{width:132px;max-height:98px}.cfe-brand-lockup .brand-subtitle{font-size:.82rem}}
+GLOBAL_STYLES = """<style id="cfe-ui-refresh">\n.cfe-site-brand{display:flex;align-items:center;justify-content:flex-start;margin:0 0 12px;padding:4px 2px}.cfe-site-brand img{display:block;width:154px;height:auto;max-height:112px;object-fit:contain}@media(max-width:600px){.cfe-site-brand{margin-bottom:8px}.cfe-site-brand img{width:132px;max-height:96px}}
+.cfe-brand-lockup{display:flex;align-items:center;gap:18px;min-width:0}.cfe-brand-lockup img{display:block;width:170px;height:auto;max-height:124px;object-fit:contain}.cfe-brand-lockup .brand-subtitle{margin:0;color:#c5dce2;font-size:.94rem}@media(max-width:600px){.cfe-brand-lockup{gap:12px}.cfe-brand-lockup img{width:132px;max-height:98px}.cfe-brand-lockup .brand-subtitle{font-size:.82rem}}
 :root{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:#173642;background:#f3f7f7;color-scheme:light;--ink:#173642;--muted:#5c707a;--line:#dce7e8;--card:#fff}
 *,*::before,*::after{box-sizing:border-box}html{min-width:320px;scroll-behavior:smooth}body{margin:0!important;color:var(--ink);background:radial-gradient(ellipse at top,#e6f3f1,#f3f7f7 500px);line-height:1.55}main{width:min(1180px,100%);margin-inline:auto}
 h1,h2,h3,h4{color:#153b47;line-height:1.25;letter-spacing:-.025em}h1{font-size:clamp(1.65rem,3vw,2.25rem)}h2{font-size:clamp(1.08rem,2vw,1.28rem)}a{color:#086d75;text-underline-offset:.18em}a:hover{color:#064e55}
@@ -99,7 +100,8 @@ def enhance_html(html: str, *, include_navigation: bool = True) -> str:
     if not is_home and include_navigation and 'aria-label="Main navigation"' not in html:
         match = re.search(r"<body(?:\s[^>]*)?>", html, re.I)
         if match:
-            html = html[:match.end()] + "\n" + GLOBAL_NAV + "\n" + html[match.end():]
+            brand_header = '<header class="cfe-site-brand"><img src="/brand/logo.svg" alt="Cash Flow Engine" width="154" height="112"></header>'
+            html = html[:match.end()] + "\n" + brand_header + "\n" + GLOBAL_NAV + "\n" + html[match.end():]
     body_close = re.search(r"</body\s*>", html, re.I)
     if body_close and 'id="cfe-ui-interactions"' not in html:
         html = html[:body_close.start()] + INTERACTION_SCRIPT + "\n" + html[body_close.start():]
