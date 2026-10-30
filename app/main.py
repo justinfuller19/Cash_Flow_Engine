@@ -28,7 +28,8 @@ from .application_update import router as application_update_router
 from .household import router as household_router
 from .security import remote_access_guard
 from .auth import (household_auth_guard, initialize_auth_database, login_page, register_page, login_route, register_route, logout_route, account_page, account_update_route)
-from .ui_refresh import enhance_html\nfrom .brand import BRAND_LOGO_SVG
+from .ui_refresh import enhance_html
+from .brand import BRAND_LOGO_SVG
 
 
 @asynccontextmanager
@@ -490,8 +491,10 @@ function renderIncome(incomes) {
       try {
         const overrides = await api("/api/income-sources/" + income.id + "/amount-overrides");
         if (!overrides.length) { showStatus("No temporary overrides are set for " + income.name + "."); return; }
-        const choices = overrides.map(x => x.id + ": " + x.start_date + " to " + x.end_date + " · " + dollars(x.amount_cents) + (x.reason ? " · " + x.reason : "")).join("\\n");
-        const selected = prompt("Saved temporary overrides (enter an ID to delete one):\\n" + choices);
+        const choices = overrides.map(x => x.id + ": " + x.start_date + " to " + x.end_date + " · " + dollars(x.amount_cents) + (x.reason ? " · " + x.reason : "")).join("\
+");
+        const selected = prompt("Saved temporary overrides (enter an ID to delete one):\
+" + choices);
         if (!selected) return;
         await api("/api/income-sources/" + income.id + "/amount-overrides/" + Number(selected), {method:"DELETE"});
         await refresh(); showStatus("Temporary amount override deleted.");
