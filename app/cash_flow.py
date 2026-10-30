@@ -1199,7 +1199,7 @@ for(const [label,value] of [
 ...(report.estimated_interest_enabled?[["Estimated future debt interest",report.estimated_debt_interest_cents]]:[]),
 ["Projected cash after obligations",report.projected_cash_before_buffer_cents],["Lowest daily cash balance",report.lowest_projected_cash_cents],["Planned savings",report.planned_savings_cents],
 ["Savings funded",report.funded_savings_cents],
-["Reserved for future shortfalls",report.future_buffer_reservation_cents],
+["Reserved for future obligations",report.future_obligation_reservation_cents],
 ["Safe available surplus",report.free_to_spend_cents],
 ["Already allocated",report.planned_allocations_cents],
 ["Still available to allocate",report.free_to_spend_cents]
@@ -1207,7 +1207,7 @@ for(const [label,value] of [
 if(report.projected_shortfall_cents>0)message("Projected shortfall: "+dollars(report.projected_shortfall_cents)+". Required obligations exceed projected cash.","warning");
 
 else if(report.allocation_shortfall_cents>0)message("Your planned allocations now exceed safe available surplus by "+dollars(report.allocation_shortfall_cents)+". Review or cancel planned allocations before making more payments.","warning");
-else if(report.future_buffer_reservation_cents>0)message(dollars(report.future_buffer_reservation_cents)+" is reserved for upcoming obligations before they come due.","warning");
+else if(report.future_obligation_reservation_cents>0)message(dollars(report.future_obligation_reservation_cents)+" is reserved for upcoming obligations before they come due.","warning");
 else if(report.savings_shortfall_cents>0)message("Required obligations are covered, but planned savings are short by "+dollars(report.savings_shortfall_cents)+".","warning");
 else {statusBox.hidden=true;}
 renderList("income",report.expected_income,"No scheduled income remains expected in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date));});
