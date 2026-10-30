@@ -1080,7 +1080,7 @@ def test_daily_forecast_catches_bill_before_later_paycheck(tmp_path, monkeypatch
             """INSERT INTO bills
                (name, amount_cents, next_due_date, flexible_window_days, active,
                 category, frequency, autopay)
-               VALUES ('Early rent', 15000, '2026-10-20', 0, 1, 'housing', 'irregular', 0)"""
+               VALUES ('Early rent', 15000, '2026-10-20', 0, 1, 'housing', 'monthly', 0)"""
         )
 
     report = client.get("/api/cash-flow/weekly", params={
