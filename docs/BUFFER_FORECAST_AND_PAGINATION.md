@@ -1,21 +1,19 @@
-# Buffer-Aware Cash-Flow Forecast and Pagination Requirements
+# Daily Cash-Flow Forecast and Pagination Requirements
 
-This document records the implemented behavior and acceptance criteria for the buffer-aware cash-flow forecast and pagination. The API calculates a default 13-week horizon (configurable from 1 to 52 weeks), carries each week's ending balance forward, and limits current safe-to-spend to the lowest projected ending balance above the shared buffer.
+This document records the daily cash-flow forecast and pagination behavior. The API calculates a default 13-week horizon (configurable from 1 to 52 weeks), carries each week's ending balance forward, and limits current safe-to-spend to the lowest projected daily cash balance across the horizon.
 
 ## Cash-flow engine rules
 
-The weekly cash-flow endpoint now returns the selected period plus `future_forecast` entries, `lowest_projected_cash_cents`, `future_buffer_shortfall_cents`, `future_buffer_reservation_cents`, and a lookahead-adjusted `free_to_spend_cents`. The weekly report displays the upcoming weeks and warnings. Recalculations use saved schedules and transactions at request time.
-
-1. **Forecast the full planning horizon.** Evaluate dated expected income, bills, minimum debt payments, recorded transactions, and savings contributions for every week in the configured horizon, not only the currently displayed week.
-2. **Carry balances forward.** Each period's projected ending cash becomes the next period's starting cash. Reconcile a scheduled item with a linked actual transaction once only; transfers between household accounts are cash-neutral.
-3. **Protect one shared household buffer.** Treat the configured buffer as a minimum household cash balance, not a weekly expense and not a separate buffer for each person.
-4. **Reserve for future shortfalls before declaring money spendable.** If any later period would fall below the buffer target, reserve enough of the current/earlier surplus to cover that projected gap where funds are available. Current-week surplus is not automatically safe-to-spend.
-5. **Make infeasible plans explicit.** If total projected resources cannot cover obligations and maintain the buffer, show the amount and date/period of the shortfall. Never invent income, silently over-allocate, or hide a shortfall just because it occurs on another page.
-6. **Use the established allocation priority.** Fund bills due, fund minimum debt payments, restore/protect the household buffer, fund planned savings by priority, then direct remaining eligible cash to extra debt payoff (avalanche or snowball strategy).
-7. **Do not double-count reservations.** A buffer reservation is a protected balance carried through the forecast, not a repeated deduction in each week. A single dollar cannot be reserved independently by multiple future weeks.
-8. **Recalculate after changes.** New or edited income, bills, transactions, savings contributions, or buffer targets must refresh affected future projections and safe-to-spend amounts.
-9. **Keep calculations reliable.** Monetary calculations use integer cents and deterministic domain logic. The UI displays assumptions, expected versus recorded amounts, and forecast warnings. Forecasts never trigger bank transfers or payments.
-10. **Test the edges.** Include cases where a later low-income week consumes current surplus, several shortfall weeks compete for the same reserve, the buffer is already below target, funds are insufficient for all obligations, transactions cover scheduled items, and no future shortfall exists.
+1. **Forecast dated cash movements.** Evaluate scheduled income, bills, debt minimums, recorded income/expenses, and planned savings on their dates. Transfers between household accounts remain cash-neutral.
+2. **Carry balances forward.** Each period's projected ending balance becomes the next period's starting cash. Reconcile linked actual transactions with scheduled income/bills/debt only once.
+3. **No mandatory household buffer.** Do not reserve an arbitrary minimum cash floor or create buffer allocation items. The former database setting is retained only for upgrade compatibility and must not affect safe-to-spend, savings funding, or allocations.
+4. **Use daily checkpoints.** A weekly net total can hide an overdraft earlier in the week. Apply each day's outflows before that day's inflows because exact bank posting times are not available; show the daily lowest and ending balances.
+5. **Reserve for future obligations.** If a later daily balance is lower than the current period's safe daily balance, reserve the difference before declaring current discretionary cash available.
+6. **Keep savings distinct.** Savings goals remain planned commitments with their existing weekly targets, deadline calculations, arrears, and actual-contribution reconciliation. They are not a cash buffer and must not be removed with the old buffer setting.
+7. **Make infeasible plans explicit.** If any daily balance falls below zero, show the date and projected cash shortfall. Never invent income, silently over-allocate, or hide a shortfall because it occurs in a later week.
+8. **Recalculate after changes.** New or edited income, bills, transactions, savings contributions, or cash snapshots refresh affected daily and future projections.
+9. **Keep calculations reliable.** Monetary calculations use integer cents and deterministic domain logic. Forecasts never trigger bank transfers or payments.
+10. **Test the edges.** Include early-week bills followed by later income, same-day paycheck/payment ordering, future shortfalls, several shortfall weeks, insufficient cash, linked transaction reconciliation, savings funding, and no future shortfall.
 
 ## Pagination requirements
 
@@ -30,12 +28,13 @@ The weekly cash-flow endpoint now returns the selected period plus `future_forec
 - Paginate saved plan history at 10 plans per page.
 - Provide accessible Previous/Next controls and page indicators; omit controls when there is only one page.
 - Navigating pages must not alter the saved plan, item values, allocations, or forecast.
-- Pagination is presentation-only: forecast and buffer checks always cover the complete planning horizon, including periods not currently visible.
+- Pagination is presentation-only: daily cash and forecast checks always cover the complete planning horizon, including periods not currently visible.
 
 ## Acceptance criteria
-- A future shortfall can reduce the amount reported as safe to spend in an earlier week.
-- The configured buffer is never treated as a recurring weekly bill.
-- An impossible buffer target is shown as a shortfall rather than hidden or silently funded.
-- Checklist and plan pages remain usable on mobile and with keyboard navigation.
+- Safe-to-spend is limited by the lowest projected daily balance across the full forecast horizon, not an arbitrary buffer target.
+- An early-week cash shortfall is detected even when later income makes the weekly net balance positive.
+- Same-day outflows are tested before same-day inflows and the assumption is disclosed.
+- The former buffer target does not appear in household setup or allocation choices and does not affect calculations.
+- Savings goals and recorded contributions continue to work independently.
 - Existing database schema and saved financial history remain compatible; no financial data is added to Git.
 - Relevant engine/API/UI regression tests run before merge, and results are reported accurately.
