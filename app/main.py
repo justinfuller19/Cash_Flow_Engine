@@ -28,7 +28,7 @@ from .application_update import router as application_update_router
 from .household import router as household_router
 from .security import remote_access_guard
 from .auth import (household_auth_guard, initialize_auth_database, login_page, register_page, login_route, register_route, logout_route, account_page, account_update_route)
-from .ui_refresh import enhance_html
+from .ui_refresh import enhance_html\nfrom .brand import BRAND_LOGO_SVG
 
 
 @asynccontextmanager
@@ -178,7 +178,7 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 </style></head><body><main>
 <header class="app-header">
 <div class="brand-row">
-<div><h1 class="brand">CashFlow Engine</h1><p class="brand-subtitle">A clearer view of your household money.</p></div>
+<div class="cfe-brand-lockup"><img src="/brand/logo.svg" alt="Cash Flow Engine" width="170" height="124"><p class="brand-subtitle">A clearer view of your household money.</p></div>
 <div class="account-links"><a href="/account">Account settings</a><a href="/logout">Log out</a></div>
 </div>
 <nav aria-label="Main navigation">
