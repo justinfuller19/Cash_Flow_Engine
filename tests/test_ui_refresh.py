@@ -126,3 +126,26 @@ def test_shared_styles_include_responsive_brand_logo():
 
     assert ".cfe-brand-lockup" in GLOBAL_STYLES
     assert "max-height:124px" in GLOBAL_STYLES
+
+
+def test_brand_logo_route_serves_svg():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    response = TestClient(app).get("/brand/logo.svg")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    assert "<svg" in response.text
+    assert "Cash Flow" in response.text
+
+
+def test_dashboard_uses_the_brand_logo_in_its_header():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    response = TestClient(app).get("/")
+
+    assert response.status_code == 200
+    assert 'class="cfe-brand-lockup"' in response.text
+    assert 'src="/brand/logo.svg"' in response.text
