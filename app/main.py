@@ -221,7 +221,9 @@ async function api(url){const r=await fetch(url);const d=await r.json().catch(()
 function renderList(id,items,empty,make){const list=document.getElementById(id);list.replaceChildren();if(!items.length){list.appendChild(el("li","muted",empty));return;}for(const item of items){const li=el("li","");make(li,item);list.appendChild(li);}}
 async function load(){const d=await api("/api/dashboard");
 const metrics=document.getElementById("metrics");metrics.replaceChildren();
-for(const [label,value] of [["Active household members",String(d.active_household_members)],["Safe to spend (13-week forecast)",dollars(d.safe_to_spend_cents)],["Actions needing attention",String(d.pending_checklist_count)],["Recorded income this month",dollars(d.month_income_cents)],["Recorded expenses this month",dollars(d.month_expenses_cents)]]){const card=el("div","metric","");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));metrics.appendChild(card);}
+const metricValues=[["Active household members",String(d.active_household_members)],["Safe to spend (13-week forecast)",dollars(d.safe_to_spend_cents)],["Actions needing attention",String(d.pending_checklist_count)],["Recorded income this month",dollars(d.month_income_cents)],["Recorded expenses this month",dollars(d.month_expenses_cents)]];
+if(d.projected_cash_shortfall_cents>0)metricValues.push(["Projected cash shortfall",dollars(d.projected_cash_shortfall_cents)]);
+for(const [label,value] of metricValues){const card=el("div","metric","");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));metrics.appendChild(card);}
 renderList("paydays",d.next_paydays,"No upcoming paydays found.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date));});
 renderList("bills",d.upcoming_bills,"No saved bills due in the next 30 days.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.category+(x.autopay?" · autopay":"")));});
 renderList("debts",d.upcoming_debts,"No debt due dates found in the next 30 days.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · minimum "+dollars(x.minimum_payment_cents)));li.appendChild(el("div","detail",x.date+" · balance "+dollars(x.balance_cents)));});
@@ -241,8 +243,7 @@ const categoryRoot=document.getElementById("weekly-category-spending");categoryR
 const topCategories=weekly.category_spending.slice(0,3);
 if(!topCategories.length)categoryRoot.appendChild(el("li","muted","No recorded expenses this week."));
 else for(const item of topCategories){const li=el("li","");li.appendChild(el("div","item-title",item.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(item.amount_cents)));categoryRoot.appendChild(li);}
-if(weekly.projected_shortfall_cents>0)root.appendChild(el("div","detail","Warning: projected shortfall "+dollars(weekly.projected_shortfall_cents)));
-else if(weekly.projected_shortfall_cents>0)root.appendChild(el("div","detail","A daily cash shortfall of "+dollars(weekly.projected_shortfall_cents)+" is projected before later income arrives."));
+if(weekly.projected_shortfall_cents>0)root.appendChild(el("div","detail","A daily cash shortfall of "+dollars(weekly.projected_shortfall_cents)+" is projected before later income arrives."));
 }catch(error){document.getElementById("weekly-summary").textContent="Weekly forecast unavailable: "+error.message;}
 }
 async function loadCashSnapshotControl(){
