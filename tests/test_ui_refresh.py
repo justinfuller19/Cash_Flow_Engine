@@ -149,3 +149,11 @@ def test_dashboard_uses_the_brand_logo_in_its_header():
     assert response.status_code == 200
     assert 'class="cfe-brand-lockup"' in response.text
     assert 'src="/brand/logo.svg"' in response.text
+
+
+def test_non_dashboard_pages_get_shared_brand_header():
+    html = "<html><head></head><body><main>Page</main></body></html>"
+    refreshed = enhance_html(html)
+
+    assert 'class="cfe-site-brand"' in refreshed
+    assert 'src="/brand/logo.svg"' in refreshed
