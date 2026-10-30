@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 
 from . import database
 from .engine import (
-    Bill, BufferReservation, CreditCard, Income, PaydayRequest, SavingsGoal,
+    Bill, CreditCard, Income, PaydayRequest, SavingsGoal,
     generate_payday_plan,
 )
 from .forecast import occurrences_between
@@ -63,16 +63,6 @@ def _load_request(db, body: PlanGenerateRequest) -> PaydayRequest:
                 received_date=payday,
             ))
 
-    settings = db.execute(
-        "SELECT buffer_target_cents FROM household_settings WHERE id = 1"
-    ).fetchone()
-    buffer_target = settings["buffer_target_cents"] if settings else 0
-    buffers = (
-        [BufferReservation(name="Household cash buffer", amount_cents=buffer_target)]
-        if buffer_target > 0
-        else []
-    )
-
     bills: list[Bill] = []
     rows = db.execute(
         """SELECT name, amount_cents, next_due_date, frequency
@@ -124,7 +114,6 @@ def _load_request(db, body: PlanGenerateRequest) -> PaydayRequest:
         period_end=body.period_end,
         starting_cash_cents=body.starting_cash_cents,
         incomes=incomes,
-        buffers=buffers,
         bills=bills,
         credit_cards=cards,
         savings_goals=goals,
