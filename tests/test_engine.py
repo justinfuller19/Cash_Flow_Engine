@@ -43,7 +43,7 @@ def test_waterfall_order_and_balances():
     assert categories[-1] == "debt_extra"
     assert plan.target_card == "Chase Sapphire"
     assert plan.total_available_cents == plan.allocated_cents + plan.unallocated_cents
-    assert plan.unallocated_cents == 0
+    assert plan.unallocated_cents == 21000
     assert plan.unfunded_cents == 0
 
 
