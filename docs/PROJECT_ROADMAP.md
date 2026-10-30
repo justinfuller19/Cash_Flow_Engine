@@ -236,4 +236,4 @@ The independent 91-day simulation identified reconciliation edge cases addressed
 - [x] Retain the legacy database column and old allocation rows for upgrade compatibility without using them in calculations.
 - [x] Calculate dated cash checkpoints and test outflows before same-day inflows to expose shortfalls hidden by weekly net totals.
 - [x] Keep savings goals, arrears, and actual contribution reconciliation separate from the former buffer.
-- [ ] Run the full test suite and review CI results before deployment.
+- [x] Full test suite passed: 181 tests on Python 3.11, 3.12, and 3.13.
