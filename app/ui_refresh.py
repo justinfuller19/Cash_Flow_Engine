@@ -67,7 +67,7 @@ INTERACTION_SCRIPT = """<script id="cfe-ui-interactions">
   let warning=document.getElementById('cfe-forecast-warning');
   if(!Number.isFinite(numeric)||numeric<=0){if(warning)warning.remove();return;}
   if(!warning){warning=document.createElement('section');warning.id='cfe-forecast-warning';warning.className='cfe-forecast-warning';warning.setAttribute('role','status');const content=document.createElement('div');const heading=document.createElement('strong');heading.textContent='Future cash-flow gap detected';const message=document.createElement('span');message.className='cfe-forecast-warning-amount';content.append(heading,message);const link=document.createElement('a');link.href='/weekly';link.textContent='Review forecast →';warning.append(content,link);const intro=document.querySelector('.cfe-home-intro');if(intro)intro.after(warning);else metrics.before(warning);}
-  const amount=warning.querySelector('.cfe-forecast-warning-amount');if(amount)amount.textContent='The forecast shows '+(value.textContent||'a buffer gap')+' projected before later income arrives.';
+  const amount=warning.querySelector('.cfe-forecast-warning-amount');if(amount)amount.textContent='The forecast shows '+(value.textContent||'a cash shortfall')+' projected before later income arrives.';
  }
  if(metrics){const observer=new MutationObserver(()=>arrangeMetrics());window.__cfeMetricsObserver=observer;observer.observe(metrics,{childList:true,subtree:true});if(metrics.children.length)arrangeMetrics();}
  const actions=document.createElement('div');actions.id='cfe-home-actions';actions.setAttribute('aria-label','Quick actions');
