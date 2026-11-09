@@ -375,3 +375,50 @@ def transaction_bill_reservation_impact_from_forecast(
         "underfunded_bills": impacted,
         "total_bill_shortfall_cents": sum(item["unfunded_cents"] for item in impacted),
     }
+
+def bill_funding_shortfalls_from_forecast(forecast: Mapping) -> list[dict]:
+    """Report bill-level shortfalls using dated future income and outflows."""
+    from datetime import date
+
+    events = []
+    for period in forecast.get("periods", []):
+        for item in period.get("income_items", []):
+            events.append((date.fromisoformat(item["date"]), 3, "income",
+                           int(item["amount_cents"]), None))
+        for item in period.get("transactions", []):
+            day = date.fromisoformat(item["date"])
+            amount = int(item["amount_cents"])
+            if item["type"] == "income":
+                events.append((day, 3, "income", amount, None))
+            elif item["type"] == "expense":
+                events.append((day, 1, "expense", amount, None))
+        for item in period.get("debt_events", []):
+            if item.get("type") == "payment" and not item.get("actual"):
+                events.append((date.fromisoformat(item["date"]), 1, "expense",
+                               int(item["amount_cents"]), None))
+        for item in period.get("savings", []):
+            events.append((date.fromisoformat(period["end_date"]), 1, "expense",
+                           int(item["amount_cents"]), None))
+        for item in period.get("bills", []):
+            events.append((date.fromisoformat(item["due_date"]), 2, "bill",
+                           int(item["amount_cents"]), item))
+    events.sort(key=lambda item: (item[0], item[1], item[4].get("bill_id", 0) if item[4] else 0))
+    cash = int(forecast.get("current_cash_cents", 0))
+    shortfalls = []
+    for _, _, event_type, amount, detail in events:
+        if event_type == "income":
+            cash += amount
+        elif event_type == "bill":
+            funded = min(amount, max(0, cash))
+            shortfall = amount - funded
+            if shortfall:
+                shortfalls.append({
+                    "bill_id": detail["bill_id"],
+                    "name": detail["name"],
+                    "due_date": detail["due_date"],
+                    "shortfall_cents": shortfall,
+                })
+            cash -= amount
+        else:
+            cash -= amount
+    return shortfalls
