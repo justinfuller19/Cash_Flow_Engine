@@ -119,3 +119,18 @@ def test_calendar_requires_paycheck_group_containing_today():
         assert "include the group containing today" in str(exc)
     else:
         raise AssertionError("Expected missing current paycheck group to be rejected")
+
+def test_bill_between_paydays_in_same_group_belongs_to_preceding_period():
+    from app.pay_periods import build_pay_period_calendar, period_for_due_date
+
+    periods = build_pay_period_calendar(
+        [date(2026, 10, 23), date(2026, 10, 30), date(2026, 11, 1), date(2026, 11, 13)],
+        today=date(2026, 10, 23),
+        horizon_end=date(2026, 11, 30),
+        window_days=2,
+    )
+    assert periods[1]["paycheck_dates"] == (date(2026, 10, 30), date(2026, 11, 1))
+    assert periods[1]["period_start"] == date(2026, 11, 1)
+    assert periods[0]["period_end"] == date(2026, 10, 31)
+    assert period_for_due_date(date(2026, 10, 31), periods) is periods[0]
+    assert period_for_due_date(date(2026, 11, 1), periods) is periods[1]
