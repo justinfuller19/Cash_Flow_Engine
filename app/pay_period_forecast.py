@@ -161,3 +161,104 @@ def plan_savings_contributions(goals: Sequence[Mapping], period_starts: Sequence
             "deadline_shortfall_cents": remaining if deadline else 0,
         })
     return results
+
+def project_debt_schedule(debts: Sequence[Mapping], periods: Sequence[Mapping[str, str]],
+                          as_of_date: str) -> dict:
+    """Project monthly interest and planned payments chronologically.
+
+    Interest is posted before a payment when both fall on the same date.
+    Monthly interest uses APR / 12 and integer-cent half-up rounding. A zero
+    planned payment uses the saved minimum payment. Balances stop at zero;
+    estimated interest is returned as forecast data only, never persisted.
+    """
+    from calendar import monthrange
+    from datetime import date
+
+    as_of = date.fromisoformat(as_of_date)
+    parsed_periods = [
+        (date.fromisoformat(p["start_date"]), date.fromisoformat(p["end_date"]), p)
+        for p in periods
+    ]
+    if not parsed_periods:
+        return {"periods": [], "debts": []}
+    horizon_end = max(end for _, end, _ in parsed_periods)
+    period_totals = {
+        p.get("start_date"): {"debt_payments_cents": 0, "estimated_interest_cents": 0,
+                              "debt_events": []}
+        for _, _, p in parsed_periods
+    }
+    debt_results = []
+
+    def monthly_dates(anchor_text: str | None) -> list[date]:
+        if not anchor_text:
+            return []
+        anchor = date.fromisoformat(anchor_text)
+        cursor = date(max(anchor.year, as_of.year), max(anchor.month, as_of.month), 1)
+        dates = []
+        while cursor <= horizon_end:
+            day = min(anchor.day, monthrange(cursor.year, cursor.month)[1])
+            candidate = date(cursor.year, cursor.month, day)
+            if as_of <= candidate <= horizon_end:
+                dates.append(candidate)
+            next_month = cursor.month + 1
+            cursor = date(cursor.year + (next_month > 12), 1 if next_month > 12 else next_month, 1)
+        return dates
+
+    events = []
+    for debt in debts:
+        debt_id = debt.get("id")
+        balance = debt.get("balance_cents", 0)
+        minimum = debt.get("minimum_payment_cents", 0)
+        planned = debt.get("planned_payment_cents", 0) or minimum
+        apr = debt.get("apr_percent", 0)
+        for name, value in (("balance_cents", balance), ("minimum_payment_cents", minimum),
+                            ("planned_payment_cents", planned)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer")
+        if isinstance(apr, bool) or not isinstance(apr, (int, float)) or apr < 0:
+            raise ValueError("apr_percent must be non-negative")
+        for day in monthly_dates(debt.get("interest_date")):
+            events.append((day, 0, debt_id, debt, "interest"))
+        for day in monthly_dates(debt.get("next_due_date")):
+            events.append((day, 1, debt_id, debt, "payment"))
+
+    balances = {debt.get("id"): debt.get("balance_cents", 0) for debt in debts}
+    debt_events = []
+    for day, _, debt_id, debt, event_type in sorted(events, key=lambda event: (event[0], event[1], event[2])):
+        balance = balances.get(debt_id, 0)
+        if balance <= 0:
+            continue
+        if event_type == "interest":
+            basis_points = int(float(debt.get("apr_percent", 0)) * 100 + 0.5)
+            denominator = 120000
+            interest = (balance * basis_points + denominator // 2) // denominator
+            balances[debt_id] = balance + interest
+            amount = interest
+        else:
+            payment_amount = debt.get("planned_payment_cents", 0) or debt.get("minimum_payment_cents", 0)
+            amount = min(balance, payment_amount)
+            balances[debt_id] = balance - amount
+        owning = next((p for start, end, p in parsed_periods if start <= day <= end), None)
+        if owning is None:
+            continue
+        bucket = period_totals[owning.get("start_date")]
+        key = "estimated_interest_cents" if event_type == "interest" else "debt_payments_cents"
+        bucket[key] += amount
+        event = {"debt_id": debt_id, "debt_name": debt.get("name", "Debt"),
+                 "date": day.isoformat(), "type": event_type, "amount_cents": amount,
+                 "balance_after_cents": balances[debt_id]}
+        bucket["debt_events"].append(event)
+        debt_events.append(event)
+
+    return {
+        "periods": [
+            {"start_date": key, **value}
+            for key, value in period_totals.items()
+        ],
+        "debts": [
+            {"debt_id": debt.get("id"), "debt_name": debt.get("name", "Debt"),
+             "projected_balance_cents": balances.get(debt.get("id"), 0)}
+            for debt in debts
+        ],
+        "events": debt_events,
+    }
