@@ -119,8 +119,14 @@ def next_occurrence(cursor: date, frequency: str, anchor_day: int | None = None)
         return _monthly_dates(next_month.year, next_month.month, frequency, anchor_day or cursor.day)[0]
     if frequency == "monthly":
         return _shift_month(cursor, 1, anchor_day or cursor.day)
-    if frequency == "quarterly":
+    if frequency in {"quarterly", "every_three_months"}:
         return _shift_month(cursor, 3, anchor_day or cursor.day)
+    if frequency == "every_two_months":
+        return _shift_month(cursor, 2, anchor_day or cursor.day)
+    if frequency == "every_four_months":
+        return _shift_month(cursor, 4, anchor_day or cursor.day)
+    if frequency == "every_six_months":
+        return _shift_month(cursor, 6, anchor_day or cursor.day)
     if frequency == "yearly":
         return _shift_month(cursor, 12, anchor_day or cursor.day)
     if frequency == "irregular":
@@ -141,7 +147,8 @@ def occurrences_between(anchor: date, frequency: str, start: date, end: date) ->
         return [anchor] if start <= anchor <= end else []
     if frequency not in {
         "weekly", "biweekly", "semimonthly", "twice_monthly_last",
-        "first_third_friday", "last_business_day", "monthly", "quarterly", "yearly",
+        "first_third_friday", "last_business_day", "monthly", "quarterly",
+        "every_two_months", "every_four_months", "every_six_months", "yearly",
     }:
         raise ValueError(f"Unsupported recurrence frequency: {frequency}")
     anchor_day = anchor.day
@@ -190,8 +197,12 @@ def occurrences_around(anchor: date, frequency: str, start: date, end: date) -> 
         else:
             cursor = anchor
         return occurrences_between(cursor, frequency, start, end)
-    if frequency in {"quarterly", "yearly"}:
-        interval = 3 if frequency == "quarterly" else 12
+    if frequency in {"quarterly", "every_three_months", "every_two_months",
+                     "every_four_months", "every_six_months", "yearly"}:
+        interval = {
+            "quarterly": 3, "every_three_months": 3, "every_two_months": 2,
+            "every_four_months": 4, "every_six_months": 6, "yearly": 12,
+        }[frequency]
         dates = []
         cursor = date(anchor.year, anchor.month, 1)
         start_month = date(start.year, start.month, 1)
