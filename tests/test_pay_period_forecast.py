@@ -186,3 +186,48 @@ def test_debt_interest_recurrence_handles_year_boundary():
     )
     assert result["periods"][0]["estimated_interest_cents"] == 1000
     assert result["periods"][0]["debt_payments_cents"] == 0
+
+def test_proposed_transaction_warns_only_for_new_bill_underfunding_after_future_income():
+    from app.pay_period_forecast import transaction_bill_reservation_impact_from_forecast
+
+    forecast = {
+        "generated_on": "2026-11-01",
+        "current_cash_cents": 100000,
+        "periods": [{
+            "start_date": "2026-11-01", "end_date": "2026-11-30",
+            "income_items": [{"date": "2026-11-07", "amount_cents": 100000}],
+            "transactions": [], "debt_events": [], "savings": [],
+            "bills": [
+                {"bill_id": 1, "name": "Rent", "due_date": "2026-11-05", "amount_cents": 80000},
+                {"bill_id": 2, "name": "Electric", "due_date": "2026-11-10", "amount_cents": 50000},
+            ],
+        }],
+    }
+    impact = transaction_bill_reservation_impact_from_forecast(
+        forecast, 30000, "2026-11-03"
+    )
+    assert impact["requires_confirmation"] is True
+    assert impact["underfunded_bills"] == [
+        {"name": "Rent", "due_date": "2026-11-05", "unfunded_cents": 10000}
+    ]
+    assert impact["total_bill_shortfall_cents"] == 10000
+
+
+def test_proposed_transaction_does_not_warn_for_preexisting_shortfall_increment():
+    from app.pay_period_forecast import transaction_bill_reservation_impact_from_forecast
+
+    forecast = {
+        "generated_on": "2026-11-01", "current_cash_cents": 50000,
+        "periods": [{
+            "start_date": "2026-11-01", "end_date": "2026-11-30",
+            "income_items": [], "transactions": [], "debt_events": [], "savings": [],
+            "bills": [{"bill_id": 3, "name": "Rent", "due_date": "2026-11-05",
+                       "amount_cents": 80000}],
+        }],
+    }
+    impact = transaction_bill_reservation_impact_from_forecast(
+        forecast, 10000, "2026-11-03"
+    )
+    assert impact["underfunded_bills"] == [
+        {"name": "Rent", "due_date": "2026-11-05", "unfunded_cents": 10000}
+    ]
