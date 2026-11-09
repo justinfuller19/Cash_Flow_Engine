@@ -144,6 +144,30 @@ def record_savings_contribution(goal_id: int, body: SavingsContributionCreate):
         ).fetchone()
         if goal is None:
             raise HTTPException(status_code=404, detail="Active savings goal not found")
+        if contribution_date == date.today():
+            from .pay_period_forecast import transaction_bill_reservation_impact_from_forecast
+            from .pay_period_service import build_pay_period_forecast
+
+            forecast = build_pay_period_forecast(db, date.today())
+            for period in forecast["periods"]:
+                if period["start_date"] <= contribution_date.isoformat() <= period["end_date"]:
+                    period["savings"] = [
+                        item for item in period.get("savings", [])
+                        if item.get("goal_id") != goal_id
+                    ]
+                    break
+            impact = transaction_bill_reservation_impact_from_forecast(
+                forecast, body.amount_cents, contribution_date.isoformat()
+            )
+            if impact["requires_confirmation"] and not body.confirm_reserved_bill_impact:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "message": "This savings contribution would newly underfund scheduled bills.",
+                        "underfunded_bills": impact["underfunded_bills"],
+                        "total_bill_shortfall_cents": impact["total_bill_shortfall_cents"],
+                    },
+                )
         new_balance = int(goal["current_balance_cents"]) + body.amount_cents
         last_date = max(
             filter(None, (goal["last_contribution_date"], contribution_date.isoformat())),
