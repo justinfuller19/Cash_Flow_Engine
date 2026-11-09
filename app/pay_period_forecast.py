@@ -395,7 +395,7 @@ def transaction_bill_reservation_impact_from_forecast(
                 })
 
     return {
-        "requires_confirmation": bool(impacted) or bool(excess and negative_period),
+        "requires_confirmation": bool(impacted) or bool(excess),
         "underfunded_bills": impacted,
         "total_bill_shortfall_cents": sum(item["unfunded_cents"] for item in impacted),
         "exceeds_max_spendable_cents": excess,
