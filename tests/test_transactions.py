@@ -760,6 +760,8 @@ def test_future_linked_debt_payment_updates_balance_only_when_date_arrives(tmp_p
     )
 
 def test_early_linked_debt_payment_releases_upcoming_scheduled_payment(tmp_path, monkeypatch):
+    from app.pay_period_service import build_pay_period_forecast
+
     client = client_for(tmp_path, monkeypatch)
     today = date.today()
     due_date = today + timedelta(days=10)
