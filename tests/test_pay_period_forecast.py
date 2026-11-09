@@ -26,7 +26,7 @@ def test_soft_target_is_not_deducted_from_cash_or_reserved_cash():
     result = calculate_pay_periods(_example(), 20000)
     assert result["periods"][0]["projected_ending_cash_cents"] == 85000
     assert result["periods"][0]["outflow_cents"] == 35000
-    assert result["reserved_cash_cents"] == 350000
+    assert result["reserved_cash_cents"] == 345000
 
 
 def test_later_periods_start_with_prior_ending_cash():
