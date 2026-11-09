@@ -149,3 +149,14 @@ def test_future_recorded_bill_payment_replaces_scheduled_bill_without_double_cou
     period = next(p for p in report["periods"] if p["start_date"] <= "2026-12-09" <= p["end_date"])
     assert not any(item["bill_id"] == bill_id and item["due_date"] == "2026-12-10" for item in period["bills"])
     assert period["other_expenses_cents"] >= 12000
+
+
+def test_pay_period_report_page_is_printable_and_exposes_report_fields():
+    client = _client()
+    response = client.get("/pay-periods")
+    assert response.status_code == 200
+    assert "Three-Month Pay-Period Forecast" in response.text
+    assert "Print / Save PDF" in response.text
+    assert "/api/cash-flow/pay-periods" in response.text
+    assert "Carry above target" in response.text
+    assert "break-inside:avoid" in response.text
