@@ -415,3 +415,96 @@ def test_legacy_preview_rejects_retired_buffer_reservations():
     })
     assert response.status_code == 422
     assert "Buffer reservations are retired" in response.text
+
+
+def test_owner_150_dollar_purchase_requires_confirmation_and_reports_p3_bill_shortfall():
+    client = _client()
+    today = date.today()
+    first_future_payday = today + __import__("datetime").timedelta(days=4)
+    second_future_payday = today + __import__("datetime").timedelta(days=11)
+    third_future_payday = today + __import__("datetime").timedelta(days=18)
+    with database.connect() as db:
+        db.execute(
+            """UPDATE household_settings
+               SET starting_cash_cents = 120000, end_of_period_target_cents = 20000,
+                   paycheck_group_window_days = 2 WHERE id = 1"""
+        )
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES (?, 120000)""",
+            (today.isoformat(),),
+        )
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, end_date, active)
+               VALUES (?, 'Weekly pay', 100000, 'weekly', ?, ?, 1)""",
+            (person_id, first_future_payday.isoformat(), third_future_payday.isoformat()),
+        )
+        for name, due_date, amount in (
+            ("First period bills", today + __import__("datetime").timedelta(days=1), 30000),
+            ("Second period bills", first_future_payday + __import__("datetime").timedelta(days=1), 40000),
+            ("Other", second_future_payday + __import__("datetime").timedelta(days=1), 225000),
+            ("Fourth period bills", third_future_payday + __import__("datetime").timedelta(days=1), 30000),
+        ):
+            db.execute(
+                """INSERT INTO bills
+                   (name, amount_cents, due_day_of_month, next_due_date,
+                    flexible_window_days, category, frequency, autopay, active)
+                   VALUES (?, ?, ?, ?, 0, 'other', 'irregular', 0, 1)""",
+                (name, amount, due_date.day, due_date.isoformat()),
+            )
+        db.execute(
+            """INSERT INTO savings_goals
+               (name, target_amount_cents, current_balance_cents, target_date,
+                contribution_per_period_cents, active)
+               VALUES ('General savings', 0, 0, NULL, 5000, 1)"""
+        )
+
+    forecast = client.get(
+        "/api/cash-flow/pay-periods", params={"as_of_date": today.isoformat()}
+    )
+    assert forecast.status_code == 200, forecast.text
+    assert [p["projected_ending_cash_cents"] for p in forecast.json()["periods"]] == [
+        85000, 140000, 10000, 75000
+    ]
+    payload = {
+        "transaction_date": today.isoformat(),
+        "transaction_type": "expense",
+        "category": "other",
+        "description": "Large purchase",
+        "amount_cents": -15000,
+    }
+    blocked = client.post("/api/transactions", json=payload)
+    assert blocked.status_code == 409, blocked.text
+    detail = blocked.json()["detail"]
+    assert detail["exceeds_max_spendable_cents"] == 5000
+    assert detail["underfunded_bills"] == [{
+        "name": "Other",
+        "due_date": (second_future_payday + __import__("datetime").timedelta(days=1)).isoformat(),
+        "unfunded_cents": 5000,
+    }]
+
+    confirmed = client.post(
+        "/api/transactions",
+        json={**payload, "confirm_reserved_bill_impact": True},
+    )
+    assert confirmed.status_code == 201, confirmed.text
+    after = client.get(
+        "/api/cash-flow/pay-periods", params={"as_of_date": today.isoformat()}
+    ).json()
+    third = next(
+        period for period in after["periods"]
+        if period["start_date"] == second_future_payday.isoformat()
+    )
+    assert third["projected_ending_cash_cents"] == -5000
+    assert after["bill_shortfalls"] == [{
+        "bill_id": next(
+            bill["bill_id"] for bill in third["bills"] if bill["name"] == "Other"
+        ),
+        "name": "Other",
+        "due_date": (second_future_payday + __import__("datetime").timedelta(days=1)).isoformat(),
+        "shortfall_cents": 5000,
+    }]
