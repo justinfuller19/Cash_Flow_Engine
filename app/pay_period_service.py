@@ -44,10 +44,13 @@ def _money(value) -> int:
 def _build_periods(payday_dates: set[date], today: date, horizon_end: date, window_days: int) -> list[dict]:
     groups = group_paychecks(sorted(payday_dates), window_days)
     if not groups:
-        raise HTTPException(
-            status_code=422,
-            detail="Add at least one active recurring paycheck before building a pay-period forecast.",
-        )
+        return [{
+            "period_start": today,
+            "period_end": horizon_end,
+            "paycheck_dates": (),
+            "is_current_period": True,
+            "synthetic_current_period": True,
+        }]
     current_index = next(
         (i for i, group in enumerate(groups)
          if group["period_start"] <= today
