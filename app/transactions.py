@@ -621,7 +621,7 @@ def create_transaction(body: TransactionCreate):
                     raise HTTPException(
                         status_code=409,
                         detail={
-                            "message": "This expense would make one or more scheduled bills underfunded. Confirm to record it anyway.",
+                            "message": "This expense exceeds the cash available without disrupting the forecast. Confirm to record it anyway.",
                             **impact,
                         },
                     )
@@ -784,7 +784,7 @@ button{border:0;border-radius:8px;padding:10px 12px;background:#0e7490;color:whi
 .list{padding:0;list-style:none}.list li{padding:13px 0;border-top:1px solid #e2e8f0;overflow-wrap:anywhere}
 .title{font-weight:700}.detail{color:#5c687a;font-size:.9rem;margin-top:4px}.positive{color:#166534}.negative{color:#b91c1c}
 </style></head><body><main><a href="/">← Dashboard</a> · <a href="/categories">Manage Categories</a><h1>Transactions</h1>
-<p class="muted">Record actual account activity for reference. Enter income as a positive amount and expenses as a negative amount. Expenses that would underfund scheduled bills require confirmation. Due paychecks and bills may also be posted automatically to this internal ledger; edit or delete those entries to correct them. No bank payments or transfers are initiated.</p>
+<p class="muted">Record actual account activity for reference. Enter income as a positive amount and expenses as a negative amount. Expenses that exceed max spendable or would underfund scheduled bills require confirmation. Due paychecks and bills may also be posted automatically to this internal ledger; edit or delete those entries to correct them. No bank payments or transfers are initiated.</p>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <section class="card"><h2>Add a transaction</h2><form id="transaction-form">
 <div><label for="tx-date">Date</label><input id="tx-date" name="transaction_date" type="date" required></div>
