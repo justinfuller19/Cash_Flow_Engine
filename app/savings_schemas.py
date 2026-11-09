@@ -48,6 +48,13 @@ class SavingsGoalOut(BaseModel):
     priority: int
     weekly_target_cents: int = 0
     contribution_per_period_cents: int = 0
+    last_contribution_date: date | None = None
     schedule_start_date: date | None = None
     active: bool
     created_at: str
+
+
+
+class SavingsContributionCreate(BaseModel):
+    amount_cents: int = Field(gt=0)
+    contribution_date: date | None = None
