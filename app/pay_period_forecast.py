@@ -240,7 +240,7 @@ def project_debt_schedule(debts: Sequence[Mapping], periods: Sequence[Mapping[st
         for day in scheduled_payment_dates:
             matching = next((item for item in actuals
                              if item.get("id") not in used_actual_ids
-                             and abs((date.fromisoformat(item["date"]) - day).days) <= 7), None)
+                             and abs((date.fromisoformat(item["date"]) - day).days) <= 31), None)
             if matching:
                 used_actual_ids.add(matching.get("id"))
                 events.append((date.fromisoformat(matching["date"]), 1, debt_id, debt,
