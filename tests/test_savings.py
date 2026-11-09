@@ -156,3 +156,38 @@ def test_schema_migration_converts_legacy_undated_amount_to_weekly_target(tmp_pa
         ).fetchone()
     assert row["weekly_target_cents"] == 7500
     assert row["contribution_per_period_cents"] == 0
+
+def test_recorded_savings_contribution_updates_goal_and_is_reversed_when_transaction_deleted(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    created = client.post(
+        "/api/savings-goals",
+        json={
+            "name": "Emergency fund",
+            "target_amount_cents": 100000,
+            "current_balance_cents": 20000,
+            "target_date": None,
+            "priority": 1,
+            "contribution_per_period_cents": 5000,
+        },
+    )
+    assert created.status_code == 201, created.text
+    goal_id = created.json()["id"]
+
+    contribution = client.post(
+        f"/api/savings-goals/{goal_id}/contributions",
+        json={"amount_cents": 2500},
+    )
+    assert contribution.status_code == 201, contribution.text
+    assert contribution.json()["goal"]["current_balance_cents"] == 22500
+    assert contribution.json()["goal"]["last_contribution_date"] == date.today().isoformat()
+
+    transaction_id = contribution.json()["transaction_id"]
+    transaction = client.get("/api/transactions").json()
+    assert any(item["id"] == transaction_id for item in transaction["transactions"])
+
+    deleted = client.delete(f"/api/transactions/{transaction_id}")
+    assert deleted.status_code == 200, deleted.text
+    goals = client.get("/api/savings-goals").json()
+    goal = next(item for item in goals if item["id"] == goal_id)
+    assert goal["current_balance_cents"] == 20000
+    assert goal["last_contribution_date"] is None
