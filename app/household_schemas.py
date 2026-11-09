@@ -40,6 +40,7 @@ class HouseholdSettingsOut(BaseModel):
 
     starting_cash_cents: int
     financial_week_start: Weekday = "Friday"
+    paycheck_group_window_days: int = Field(default=2, ge=0, le=14)
     updated_at: str
     starting_cash_effective_week: date | None = None
     starting_cash_confirmed_at: str | None = None
@@ -56,6 +57,7 @@ class HouseholdSettingsUpdate(BaseModel):
     starting_cash_cents: int | None = Field(default=None, ge=0)
     starting_cash_effective_week: date | None = None
     financial_week_start: Weekday | None = None
+    paycheck_group_window_days: int | None = Field(default=None, ge=0, le=14)
 
     @model_validator(mode="before")
     @classmethod
