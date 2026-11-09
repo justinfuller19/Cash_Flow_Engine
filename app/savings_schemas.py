@@ -58,3 +58,4 @@ class SavingsGoalOut(BaseModel):
 class SavingsContributionCreate(BaseModel):
     amount_cents: int = Field(gt=0)
     contribution_date: date | None = None
+    confirm_reserved_bill_impact: bool = False
