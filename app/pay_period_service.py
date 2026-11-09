@@ -392,7 +392,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
              AND transaction_type IN ('income', 'expense')""",
         (snapshot_date.isoformat(), today.isoformat()),
     ).fetchone()[0]
-    starting_cash = max(0, starting_cash + int(activity or 0))
+    starting_cash = starting_cash + int(activity or 0)
 
     # Current-period income is already included in the cash snapshot. Only
     # future recorded income/expenses are included in period projections.
