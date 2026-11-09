@@ -195,7 +195,7 @@ def update_debt(debt_id: int, body: DebtUpdate):
                 (debt_id,),
             )
             row = db.execute(
-                """SELECT id, name, balance_cents, minimum_payment_cents, apr_percent,
+                """SELECT id, name, balance_cents, minimum_payment_cents, planned_payment_cents, apr_percent,
                           due_day_of_month, next_due_date, interest_date, active, created_at
                    FROM credit_cards WHERE id = ?""", (debt_id,)
             ).fetchone()
