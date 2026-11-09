@@ -178,7 +178,8 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
 
     future_transactions = [dict(row) for row in db.execute(
         """SELECT id, transaction_date, transaction_type, linked_obligation_type,
-                  linked_obligation_id, category, description, amount_cents
+                  linked_obligation_id, category, description, amount_cents,
+                  debt_balance_applied
            FROM transactions
            WHERE transaction_date > ? AND transaction_date <= ?
              AND transaction_type IN ('income', 'expense')
@@ -335,7 +336,25 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
         if tx["transaction_type"] == "expense"
         and tx.get("linked_obligation_type") == "debt"
         and tx.get("linked_obligation_id") is not None
+        and not tx.get("debt_balance_applied", 0)
     ]
+    recently_applied_debt_payments = [dict(row) for row in db.execute(
+        """SELECT id, linked_obligation_id, transaction_date
+           FROM transactions
+           WHERE transaction_type = 'expense' AND linked_obligation_type = 'debt'
+             AND debt_balance_applied = 1 AND transaction_date BETWEEN ? AND ?""",
+        ((today - timedelta(days=7)).isoformat(), today.isoformat()),
+    ).fetchall()]
+    for debt in debt_rows:
+        due_date = _as_date(debt.get("next_due_date"))
+        if due_date is None:
+            continue
+        if any(
+            payment["linked_obligation_id"] == debt["id"]
+            and abs((_as_date(payment["transaction_date"]) - due_date).days) <= 7
+            for payment in recently_applied_debt_payments
+        ):
+            debt["next_due_date"] = _add_months(due_date, 1).isoformat()
     debt_periods = project_debt_schedule(
         debt_rows,
         [{"start_date": p["start_date"], "end_date": p["end_date"]} for p in periods],
