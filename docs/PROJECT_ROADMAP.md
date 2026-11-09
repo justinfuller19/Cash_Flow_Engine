@@ -267,3 +267,9 @@ The independent 91-day simulation identified reconciliation edge cases addressed
 - [ ] Run full test suite and Raspberry Pi compatibility checks before requesting review.
 
 The new calculation module is not yet wired into the live forecast API. Do not mark the redesign complete until the remaining items and integration tests are present.
+
+
+- [x] Due paychecks and bills can be idempotently posted to the internal transaction ledger when the live forecast is opened; entries are linked and editable/deletable, and no external payment is initiated.
+- [x] Manual expense creation now compares the proposed transaction against dated bill funding and asks for explicit confirmation with exact bill names, due dates, and new shortfall amounts.
+- [x] The printable report includes bill-level underfunding warnings in addition to negative-cash and target/carry-over warnings.
+- [x] Ongoing savings goals now expose a fixed per-pay-period contribution setting; dated goals remain dynamically recalculated by remaining pay periods.
