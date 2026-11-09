@@ -74,7 +74,7 @@ def _build_periods(payday_dates: set[date], today: date, horizon_end: date, wind
             return result
         result.append({
             "period_start": today,
-            "period_end": min(horizon_end, first_future["period_start"] - timedelta(days=1)),
+            "period_end": first_future["period_start"] - timedelta(days=1),
             "paycheck_dates": (),
             "is_current_period": True,
             "synthetic_current_period": True,
@@ -87,7 +87,7 @@ def _build_periods(payday_dates: set[date], today: date, horizon_end: date, wind
             continue
         result.append({
             **group,
-            "period_end": min(group["period_end"] or horizon_end, horizon_end),
+            "period_end": group["period_end"] or horizon_end,
             "is_current_period": False if current_index is None else group is groups[current_index],
             "synthetic_current_period": False,
         })
@@ -103,7 +103,10 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
     counted twice.
     """
     today = today or date.today()
-    horizon_end = _add_months(today, 3)
+    period_start_horizon = _add_months(today, 3)
+    # Include enough paydays beyond the last eligible period start to establish
+    # the actual end of that final pay period.
+    calendar_search_end = period_start_horizon + timedelta(days=45)
     settings = db.execute(
         """SELECT starting_cash_cents, financial_week_start,
                   paycheck_group_window_days, end_of_period_target_cents
@@ -133,7 +136,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
         if anchor is None:
             continue
         dates = occurrences_around(
-            anchor, source["frequency"], history_start, horizon_end
+            anchor, source["frequency"], history_start, calendar_search_end
         )
         end_date = _as_date(source.get("end_date"))
         for payday in dates:
@@ -154,8 +157,9 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
             payday_dates.add(payday)
 
     periods = _build_periods(
-        payday_dates, today, horizon_end, settings["paycheck_group_window_days"]
+        payday_dates, today, period_start_horizon, settings["paycheck_group_window_days"]
     )
+    horizon_end = max(period["period_end"] for period in periods)
     for index, period in enumerate(periods):
         period["index"] = index
         period["start_date"] = period["period_start"].isoformat()
