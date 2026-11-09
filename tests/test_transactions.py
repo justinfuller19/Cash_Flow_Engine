@@ -340,6 +340,11 @@ def test_bill_payment_suggestions_explain_candidates_and_require_confirmation(
     client = client_for(tmp_path, monkeypatch)
     today = date.today()
     with database.connect() as db:
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES (?, 100000)""",
+            (today.isoformat(),),
+        )
         bill_id = db.execute(
             """INSERT INTO bills
                (name, amount_cents, due_day_of_month, next_due_date, category, frequency, active)
