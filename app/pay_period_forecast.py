@@ -193,7 +193,9 @@ def project_debt_schedule(debts: Sequence[Mapping], periods: Sequence[Mapping[st
         if not anchor_text:
             return []
         anchor = date.fromisoformat(anchor_text)
-        cursor = date(max(anchor.year, as_of.year), max(anchor.month, as_of.month), 1)
+        anchor_month = date(anchor.year, anchor.month, 1)
+        as_of_month = date(as_of.year, as_of.month, 1)
+        cursor = max(anchor_month, as_of_month)
         dates = []
         while cursor <= horizon_end:
             day = min(anchor.day, monthrange(cursor.year, cursor.month)[1])
