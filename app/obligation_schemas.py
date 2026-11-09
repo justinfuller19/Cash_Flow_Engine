@@ -61,6 +61,7 @@ class DebtCreate(BaseModel):
     minimum_payment_cents: int = Field(ge=0)
     apr_percent: float = Field(ge=0, le=1000)
     next_due_date: date
+    interest_date: date | None = None
     due_day_of_month: int | None = Field(default=None, ge=1, le=31)
     active: bool = True
 
@@ -71,6 +72,7 @@ class DebtUpdate(PatchModel):
     minimum_payment_cents: int | None = Field(default=None, ge=0)
     apr_percent: float | None = Field(default=None, ge=0, le=1000)
     next_due_date: date | None = None
+    interest_date: date | None = None
     due_day_of_month: int | None = Field(default=None, ge=1, le=31)
     active: bool | None = None
 
@@ -83,5 +85,6 @@ class DebtOut(BaseModel):
     apr_percent: float
     due_day_of_month: int | None
     next_due_date: date | None
+    interest_date: date | None = None
     active: bool
     created_at: str
