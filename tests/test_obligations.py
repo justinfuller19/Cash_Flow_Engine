@@ -161,7 +161,7 @@ def test_bills_page_and_schema_migration(tmp_path, monkeypatch):
         old_bill = db.execute("SELECT category, frequency, autopay FROM bills").fetchone()
         version = db.execute("PRAGMA user_version").fetchone()[0]
     assert {"category", "frequency", "autopay"} <= bill_columns
-    assert {"next_due_date", "interest_date"} <= debt_columns
+    assert {"next_due_date", "interest_date", "planned_payment_cents"} <= debt_columns
     assert tuple(old_bill) == ("other", "monthly", 0)
     assert version == database.SCHEMA_VERSION
 
