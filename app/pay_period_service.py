@@ -408,3 +408,112 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
         "projected_debts": debt_periods.get("debts", []),
         "savings_goals": savings,
     }
+
+def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
+    """Idempotently post recent due paychecks and bills to the internal ledger.
+
+    This never contacts a bank or initiates a payment. Entries are ordinary,
+    linked transactions that users can edit or delete to correct the forecast.
+    A seven-day catch-up window handles days when the app was not opened.
+    """
+    from .forecast import occurrences_between
+
+    today = today or date.today()
+    catch_up_start = today - timedelta(days=7)
+    created_income = []
+    created_bills = []
+
+    income_rows = [dict(row) for row in db.execute(
+        """SELECT id, name, net_amount_cents, frequency, next_payday, end_date
+           FROM income_sources WHERE active = 1 ORDER BY id"""
+    ).fetchall()]
+    for source in income_rows:
+        anchor = _as_date(source.get("next_payday"))
+        if anchor is None or anchor > today:
+            continue
+        end_date = _as_date(source.get("end_date"))
+        window_start = max(anchor, catch_up_start)
+        dates = occurrences_between(anchor, source["frequency"], window_start, today)
+        overrides = [dict(row) for row in db.execute(
+            """SELECT start_date, end_date, amount_cents
+               FROM income_amount_overrides WHERE income_source_id = ?
+               ORDER BY start_date""", (source["id"],)
+        ).fetchall()]
+        for payday in dates:
+            if end_date and payday > end_date:
+                continue
+            already_recorded = db.execute(
+                """SELECT id FROM transactions
+                   WHERE transaction_type = 'income'
+                     AND linked_obligation_type = 'income'
+                     AND linked_obligation_id = ?
+                     AND transaction_date BETWEEN ? AND ?
+                   ORDER BY ABS(julianday(transaction_date) - julianday(?)), id
+                   LIMIT 1""",
+                (source["id"], (payday - timedelta(days=2)).isoformat(),
+                 (payday + timedelta(days=2)).isoformat(), payday.isoformat()),
+            ).fetchone()
+            if already_recorded:
+                continue
+            amount = _money(source["net_amount_cents"])
+            for override in overrides:
+                if override["start_date"] <= payday.isoformat() <= override["end_date"]:
+                    amount = _money(override["amount_cents"])
+                    break
+            cursor = db.execute(
+                """INSERT INTO transactions
+                   (transaction_date, category, transaction_type, linked_obligation_type,
+                    linked_obligation_id, description, amount_cents, notes)
+                   VALUES (?, 'paychecks', 'income', 'income', ?, ?, ?,
+                           'Automatically posted to the internal ledger; edit or delete to correct.')""",
+                (payday.isoformat(), source["id"], f"Paycheck received — {source['name']}", amount),
+            )
+            created_income.append(cursor.lastrowid)
+
+    bill_rows = [dict(row) for row in db.execute(
+        """SELECT id, name, amount_cents, due_day_of_month, next_due_date,
+                  flexible_window_days, category, frequency
+           FROM bills WHERE active = 1 ORDER BY id"""
+    ).fetchall()]
+    for bill in bill_rows:
+        anchor = _as_date(bill.get("next_due_date"))
+        if anchor is None and bill.get("due_day_of_month"):
+            due_day = min(int(bill["due_day_of_month"]), monthrange(today.year, today.month)[1])
+            anchor = date(today.year, today.month, due_day)
+        if anchor is None or anchor > today:
+            continue
+        window_start = max(anchor, catch_up_start)
+        dates = occurrences_between(anchor, bill["frequency"], window_start, today)
+        used_transactions: set[int] = set()
+        for due_date in dates:
+            flex = int(bill.get("flexible_window_days") or 0)
+            candidates = db.execute(
+                """SELECT id, transaction_date FROM transactions
+                   WHERE transaction_type = 'expense'
+                     AND linked_obligation_type = 'bill'
+                     AND linked_obligation_id = ?
+                     AND transaction_date BETWEEN ? AND ?
+                   ORDER BY ABS(julianday(transaction_date) - julianday(?)), id""",
+                (bill["id"], (due_date - timedelta(days=flex)).isoformat(),
+                 (due_date + timedelta(days=flex)).isoformat(), due_date.isoformat()),
+            ).fetchall()
+            existing = next((row for row in candidates if row["id"] not in used_transactions), None)
+            if existing:
+                used_transactions.add(existing["id"])
+                continue
+            cursor = db.execute(
+                """INSERT INTO transactions
+                   (transaction_date, category, transaction_type, linked_obligation_type,
+                    linked_obligation_id, description, amount_cents, notes)
+                   VALUES (?, ?, 'expense', 'bill', ?, ?, ?, ?)""",
+                (due_date.isoformat(), bill.get("category") or "other", bill["id"],
+                 f"Bill paid — {bill['name']}", -_money(bill["amount_cents"]),
+                 "Automatically posted to the internal ledger; edit or delete to correct."),
+            )
+            created_bills.append(cursor.lastrowid)
+
+    return {
+        "posted_paychecks": len(created_income),
+        "posted_bills": len(created_bills),
+        "transaction_ids": created_income + created_bills,
+    }
