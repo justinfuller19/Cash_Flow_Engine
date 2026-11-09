@@ -396,7 +396,9 @@ def transaction_bill_reservation_impact_from_forecast(
             last_bill = period_bills[-1]
             key = (last_bill.get("bill_id"), last_bill.get("due_date"))
             existing = next((item for item in impacted
-                             if (item.get("bill_id"), item.get("due_date")) == key), None)
+                             if item.get("due_date") == key[1]
+                             and item.get("name") == last_bill.get("name")
+                             and item.get("bill_id") in (None, key[0])), None)
             if existing:
                 existing["unfunded_cents"] = max(existing["unfunded_cents"], excess)
             else:
