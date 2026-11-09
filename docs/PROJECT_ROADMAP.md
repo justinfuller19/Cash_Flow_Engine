@@ -252,3 +252,15 @@ The independent 91-day simulation identified reconciliation edge cases addressed
 - [ ] Integrate editable internal auto-posting, transactions, underfunding warnings, and reconciliation.
 - [ ] Replace weekly dashboard/report with the three-month pay-period view and printable output.
 
+## Pay-period redesign implementation status (2026-11-09)
+
+- [x] Fixed-anchor paycheck grouping and configurable grouping window foundation.
+- [x] Pure integer-cent forward period projection and backward required-carry-over calculation added on PR #54.
+- [x] Regression coverage added for the owner-provided four-period example, soft-target semantics, carry-forward balances, validation, and transaction reservation impact.
+- [ ] Connect recurring paycheck and bill schedules to the rolling three-month pay-period calendar.
+- [ ] Add deadline/ongoing savings and chronological debt/interest projections.
+- [ ] Add current-day cash snapshot semantics, editable internal auto-posting, and transaction confirmation safeguards.
+- [ ] Replace the weekly dashboard/report with the pay-period view and printable report.
+- [ ] Run full test suite and Raspberry Pi compatibility checks before requesting review.
+
+The new calculation module is not yet wired into the live forecast API. Do not mark the redesign complete until the remaining items and integration tests are present.
