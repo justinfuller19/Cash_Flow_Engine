@@ -358,21 +358,24 @@ def transaction_bill_reservation_impact_from_forecast(
     # rule is that spending beyond max spendable must still require confirmation.
     # Attribute that excess to the last bill in the first period pushed below
     # zero so the warning names a concrete obligation and due date.
-    max_spendable = int(forecast.get("max_spendable_cents", 0))
-    excess = max(0, transaction_amount_cents - max_spendable)
+    transaction_period_index = next(
+        (index for index, period in enumerate(updated_periods)
+         if date.fromisoformat(period["start_date"]) <= proposed_date
+         <= date.fromisoformat(period["end_date"])),
+        None,
+    )
+    future_period_ends = [
+        int(period.get("projected_ending_cash_cents", 0))
+        for period in updated_periods[transaction_period_index:]
+    ] if transaction_period_index is not None else []
+    spendable_from_transaction_date = max(0, min(future_period_ends)) if future_period_ends else 0
+    excess = max(0, transaction_amount_cents - spendable_from_transaction_date)
     negative_period = None
-    if excess:
-        transaction_period_index = next(
-            (index for index, period in enumerate(updated_periods)
-             if date.fromisoformat(period["start_date"]) <= proposed_date
-             <= date.fromisoformat(period["end_date"])),
-            None,
-        )
-        if transaction_period_index is not None:
-            for period in updated_periods[transaction_period_index:]:
-                if int(period.get("projected_ending_cash_cents", 0)) - transaction_amount_cents < 0:
-                    negative_period = period
-                    break
+    if excess and transaction_period_index is not None:
+        for period in updated_periods[transaction_period_index:]:
+            if int(period.get("projected_ending_cash_cents", 0)) - transaction_amount_cents < 0:
+                negative_period = period
+                break
     if excess and negative_period:
         period_bills = sorted(
             (bill for bill in negative_period.get("bills", [])
