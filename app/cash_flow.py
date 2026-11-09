@@ -216,7 +216,7 @@ details{margin-top:10px}summary{cursor:pointer;font-weight:650;color:#0e7490}ul.
    ["End-of-period target",report.end_of_period_target_cents]
   ];
   $("metrics").innerHTML=metrics.map(([label,value])=>"<div class='metric'><span>"+escapeHtml(label)+"</span><strong>"+dollars(value)+"</strong></div>").join("");
-  $("warnings").innerHTML=(report.warnings||[]).map(w=>"<li>"+escapeHtml(w.type==="negative_cash"?"Projected negative cash in the period starting "+dateLabel(w.start_date):"The required carry-over is short by "+dollars(w.shortfall_cents)+" in the period starting "+dateLabel(w.start_date))+"</li>").join("");
+  $("warnings").innerHTML=(report.warnings||[]).map(w=>"<li>"+escapeHtml(w.type==="bill_underfunded"?"Bill "+w.name+" due "+dateLabel(w.start_date)+" is underfunded by "+dollars(w.shortfall_cents):w.type==="negative_cash"?"Projected negative cash in the period starting "+dateLabel(w.start_date):"The required carry-over is short by "+dollars(w.shortfall_cents)+" in the period starting "+dateLabel(w.start_date))+"</li>").join("");
   $("summary-rows").innerHTML=(report.periods||[]).map(p=>{
    const [label]=statusFor(p);
    return "<tr><td>"+dateLabel(p.start_date)+" – "+dateLabel(p.end_date)+(p.is_current_period?" · Current":"")+"</td><td>"+dollars(p.income_cents)+"</td><td>"+dollars(p.bills_cents)+"</td><td>"+dollars(p.savings_cents)+"</td><td>"+dollars(p.debt_payments_cents)+"</td><td>"+dollars(p.other_expenses_cents)+"</td><td>"+dollars(p.projected_ending_cash_cents)+"</td><td>"+dollars(p.carry_out_above_target_cents)+"</td><td>"+escapeHtml(label)+"</td></tr>";
