@@ -75,3 +75,8 @@ Actual contributions can be recorded from the savings-goal page. Each contributi
 
 
 - [x] Recurring bills support per-occurrence amount overrides, one-occurrence cancellation, and restore-to-recurring-amount controls without changing the underlying schedule.
+
+
+## Grouped-paycheck bill funding
+
+When several paychecks are grouped, the group contributes all of its income to the period beginning on the group's final payday. For bill-level funding checks, those grouped paycheck amounts become available on that period start, not on the earlier paycheck dates. A bill due on the period start is funded after that day's paycheck income; a bill due between grouped paydays remains assigned to the preceding period and cannot use the grouped income.
