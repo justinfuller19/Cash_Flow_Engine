@@ -60,9 +60,11 @@ def test_household_grouping_setting_defaults_to_two_days_and_is_editable(tmp_pat
     client = TestClient(app)
     settings = client.get("/api/household/settings").json()
     assert settings["paycheck_group_window_days"] == 2
-    updated = client.patch("/api/household/settings", json={"paycheck_group_window_days": 4})
+    assert settings["end_of_period_target_cents"] == 0
+    updated = client.patch("/api/household/settings", json={"paycheck_group_window_days": 4, "end_of_period_target_cents": 25000})
     assert updated.status_code == 200
     assert updated.json()["paycheck_group_window_days"] == 4
+    assert updated.json()["end_of_period_target_cents"] == 25000
 
 
 def test_household_grouping_setting_rejects_invalid_values(tmp_path, monkeypatch):
