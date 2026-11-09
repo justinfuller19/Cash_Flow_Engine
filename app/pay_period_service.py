@@ -205,8 +205,18 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
         if period is None:
             continue
         for item in items:
-            matched = any(transaction_matches(tx, "income", item["income_source_id"], payday, 2)
-                          for tx in future_transactions)
+            source_name = item["name"].strip().lower()
+            matched = any(
+                transaction_matches(tx, "income", item["income_source_id"], payday, 2)
+                or (
+                    tx.get("linked_obligation_type") is None
+                    and abs(int(tx["amount_cents"])) == item["amount_cents"]
+                    and abs((_as_date(tx["transaction_date"]) - payday).days) <= 2
+                    and ("paycheck" in (tx.get("description") or "").lower()
+                         or source_name in (tx.get("description") or "").lower())
+                )
+                for tx in future_transactions
+            )
             if not matched:
                 detail = {**item, "date": payday.isoformat()}
                 period["income_items"].append(detail)
@@ -216,13 +226,20 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
     for transaction in future_transactions:
         day = _as_date(transaction["transaction_date"])
         matched_payday_period = None
-        if transaction.get("linked_obligation_type") == "income" and transaction.get("linked_obligation_id"):
+        if transaction["transaction_type"] == "income" and day:
+            description = (transaction.get("description") or "").lower()
             match = next((
                 item for item in income_occurrences
-                if item["income_source_id"] == transaction["linked_obligation_id"]
-                and item["date"] > today
+                if item["date"] > today
                 and abs((item["date"] - day).days) <= 2
-            ), None) if day else None
+                and (
+                    (transaction.get("linked_obligation_type") == "income"
+                     and transaction.get("linked_obligation_id") == item["income_source_id"])
+                    or (transaction.get("linked_obligation_type") is None
+                        and abs(int(transaction["amount_cents"])) == item["amount_cents"]
+                        and ("paycheck" in description or item["name"].strip().lower() in description))
+                )
+            ), None)
             if match:
                 matched_payday_period = paycheck_period_by_date.get(match["date"])
         period = matched_payday_period or (owning_period(day) if day else None)
