@@ -639,6 +639,12 @@ def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
             override = bill_occurrence_overrides.get((bill["id"], due_date.isoformat()))
             if override and override["status"] == "cancelled":
                 continue
+            posted_amount = (
+                override["amount_cents"] if override and override["amount_cents"] is not None
+                else bill["amount_cents"]
+            )
+            if _money(posted_amount) == 0:
+                continue
             flex = int(bill.get("flexible_window_days") or 0)
             pending_match = db.execute(
                 """SELECT id FROM bill_payment_match_suggestions
@@ -662,18 +668,12 @@ def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
             existing = next((row for row in candidates if row["id"] not in used_transactions and (
                 (row["linked_obligation_type"] == "bill" and row["linked_obligation_id"] == bill["id"])
                 or (row["linked_obligation_type"] is None
-                    and abs(int(row["amount_cents"])) == _money(bill["amount_cents"])
+                    and abs(int(row["amount_cents"])) == _money(posted_amount)
                     and ((row["category"] or "").lower() == (bill.get("category") or "").lower()
                          or bill_name in (row["description"] or "").lower()))
             )), None)
             if existing:
                 used_transactions.add(existing["id"])
-                continue
-            posted_amount = (
-                override["amount_cents"] if override and override["amount_cents"] is not None
-                else bill["amount_cents"]
-            )
-            if _money(posted_amount) == 0:
                 continue
             cursor = db.execute(
                 """INSERT INTO transactions
