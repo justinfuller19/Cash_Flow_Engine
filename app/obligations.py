@@ -129,7 +129,7 @@ def list_debts():
     with database.connect() as db:
         rows = db.execute(
             """SELECT id, name, balance_cents, minimum_payment_cents, apr_percent,
-                      due_day_of_month, next_due_date, active, created_at
+                      due_day_of_month, next_due_date, interest_date, active, created_at
                FROM credit_cards ORDER BY COALESCE(next_due_date, '9999-12-31'), id"""
         ).fetchall()
     return [_debt_out(row) for row in rows]
@@ -154,7 +154,7 @@ def create_debt(body: DebtCreate):
             )
             row = db.execute(
                 """SELECT id, name, balance_cents, minimum_payment_cents, apr_percent,
-                          due_day_of_month, next_due_date, active, created_at
+                          due_day_of_month, next_due_date, interest_date, active, created_at
                    FROM credit_cards WHERE id = ?""", (cursor.lastrowid,)
             ).fetchone()
     except sqlite3.IntegrityError as exc:
