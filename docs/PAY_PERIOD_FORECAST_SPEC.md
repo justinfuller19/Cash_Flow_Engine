@@ -65,7 +65,7 @@ The integrated forecast API is available at `/api/cash-flow/pay-periods`, with t
 
 ## Savings contribution recording
 
-Actual contributions can be recorded from the savings-goal page. Each contribution creates a negative internal-ledger transaction, increases the saved balance, and records the date of the latest contribution. The current pay period is then treated as satisfied for that goal, so the planned contribution is not reserved twice. Editing or deleting the linked transaction reverses or recalculates the saved balance and last-contribution date. This remains an internal record only; no bank transfer is initiated.
+Actual contributions can be recorded from the savings-goal page. Each contribution creates a negative internal-ledger transaction, increases the saved balance, and records the date of the latest contribution. The current pay period is then treated as satisfied for that goal, so the planned contribution is not reserved twice. When checking an actual contribution, remove that goal's planned contribution from the current and subsequent projected cash metrics before comparing the actual expense; this prevents the same savings amount from being counted twice. Editing or deleting the linked transaction reverses or recalculates the saved balance and last-contribution date. This remains an internal record only; no bank transfer is initiated.
 
 
 - [x] Actual savings contributions are recorded as linked internal-ledger expenses, update saved goal balances, satisfy the current pay period, and reverse correctly when the transaction is edited or deleted.
