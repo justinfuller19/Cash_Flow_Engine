@@ -397,7 +397,6 @@ def test_transaction_over_max_spendable_warns_even_when_due_date_bills_are_cover
     assert impact["requires_confirmation"] is True
     assert impact["exceeds_max_spendable_cents"] == 5000
     assert impact["underfunded_bills"] == [
-        {"bill_id": 3, "name": "Other", "due_date": "2026-11-20",
-         "unfunded_cents": 5000}
+        {"name": "Other", "due_date": "2026-11-20", "unfunded_cents": 5000}
     ]
     assert impact["total_bill_shortfall_cents"] == 5000
