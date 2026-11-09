@@ -23,6 +23,7 @@ def test_create_list_edit_and_deactivate_savings_goal(tmp_path, monkeypatch):
             "current_balance_cents": 125000,
             "target_date": "2027-12-31",
             "priority": 1,
+            "contribution_per_period_cents": 7500,
         },
     )
     assert response.status_code == 201, response.text
@@ -31,16 +32,19 @@ def test_create_list_edit_and_deactivate_savings_goal(tmp_path, monkeypatch):
     assert goal["current_balance_cents"] == 125000
     assert goal["target_date"] == "2027-12-31"
     assert goal["active"] is True
+    assert goal["contribution_per_period_cents"] == 7500
     assert client.get("/api/savings-goals").json()[0]["id"] == goal["id"]
 
     response = client.patch(
         f"/api/savings-goals/{goal['id']}",
-        json={"target_amount_cents": 1500000, "current_balance_cents": 200000, "priority": 2},
+        json={"target_amount_cents": 1500000, "current_balance_cents": 200000, "priority": 2,
+              "contribution_per_period_cents": 9000},
     )
     assert response.status_code == 200
     assert response.json()["target_amount_cents"] == 1500000
     assert response.json()["current_balance_cents"] == 200000
     assert response.json()["priority"] == 2
+    assert response.json()["contribution_per_period_cents"] == 9000
 
     response = client.patch(f"/api/savings-goals/{goal['id']}", json={"target_date": None})
     assert response.status_code == 200
@@ -99,7 +103,7 @@ def test_undated_general_savings_uses_weekly_amount_and_carries_missed_weeks(tmp
     assert goal["target_amount_cents"] == 0
     assert goal["target_date"] is None
     assert goal["weekly_target_cents"] == 2500
-    assert "contribution_per_period_cents" not in goal
+    assert goal["contribution_per_period_cents"] == 2500
 
     first = client.get("/api/cash-flow/weekly", params={"forecast_weeks": 1})
     assert first.status_code == 200, first.text
@@ -123,12 +127,12 @@ def test_undated_general_savings_uses_weekly_amount_and_carries_missed_weeks(tmp
     assert next_plan["planned_this_week_cents"] == 5000
 
 
-def test_savings_page_uses_weekly_not_per_payday_language(tmp_path, monkeypatch):
+def test_savings_page_uses_pay_period_contribution_language(tmp_path, monkeypatch):
     client = client_for(tmp_path, monkeypatch)
     response = client.get("/savings")
     assert response.status_code == 200
-    assert "Weekly savings amount" in response.text
-    assert "Legacy per-payday amount" not in response.text
+    assert "Ongoing contribution per pay period" in response.text
+    assert "Weekly savings amount" not in response.text
     assert "per payday" not in response.text
 
 
