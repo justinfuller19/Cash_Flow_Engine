@@ -368,17 +368,22 @@ def transaction_bill_reservation_impact_from_forecast(
         int(period.get("projected_ending_cash_cents", 0))
         for period in updated_periods[transaction_period_index:]
     ] if transaction_period_index is not None else []
-    spendable_from_transaction_date = max(0, min(future_period_ends)) if future_period_ends else 0
+    future_minimum = min(future_period_ends) if future_period_ends else None
+    spendable_from_transaction_date = max(0, future_minimum or 0)
     # Older focused callers may provide only bill events; the live forecast
-    # always includes max_spendable_cents. Preserve bill-only behavior otherwise.
+    # always includes max_spendable_cents. Do not re-warn for a forecast that
+    # was already below zero before this proposed transaction.
     excess = (
         max(0, transaction_amount_cents - spendable_from_transaction_date)
-        if forecast.get("cash_baseline_confirmed") and "max_spendable_cents" in forecast else 0
+        if forecast.get("cash_baseline_confirmed")
+        and "max_spendable_cents" in forecast
+        and future_minimum is not None and future_minimum >= 0 else 0
     )
     negative_period = None
     if excess and transaction_period_index is not None:
         for period in updated_periods[transaction_period_index:]:
-            if int(period.get("projected_ending_cash_cents", 0)) - transaction_amount_cents < 0:
+            ending = int(period.get("projected_ending_cash_cents", 0))
+            if ending >= 0 and ending - transaction_amount_cents < 0:
                 negative_period = period
                 break
     if excess and negative_period:
