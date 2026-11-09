@@ -680,8 +680,10 @@ def test_expense_requires_confirmation_when_it_newly_underfunds_a_bill(tmp_path,
     assert warning.status_code == 409, warning.text
     detail = warning.json()["detail"]
     assert detail["requires_confirmation"] is True
+    next_due = (due.replace(day=1) + timedelta(days=32)).replace(day=due.day)
     assert detail["underfunded_bills"] == [
-        {"name": "Rent", "due_date": due.isoformat(), "unfunded_cents": 10000}
+        {"name": "Rent", "due_date": due.isoformat(), "unfunded_cents": 10000},
+        {"name": "Rent", "due_date": next_due.isoformat(), "unfunded_cents": 20000},
     ]
 
     confirmed = client.post(
@@ -751,4 +753,8 @@ def test_future_linked_debt_payment_updates_balance_only_when_date_arrives(tmp_p
     assert balance_after_due == 90000
     assert flag_after_due == 1
     assert forecast_after_due["current_cash_cents"] == 90000
-    assert forecast_after_due["periods"][0]["debt_payments_cents"] == 0
+    assert forecast_after_due["periods"][0]["debt_payments_cents"] == 30000
+    assert all(
+        event["date"] != due_date.isoformat()
+        for event in forecast_after_due["periods"][0]["debt_events"]
+    )
