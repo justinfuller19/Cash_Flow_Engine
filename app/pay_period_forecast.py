@@ -29,8 +29,8 @@ def calculate_pay_periods(periods: Sequence[Mapping[str, int | str]], end_of_per
                 raise ValueError(f"{field} must be a non-negative integer")
         if index == 0:
             opening = period.get("starting_cash_cents")
-            if isinstance(opening, bool) or not isinstance(opening, int) or opening < 0:
-                raise ValueError("first period requires non-negative starting_cash_cents")
+            if isinstance(opening, bool) or not isinstance(opening, int):
+                raise ValueError("first period requires integer starting_cash_cents")
         else:
             opening = projected[index - 1]["projected_ending_cash_cents"]
         outflow = sum(period.get(field, 0) for field in _OUTFLOW_FIELDS)
