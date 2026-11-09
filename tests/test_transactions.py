@@ -631,3 +631,54 @@ def test_positive_expense_is_rejected_and_linked_debt_payment_balance_tracks_cru
     assert deleted.status_code == 200
     with database.connect() as db:
         assert db.execute("SELECT balance_cents FROM credit_cards WHERE id = ?", (card_id,)).fetchone()[0] == 428000
+
+def test_expense_requires_confirmation_when_it_newly_underfunds_a_bill(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    due = today + timedelta(days=2)
+    payday = today + timedelta(days=7)
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES (?, 100000)""",
+            (today.isoformat(),),
+        )
+        db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Paycheck', 50000, 'weekly', ?, 1)""",
+            (person_id, payday.isoformat()),
+        )
+        bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Rent', 80000, ?, ?, 0, 'housing', 'monthly', 0, 1)""",
+            (due.day, due.isoformat()),
+        ).lastrowid
+
+    payload = {
+        "transaction_date": today.isoformat(),
+        "category": "groceries",
+        "transaction_type": "expense",
+        "description": "Large purchase",
+        "amount_cents": -30000,
+    }
+    warning = client.post("/api/transactions", json=payload)
+    assert warning.status_code == 409, warning.text
+    detail = warning.json()["detail"]
+    assert detail["requires_confirmation"] is True
+    assert detail["underfunded_bills"] == [
+        {"name": "Rent", "due_date": due.isoformat(), "unfunded_cents": 10000}
+    ]
+
+    confirmed = client.post(
+        "/api/transactions",
+        json={**payload, "confirm_reserved_bill_impact": True},
+    )
+    assert confirmed.status_code == 201, confirmed.text
+    assert confirmed.json()["amount_cents"] == -30000
+    assert confirmed.json()["linked_obligation_id"] is None
