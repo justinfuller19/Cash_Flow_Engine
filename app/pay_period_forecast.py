@@ -353,10 +353,48 @@ def transaction_bill_reservation_impact_from_forecast(
                 "due_date": item["due_date"],
                 "unfunded_cents": newly_unfunded,
             })
+    # A purchase can consume cash reserved for savings/debt at period end
+    # without making any individual bill short on its due date. The owner's
+    # rule is that spending beyond max spendable must still require confirmation.
+    # Attribute that excess to the last bill in the first period pushed below
+    # zero so the warning names a concrete obligation and due date.
+    max_spendable = int(forecast.get("max_spendable_cents", 0))
+    excess = max(0, transaction_amount_cents - max_spendable)
+    negative_period = None
+    if excess:
+        for period in updated_periods:
+            start_date = date.fromisoformat(period["start_date"])
+            if start_date < proposed_date:
+                continue
+            if int(period.get("projected_ending_cash_cents", 0)) - transaction_amount_cents < 0:
+                negative_period = period
+                break
+    if excess and negative_period:
+        period_bills = sorted(
+            (bill for bill in negative_period.get("bills", [])
+             if int(bill.get("amount_cents", 0)) > 0),
+            key=lambda bill: bill["due_date"],
+        )
+        if period_bills:
+            last_bill = period_bills[-1]
+            key = (last_bill.get("bill_id"), last_bill.get("due_date"))
+            existing = next((item for item in impacted
+                             if (item.get("bill_id"), item.get("due_date")) == key), None)
+            if existing:
+                existing["unfunded_cents"] = max(existing["unfunded_cents"], excess)
+            else:
+                impacted.append({
+                    "bill_id": last_bill.get("bill_id"),
+                    "name": last_bill.get("name", "Bill"),
+                    "due_date": last_bill.get("due_date"),
+                    "unfunded_cents": excess,
+                })
+
     return {
-        "requires_confirmation": bool(impacted),
+        "requires_confirmation": bool(impacted) or bool(excess and negative_period),
         "underfunded_bills": impacted,
         "total_bill_shortfall_cents": sum(item["unfunded_cents"] for item in impacted),
+        "exceeds_max_spendable_cents": excess,
     }
 
 def bill_funding_shortfalls_from_forecast(forecast: Mapping) -> list[dict]:
