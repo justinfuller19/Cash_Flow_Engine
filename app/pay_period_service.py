@@ -237,7 +237,11 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
                     matched = True
                     break
             if not matched:
-                detail = {**item, "date": payday.isoformat()}
+                detail = {
+                    **item,
+                    "date": payday.isoformat(),
+                    "period_start_date": period["start_date"],
+                }
                 period["income_items"].append(detail)
 
     # Future recorded income is the authoritative amount for its date and is
@@ -280,6 +284,8 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
             "amount_cents": amount,
             "type": transaction["transaction_type"],
         }
+        if matched_payday_period is not None:
+            detail["pay_period_start_date"] = matched_payday_period["start_date"]
         period["transaction_items"].append(detail)
 
     bill_match_transactions = [dict(row) for row in db.execute(
