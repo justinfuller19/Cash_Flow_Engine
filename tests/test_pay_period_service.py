@@ -160,6 +160,9 @@ def test_pay_period_report_page_is_printable_and_exposes_report_fields():
     assert "/api/cash-flow/pay-periods" in response.text
     assert "Carry above target" in response.text
     assert "break-inside:avoid" in response.text
+    assert "bill-override-edit" in response.text
+    assert "bill-override-cancel" in response.text
+    assert "bill-override-reset" in response.text
 
 def test_due_paychecks_and_bills_are_posted_to_internal_ledger_once():
     from app.pay_period_service import post_due_scheduled_transactions
