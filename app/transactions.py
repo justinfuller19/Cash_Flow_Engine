@@ -619,17 +619,26 @@ def create_transaction(body: TransactionCreate):
                             **impact,
                         },
                     )
+            debt_balance_applied = int(
+                values["linked_obligation_type"] == "debt"
+                and transaction_type == "expense"
+                and date.fromisoformat(values["transaction_date"]) <= date.today()
+            )
             cursor = db.execute(
                 """INSERT INTO transactions
-                   (transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, description, amount_cents, account_name, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (transaction_date, category, transaction_type, linked_obligation_type,
+                    linked_obligation_id, description, amount_cents, account_name, notes,
+                    debt_balance_applied)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (values["transaction_date"], values["category"], transaction_type, values["linked_obligation_type"],
-                 values["linked_obligation_id"], values["description"], values["amount_cents"], values["account_name"], values["notes"]),
+                 values["linked_obligation_id"], values["description"], values["amount_cents"],
+                 values["account_name"], values["notes"], debt_balance_applied),
             )
-            _adjust_linked_debt_balance(
-                db, values["linked_obligation_type"], values["linked_obligation_id"],
-                transaction_type, values["amount_cents"], 1,
-            )
+            if debt_balance_applied:
+                _adjust_linked_debt_balance(
+                    db, values["linked_obligation_type"], values["linked_obligation_id"],
+                    transaction_type, values["amount_cents"], 1,
+                )
             row = db.execute(
                 """SELECT id, transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, description, amount_cents,
                           account_name, notes, created_at
@@ -651,16 +660,17 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
     try:
         with database.connect() as db:
             current = db.execute(
-                "SELECT id, transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, amount_cents, notes "
+                "SELECT id, transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, amount_cents, notes, debt_balance_applied "
                 "FROM transactions WHERE id = ?",
                 (transaction_id,),
             ).fetchone()
             if current is None:
                 raise HTTPException(status_code=404, detail="Transaction not found")
-            _adjust_linked_debt_balance(
-                db, current["linked_obligation_type"], current["linked_obligation_id"],
-                current["transaction_type"], current["amount_cents"], -1,
-            )
+            if current["debt_balance_applied"]:
+                _adjust_linked_debt_balance(
+                    db, current["linked_obligation_type"], current["linked_obligation_id"],
+                    current["transaction_type"], current["amount_cents"], -1,
+                )
             old_savings_goal_id = _adjust_savings_contribution(
                 db, current["notes"], current["transaction_date"],
                 current["transaction_type"], current["amount_cents"], -1,
@@ -686,8 +696,17 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
             assignments = ", ".join(f"{key} = ?" for key in updates)
             db.execute(f"UPDATE transactions SET {assignments} WHERE id = ?", (*updates.values(), transaction_id))
             updated_amount = updates.get("amount_cents", current["amount_cents"])
-            _adjust_linked_debt_balance(db, link_type, link_id, transaction_type, updated_amount, 1)
             updated_date = updates.get("transaction_date", current["transaction_date"])
+            debt_balance_applied = int(
+                link_type == "debt" and transaction_type == "expense"
+                and date.fromisoformat(updated_date) <= date.today()
+            )
+            if debt_balance_applied:
+                _adjust_linked_debt_balance(db, link_type, link_id, transaction_type, updated_amount, 1)
+            db.execute(
+                "UPDATE transactions SET debt_balance_applied = ? WHERE id = ?",
+                (debt_balance_applied, transaction_id),
+            )
             updated_notes = updates.get("notes", current["notes"])
             new_savings_goal_id = _adjust_savings_contribution(
                 db, updated_notes, updated_date, transaction_type, updated_amount, 1,
@@ -722,15 +741,16 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
 def delete_transaction(transaction_id: int):
     with database.connect() as db:
         current = db.execute(
-            "SELECT transaction_date, transaction_type, linked_obligation_type, linked_obligation_id, amount_cents, notes "
+            "SELECT transaction_date, transaction_type, linked_obligation_type, linked_obligation_id, amount_cents, notes, debt_balance_applied "
             "FROM transactions WHERE id = ?", (transaction_id,)
         ).fetchone()
         if current is None:
             raise HTTPException(status_code=404, detail="Transaction not found")
-        _adjust_linked_debt_balance(
-            db, current["linked_obligation_type"], current["linked_obligation_id"],
-            current["transaction_type"], current["amount_cents"], -1,
-        )
+        if current["debt_balance_applied"]:
+            _adjust_linked_debt_balance(
+                db, current["linked_obligation_type"], current["linked_obligation_id"],
+                current["transaction_type"], current["amount_cents"], -1,
+            )
         savings_goal_id = _adjust_savings_contribution(
             db, current["notes"], current["transaction_date"],
             current["transaction_type"], current["amount_cents"], -1,
