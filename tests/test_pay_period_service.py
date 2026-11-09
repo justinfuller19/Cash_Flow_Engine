@@ -402,3 +402,16 @@ def test_early_recorded_paycheck_for_next_period_is_not_pulled_back_into_final_p
     assert final_period["end_date"] == "2027-02-11"
     assert all(item["date"] != "2027-02-10" for item in final_period["transactions"])
     assert all(item["date"] != "2027-02-12" for item in final_period["income_items"])
+
+
+def test_legacy_preview_rejects_retired_buffer_reservations():
+    client = _client()
+    response = client.post("/api/plan/preview", json={
+        "plan_date": "2026-11-09",
+        "period_start": "2026-11-09",
+        "period_end": "2026-11-15",
+        "starting_cash_cents": 100000,
+        "buffers": [{"name": "Legacy buffer", "amount_cents": 20000}],
+    })
+    assert response.status_code == 422
+    assert "Buffer reservations are retired" in response.text
