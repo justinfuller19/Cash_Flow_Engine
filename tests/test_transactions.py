@@ -691,3 +691,64 @@ def test_expense_requires_confirmation_when_it_newly_underfunds_a_bill(tmp_path,
     assert confirmed.status_code == 201, confirmed.text
     assert confirmed.json()["amount_cents"] == -30000
     assert confirmed.json()["linked_obligation_id"] is None
+
+def test_future_linked_debt_payment_updates_balance_only_when_date_arrives(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    due_date = today + timedelta(days=3)
+    with database.connect() as db:
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES (?, 100000)""",
+            (today.isoformat(),),
+        )
+        debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, planned_payment_cents,
+                due_day_of_month, apr_percent, next_due_date, interest_date, active)
+               VALUES ('Card', 100000, 5000, 10000, ?, 0,
+                       ?, NULL, 1)""",
+            (due_date.day, due_date.isoformat()),
+        ).lastrowid
+
+    response = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": due_date.isoformat(),
+            "category": "utilities",
+            "transaction_type": "expense",
+            "linked_obligation_type": "debt",
+            "linked_obligation_id": debt_id,
+            "description": "Future card payment",
+            "amount_cents": -10000,
+        },
+    )
+    assert response.status_code == 201, response.text
+    with database.connect() as db:
+        balance_before_due = db.execute(
+            "SELECT balance_cents FROM credit_cards WHERE id = ?", (debt_id,)
+        ).fetchone()["balance_cents"]
+        flag_before_due = db.execute(
+            "SELECT debt_balance_applied FROM transactions WHERE id = ?",
+            (response.json()["id"],),
+        ).fetchone()["debt_balance_applied"]
+        from app.pay_period_service import build_pay_period_forecast, post_due_scheduled_transactions
+        forecast_before_due = build_pay_period_forecast(db, today)
+    assert balance_before_due == 100000
+    assert flag_before_due == 0
+    assert forecast_before_due["projected_debts"][0]["projected_balance_cents"] == 90000
+
+    with database.connect() as db:
+        post_due_scheduled_transactions(db, due_date)
+        balance_after_due = db.execute(
+            "SELECT balance_cents FROM credit_cards WHERE id = ?", (debt_id,)
+        ).fetchone()["balance_cents"]
+        flag_after_due = db.execute(
+            "SELECT debt_balance_applied FROM transactions WHERE id = ?",
+            (response.json()["id"],),
+        ).fetchone()["debt_balance_applied"]
+        forecast_after_due = build_pay_period_forecast(db, due_date)
+    assert balance_after_due == 90000
+    assert flag_after_due == 1
+    assert forecast_after_due["current_cash_cents"] == 90000
+    assert forecast_after_due["periods"][0]["debt_payments_cents"] == 0
