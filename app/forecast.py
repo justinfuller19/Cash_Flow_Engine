@@ -170,3 +170,41 @@ def occurrences_between(anchor: date, frequency: str, start: date, end: date) ->
         if iterations > 5000:
             raise ValueError("date window is too large to forecast")
     return results
+
+def occurrences_around(anchor: date, frequency: str, start: date, end: date) -> list[date]:
+    """Return recurrence dates around an anchor, including dates before a future anchor.
+
+    Income schedules store the next payday, which can be later than today.
+    This helper reconstructs the same calendar cadence on either side of that
+    anchor without changing the saved next-payday value.
+    """
+    if end < start:
+        raise ValueError("end must be on or after start")
+    if frequency == "irregular":
+        return [anchor] if start <= anchor <= end else []
+    if frequency in {"weekly", "biweekly"}:
+        interval = 7 if frequency == "weekly" else 14
+        if anchor > start:
+            steps = (anchor - start).days // interval + 1
+            cursor = anchor - timedelta(days=steps * interval)
+        else:
+            cursor = anchor
+        return occurrences_between(cursor, frequency, start, end)
+    if frequency == "monthly":
+        dates = []
+        cursor = date(start.year, start.month, 1)
+        while cursor <= end:
+            candidate = date(cursor.year, cursor.month, min(anchor.day, monthrange(cursor.year, cursor.month)[1]))
+            if start <= candidate <= end:
+                dates.append(candidate)
+            cursor = _shift_month(cursor, 1, 1)
+        return dates
+    if frequency in {"semimonthly", "twice_monthly_last", "first_third_friday", "last_business_day"}:
+        dates = []
+        cursor = date(start.year, start.month, 1)
+        while cursor <= end:
+            dates.extend(day for day in _monthly_dates(cursor.year, cursor.month, frequency, anchor.day)
+                         if start <= day <= end)
+            cursor = _shift_month(cursor, 1, 1)
+        return sorted(set(dates))
+    raise ValueError(f"Unsupported recurrence frequency: {frequency}")
