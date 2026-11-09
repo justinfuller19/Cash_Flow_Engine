@@ -249,3 +249,26 @@ def test_bill_funding_report_uses_future_paychecks_and_identifies_exact_shortfal
         "bill_id": 10, "name": "Rent", "due_date": "2026-11-05",
         "shortfall_cents": 10000,
     }]
+
+def test_transaction_warning_compares_recurring_bill_occurrences_individually():
+    from app.pay_period_forecast import transaction_bill_reservation_impact_from_forecast
+
+    forecast = {
+        "generated_on": "2026-11-09",
+        "current_cash_cents": 100000,
+        "periods": [{
+            "start_date": "2026-11-09", "end_date": "2027-02-09",
+            "income_items": [], "transactions": [], "debt_events": [], "savings": [],
+            "bills": [
+                {"bill_id": 7, "name": "Rent", "due_date": "2026-11-11", "amount_cents": 80000},
+                {"bill_id": 7, "name": "Rent", "due_date": "2026-12-11", "amount_cents": 80000},
+                {"bill_id": 7, "name": "Rent", "due_date": "2027-01-11", "amount_cents": 80000},
+            ],
+        }],
+    }
+    impact = transaction_bill_reservation_impact_from_forecast(
+        forecast, 30000, "2026-11-09"
+    )
+    assert impact["underfunded_bills"] == [
+        {"name": "Rent", "due_date": "2026-11-11", "unfunded_cents": 10000}
+    ]
