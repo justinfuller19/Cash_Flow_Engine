@@ -373,7 +373,7 @@ def transaction_bill_reservation_impact_from_forecast(
     # always includes max_spendable_cents. Preserve bill-only behavior otherwise.
     excess = (
         max(0, transaction_amount_cents - spendable_from_transaction_date)
-        if "max_spendable_cents" in forecast else 0
+        if forecast.get("cash_baseline_confirmed") and "max_spendable_cents" in forecast else 0
     )
     negative_period = None
     if excess and transaction_period_index is not None:
