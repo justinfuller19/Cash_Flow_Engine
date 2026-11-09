@@ -79,3 +79,19 @@ def test_semimonthly_occurrences_around_includes_first_payday_before_anchor():
     assert occurrences_around(
         date(2026, 11, 15), "semimonthly", date(2026, 11, 1), date(2026, 11, 30)
     ) == [date(2026, 11, 1), date(2026, 11, 15)]
+
+def test_multi_month_bill_recurrences_keep_the_original_day_anchor():
+    from app.forecast import occurrences_between
+
+    anchor = date(2026, 1, 31)
+    assert occurrences_between(
+        anchor, "every_two_months", date(2026, 1, 1), date(2026, 7, 31)
+    ) == [
+        date(2026, 1, 31), date(2026, 3, 31), date(2026, 5, 31), date(2026, 7, 31)
+    ]
+    assert occurrences_between(
+        anchor, "every_four_months", date(2026, 1, 1), date(2026, 12, 31)
+    ) == [date(2026, 1, 31), date(2026, 5, 31), date(2026, 9, 30)]
+    assert occurrences_between(
+        anchor, "every_six_months", date(2026, 1, 1), date(2027, 1, 31)
+    ) == [date(2026, 1, 31), date(2026, 7, 31), date(2027, 1, 31)]
