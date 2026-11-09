@@ -288,3 +288,22 @@ def test_negative_opening_cash_is_preserved_and_warned():
     assert result["warnings"] == [{
         "type": "negative_cash", "start_date": "2026-11-01", "shortfall_cents": 5000
     }]
+
+def test_completed_savings_period_is_not_reserved_twice():
+    from app.pay_period_forecast import plan_savings_contributions
+
+    ongoing = plan_savings_contributions(
+        [{"id": 21, "name": "General", "target_amount_cents": 0,
+          "current_balance_cents": 2500, "ongoing_per_period_cents": 5000}],
+        ["2026-11-01", "2026-11-08"],
+        completed_periods={(21, "2026-11-01")},
+    )[0]
+    assert [p["planned_contribution_cents"] for p in ongoing["periods"]] == [0, 5000]
+
+    dated = plan_savings_contributions(
+        [{"id": 22, "name": "Vacation", "target_amount_cents": 100000,
+          "current_balance_cents": 20000, "target_date": "2026-11-15"}],
+        ["2026-11-01", "2026-11-08", "2026-11-15"],
+        completed_periods={(22, "2026-11-01")},
+    )[0]
+    assert [p["planned_contribution_cents"] for p in dated["periods"]] == [0, 40000, 40000]
