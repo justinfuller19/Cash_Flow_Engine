@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from . import database
 from .household import CASH_SNAPSHOT_STALE_DAYS
 from .forecast import occurrences_between
+from .pay_period_service import build_pay_period_forecast
 
 router = APIRouter()
 
@@ -146,6 +147,16 @@ def _daily_cash_forecast(report: dict) -> list[dict]:
         balance = ending
         cursor += timedelta(days=1)
     return daily
+
+
+@router.get("/api/cash-flow/pay-periods")
+def pay_period_cash_flow(as_of_date: date | None = Query(default=None)):
+    """Build the rolling three-calendar-month forecast from saved household records."""
+    try:
+        with database.connect() as db:
+            return build_pay_period_forecast(db, as_of_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/api/cash-flow/weekly")
