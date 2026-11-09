@@ -66,3 +66,9 @@ The first integrated forecast API is available at `/api/cash-flow/pay-periods`, 
 ## Savings contribution recording
 
 Actual contributions can be recorded from the savings-goal page. Each contribution creates a negative internal-ledger transaction, increases the saved balance, and records the date of the latest contribution. The current pay period is then treated as satisfied for that goal, so the planned contribution is not reserved twice. Editing or deleting the linked transaction reverses or recalculates the saved balance and last-contribution date. This remains an internal record only; no bank transfer is initiated.
+
+
+- [x] Actual savings contributions are recorded as linked internal-ledger expenses, update saved goal balances, satisfy the current pay period, and reverse correctly when the transaction is edited or deleted.
+- [x] Future-dated linked debt payments remain unapplied to the saved debt balance until their transaction date; the live forecast projects them chronologically and applies them once when due.
+- [x] Multi-month recurring bill schedules support every two, three, four, and six months, plus quarterly and yearly schedules.
+- [x] Negative opening cash is preserved so overdrafts are surfaced instead of silently clamped to zero.
