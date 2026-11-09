@@ -54,7 +54,7 @@ Show the three-month pay-period view with dates, income, bills, savings, debt pa
 
 ## Implementation status
 
-The first integrated forecast API is available at `/api/cash-flow/pay-periods`, with the printable report at `/pay-periods`. It reads saved household schedules and ledger activity, applies current-snapshot reconciliation, assigns grouped paychecks to the period beginning on the group's last payday, and projects unpaid bills, savings contributions, and debt interest/payments. Internal due-date posting, savings contribution reconciliation, and the remaining transaction safeguards are still in progress.
+The integrated forecast API is available at `/api/cash-flow/pay-periods`, with the printable report at `/pay-periods`. It reads saved household schedules and ledger activity, applies current-snapshot reconciliation, assigns grouped paychecks to the period beginning on the group's last payday, and projects unpaid bills, savings contributions, and debt interest/payments. The checklist below records the completed posting, savings reconciliation, and transaction-safeguard work. Remaining verification is documented in the PR description; it does not imply these listed features are unfinished.
 
 
 - [x] Due paychecks and bills can be idempotently posted to the internal transaction ledger when the live forecast is opened; entries are linked and editable/deletable, and no external payment is initiated.
