@@ -660,6 +660,17 @@ def test_expense_requires_confirmation_when_it_newly_underfunds_a_bill(tmp_path,
             (due.day, due.isoformat()),
         ).lastrowid
 
+    from app.pay_period_service import build_pay_period_forecast
+    from app.pay_period_forecast import transaction_bill_reservation_impact_from_forecast
+    with database.connect() as db:
+        debug_forecast = build_pay_period_forecast(db, today)
+    assert debug_forecast["current_cash_cents"] == 100000
+    assert any(item["bill_id"] == bill_id for period in debug_forecast["periods"] for item in period["bills"])
+    debug_impact = transaction_bill_reservation_impact_from_forecast(
+        debug_forecast, 30000, today.isoformat()
+    )
+    assert debug_impact["requires_confirmation"] is True, debug_forecast
+
     payload = {
         "transaction_date": today.isoformat(),
         "category": "groceries",
