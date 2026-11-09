@@ -376,7 +376,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
            FROM transactions
            WHERE transaction_type = 'expense' AND linked_obligation_type = 'debt'
              AND debt_balance_applied = 1 AND transaction_date BETWEEN ? AND ?""",
-        ((today - timedelta(days=7)).isoformat(), today.isoformat()),
+        ((today - timedelta(days=31)).isoformat(), today.isoformat()),
     ).fetchall()]
     for debt in debt_rows:
         due_date = _as_date(debt.get("next_due_date"))
@@ -384,7 +384,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
             continue
         if any(
             payment["linked_obligation_id"] == debt["id"]
-            and abs((_as_date(payment["transaction_date"]) - due_date).days) <= 7
+            and abs((_as_date(payment["transaction_date"]) - due_date).days) <= 31
             for payment in recently_applied_debt_payments
         ):
             debt["next_due_date"] = _add_months(due_date, 1).isoformat()
