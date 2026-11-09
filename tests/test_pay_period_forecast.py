@@ -231,3 +231,21 @@ def test_proposed_transaction_does_not_warn_for_preexisting_shortfall_increment(
     assert impact["underfunded_bills"] == [
         {"name": "Rent", "due_date": "2026-11-05", "unfunded_cents": 10000}
     ]
+
+def test_bill_funding_report_uses_future_paychecks_and_identifies_exact_shortfall():
+    from app.pay_period_forecast import bill_funding_shortfalls_from_forecast
+
+    forecast = {
+        "current_cash_cents": 70000,
+        "periods": [{
+            "end_date": "2026-11-30",
+            "income_items": [{"date": "2026-11-07", "amount_cents": 100000}],
+            "transactions": [], "debt_events": [], "savings": [],
+            "bills": [{"bill_id": 10, "name": "Rent", "due_date": "2026-11-05",
+                       "amount_cents": 80000}],
+        }],
+    }
+    assert bill_funding_shortfalls_from_forecast(forecast) == [{
+        "bill_id": 10, "name": "Rent", "due_date": "2026-11-05",
+        "shortfall_cents": 10000,
+    }]
