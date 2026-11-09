@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 
 def base_database_path() -> Path:
@@ -108,6 +108,7 @@ def initialize_database() -> None:
                     CHECK(minimum_payment_cents >= 0),
                 due_day_of_month INTEGER CHECK(due_day_of_month BETWEEN 1 AND 31),
                 apr_percent REAL NOT NULL DEFAULT 0 CHECK(apr_percent >= 0),
+                interest_date TEXT,
                 active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -200,6 +201,8 @@ def initialize_database() -> None:
                     CHECK(financial_week_start IN ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')),
                 paycheck_group_window_days INTEGER NOT NULL DEFAULT 2
                     CHECK(paycheck_group_window_days BETWEEN 0 AND 14),
+                end_of_period_target_cents INTEGER NOT NULL DEFAULT 0
+                    CHECK(end_of_period_target_cents >= 0),
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -684,3 +687,17 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
                 "ALTER TABLE household_settings ADD COLUMN paycheck_group_window_days "
                 "INTEGER NOT NULL DEFAULT 2 CHECK(paycheck_group_window_days BETWEEN 0 AND 14)"
             )
+
+    if version < 23:
+        # Version 23 adds the soft end-of-period target and the next scheduled
+        # interest date for each debt. Both are configuration only; no balances
+        # or historical transactions are changed.
+        settings_columns = {row["name"] for row in db.execute("PRAGMA table_info(household_settings)")}
+        if "end_of_period_target_cents" not in settings_columns:
+            db.execute(
+                "ALTER TABLE household_settings ADD COLUMN end_of_period_target_cents "
+                "INTEGER NOT NULL DEFAULT 0 CHECK(end_of_period_target_cents >= 0)"
+            )
+        debt_columns = {row["name"] for row in db.execute("PRAGMA table_info(credit_cards)")}
+        if "interest_date" not in debt_columns:
+            db.execute("ALTER TABLE credit_cards ADD COLUMN interest_date TEXT")
