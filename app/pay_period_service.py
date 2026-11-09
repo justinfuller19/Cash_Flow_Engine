@@ -291,6 +291,12 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
                   flexible_window_days, category, frequency, autopay, active
            FROM bills WHERE active = 1 ORDER BY id"""
     ).fetchall()]
+    bill_occurrence_overrides = {
+        (row["bill_id"], row["due_date"]): dict(row)
+        for row in db.execute(
+            "SELECT bill_id, due_date, amount_cents, status FROM bill_occurrence_overrides"
+        ).fetchall()
+    }
     for bill in bills:
         anchor = _as_date(bill.get("next_due_date"))
         if anchor is None and bill.get("due_day_of_month"):
@@ -299,6 +305,9 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
         if anchor is None:
             continue
         for due_date in occurrences_around(anchor, bill["frequency"], today, horizon_end):
+            override = bill_occurrence_overrides.get((bill["id"], due_date.isoformat()))
+            if override and override["status"] == "cancelled":
+                continue
             period = owning_period(due_date)
             if period is None:
                 continue
@@ -315,8 +324,12 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
                 "name": bill["name"],
                 "category": bill["category"],
                 "due_date": due_date.isoformat(),
-                "amount_cents": _money(bill["amount_cents"]),
+                "amount_cents": _money(
+                    override["amount_cents"] if override and override["amount_cents"] is not None
+                    else bill["amount_cents"]
+                ),
                 "autopay": bool(bill.get("autopay")),
+                "is_overridden": bool(override),
             }
             period["bill_items"].append(item)
 
@@ -592,6 +605,12 @@ def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
                   flexible_window_days, category, frequency
            FROM bills WHERE active = 1 ORDER BY id"""
     ).fetchall()]
+    bill_occurrence_overrides = {
+        (row["bill_id"], row["due_date"]): dict(row)
+        for row in db.execute(
+            "SELECT bill_id, due_date, amount_cents, status FROM bill_occurrence_overrides"
+        ).fetchall()
+    }
     for bill in bill_rows:
         anchor = _as_date(bill.get("next_due_date"))
         if anchor is None and bill.get("due_day_of_month"):
@@ -603,6 +622,9 @@ def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
         dates = occurrences_between(anchor, bill["frequency"], window_start, today)
         used_transactions: set[int] = set()
         for due_date in dates:
+            override = bill_occurrence_overrides.get((bill["id"], due_date.isoformat()))
+            if override and override["status"] == "cancelled":
+                continue
             flex = int(bill.get("flexible_window_days") or 0)
             pending_match = db.execute(
                 """SELECT id FROM bill_payment_match_suggestions
@@ -632,13 +654,17 @@ def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
             if existing:
                 used_transactions.add(existing["id"])
                 continue
+            posted_amount = (
+                override["amount_cents"] if override and override["amount_cents"] is not None
+                else bill["amount_cents"]
+            )
             cursor = db.execute(
                 """INSERT INTO transactions
                    (transaction_date, category, transaction_type, linked_obligation_type,
                     linked_obligation_id, description, amount_cents, notes)
                    VALUES (?, ?, 'expense', 'bill', ?, ?, ?, ?)""",
                 (due_date.isoformat(), bill.get("category") or "other", bill["id"],
-                 f"Bill paid — {bill['name']}", -_money(bill["amount_cents"]),
+                 f"Bill paid — {bill['name']}", -_money(posted_amount),
                  "Automatically posted to the internal ledger; edit or delete to correct."),
             )
             created_bills.append(cursor.lastrowid)
