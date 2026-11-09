@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 
-BillFrequency = Literal["weekly", "biweekly", "semimonthly", "twice_monthly_last", "first_third_friday", "last_business_day", "monthly", "quarterly", "yearly", "irregular"]
+BillFrequency = Literal["weekly", "biweekly", "semimonthly", "twice_monthly_last", "first_third_friday", "last_business_day", "monthly", "quarterly", "every_two_months", "every_four_months", "every_six_months", "yearly", "irregular"]
 
 
 class PatchModel(BaseModel):
