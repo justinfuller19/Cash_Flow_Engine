@@ -50,3 +50,8 @@ For target T and periods ordered from current to future:
 ## Reporting
 
 Show the three-month pay-period view with dates, income, bills, savings, debt payments, projected ending cash, carry-in/out, and status. Display current cash, reserved cash, max spendable, and spendable while keeping the target. Surface below-target, negative/underfunded, and impossible-to-maintain-target warnings. Provide a printable report that does not split a pay period across pages.
+
+
+## Implementation status
+
+The first integrated forecast API is available at `/api/cash-flow/pay-periods`, with the printable report at `/pay-periods`. It reads saved household schedules and ledger activity, applies current-snapshot reconciliation, assigns grouped paychecks to the period beginning on the group's last payday, and projects unpaid bills, savings contributions, and debt interest/payments. Internal due-date posting, savings contribution reconciliation, and the remaining transaction safeguards are still in progress.
