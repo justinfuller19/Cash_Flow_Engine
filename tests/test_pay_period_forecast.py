@@ -308,3 +308,18 @@ def test_completed_savings_period_is_not_reserved_twice():
         completed_periods={(22, "2026-11-01")},
     )[0]
     assert [p["planned_contribution_cents"] for p in dated["periods"]] == [0, 40000, 40000]
+
+def test_payday_income_funds_a_bill_due_on_the_same_period_start_date():
+    from app.pay_period_forecast import bill_funding_shortfalls_from_forecast
+
+    forecast = {
+        "current_cash_cents": 0,
+        "periods": [{
+            "end_date": "2026-11-30",
+            "income_items": [{"date": "2026-11-13", "amount_cents": 100000}],
+            "transactions": [], "debt_events": [], "savings": [],
+            "bills": [{"bill_id": 30, "name": "Mortgage", "due_date": "2026-11-13",
+                       "amount_cents": 80000}],
+        }],
+    }
+    assert bill_funding_shortfalls_from_forecast(forecast) == []
