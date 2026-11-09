@@ -642,6 +642,11 @@ def test_expense_requires_confirmation_when_it_newly_underfunds_a_bill(tmp_path,
     today = date.today()
     due = today + timedelta(days=2)
     with database.connect() as db:
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES (?, 100000)""",
+            (today.isoformat(),),
+        )
         bill_id = db.execute(
             """INSERT INTO bills
                (name, amount_cents, due_day_of_month, next_due_date,
