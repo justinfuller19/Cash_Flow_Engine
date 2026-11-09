@@ -636,7 +636,6 @@ def test_expense_requires_confirmation_when_it_newly_underfunds_a_bill(tmp_path,
     client = client_for(tmp_path, monkeypatch)
     today = date.today()
     due = today + timedelta(days=2)
-    payday = today + timedelta(days=7)
     with database.connect() as db:
         person_id = db.execute(
             "INSERT INTO persons (name) VALUES ('Household')"
