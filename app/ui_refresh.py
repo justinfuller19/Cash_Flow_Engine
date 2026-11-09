@@ -51,11 +51,8 @@ INTERACTION_SCRIPT = """<script id="cfe-ui-interactions">
    const warnings=cards.find(c=>(c.querySelector('span')?.textContent||'').toLowerCase().includes('pay-period warnings'));
    if(maximum){maximum.classList.add('cfe-safe-hero');metrics.prepend(maximum);}
    if(warnings){warnings.classList.add('cfe-attention-metric','cfe-pay-period-warning-metric');if(maximum)maximum.after(warnings);else metrics.prepend(warnings);}
-   const secondary=Array.from(metrics.querySelectorAll('.metric')).filter(c=>c!==maximum&&c!==warnings);
-   if(secondary.length&&(maximum||warnings)){const details=document.createElement('details');details.id='cfe-at-a-glance';const summary=document.createElement('summary');summary.textContent='More pay-period details';details.appendChild(summary);const grid=document.createElement('div');grid.className='metrics';
-    secondary.forEach(card=>grid.appendChild(card));
-    details.appendChild(grid);metrics.after(details);
-   }
+   // Keep current cash, reserved cash, maximum spendable, and target-preserving
+   // spendable visible together at the top of the dashboard.
   }
   syncForecastWarning();
   if(observer)observer.observe(metrics,{childList:true,subtree:true});arranging=false;
