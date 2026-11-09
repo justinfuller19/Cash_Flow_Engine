@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 
 def base_database_path() -> Path:
@@ -106,6 +106,8 @@ def initialize_database() -> None:
                 balance_cents INTEGER NOT NULL DEFAULT 0 CHECK(balance_cents >= 0),
                 minimum_payment_cents INTEGER NOT NULL DEFAULT 0
                     CHECK(minimum_payment_cents >= 0),
+                planned_payment_cents INTEGER NOT NULL DEFAULT 0
+                    CHECK(planned_payment_cents >= 0),
                 due_day_of_month INTEGER CHECK(due_day_of_month BETWEEN 1 AND 31),
                 apr_percent REAL NOT NULL DEFAULT 0 CHECK(apr_percent >= 0),
                 interest_date TEXT,
@@ -701,3 +703,13 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
         debt_columns = {row["name"] for row in db.execute("PRAGMA table_info(credit_cards)")}
         if "interest_date" not in debt_columns:
             db.execute("ALTER TABLE credit_cards ADD COLUMN interest_date TEXT")
+
+    if version < 24:
+        # Version 24 adds an optional user-selected planned payment amount.
+        # Zero means use the saved minimum payment amount.
+        debt_columns = {row["name"] for row in db.execute("PRAGMA table_info(credit_cards)")}
+        if "planned_payment_cents" not in debt_columns:
+            db.execute(
+                "ALTER TABLE credit_cards ADD COLUMN planned_payment_cents "
+                "INTEGER NOT NULL DEFAULT 0 CHECK(planned_payment_cents >= 0)"
+            )
