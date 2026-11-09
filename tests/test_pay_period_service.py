@@ -216,7 +216,7 @@ def test_early_linked_bill_payment_releases_reservation_without_double_subtracti
             """INSERT INTO bills
                (name, amount_cents, due_day_of_month, next_due_date,
                 flexible_window_days, category, frequency, autopay, active)
-               VALUES ('Water', 12000, 15, '2026-11-15', 7,
+               VALUES ('Water', 12000, 15, '2026-11-15', 0,
                        'utilities', 'monthly', 0, 1)"""
         ).lastrowid
         db.execute(
