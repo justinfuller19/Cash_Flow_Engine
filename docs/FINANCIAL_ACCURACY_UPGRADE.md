@@ -295,3 +295,7 @@ The API-only simulation findings did not establish a browser-rendering regressio
 - [ ] Phase 4: savings and debt chronology.
 - [ ] Phase 5: internal ledger posting, transaction safeguards, and reconciliation.
 - [ ] Phase 6: dashboard, printable report, and Pi compatibility verification.
+
+## Superseding pay-period redesign status (2026-11-09)
+
+PR #54 now contains the fixed-anchor grouping foundation and a pure integer-cent pay-period projection/backward carry-over module with regression tests. These are implementation components only; the live app still uses the legacy weekly forecast until the three-month schedule integration, savings/debt chronology, ledger safeguards, and new reporting UI are completed. The pay-period specification remains authoritative.
