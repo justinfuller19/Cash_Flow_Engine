@@ -108,7 +108,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
     # the actual end of that final pay period.
     calendar_search_end = period_start_horizon + timedelta(days=45)
     settings = db.execute(
-        """SELECT starting_cash_cents, financial_week_start,
+        """SELECT starting_cash_cents, starting_cash_confirmed_at, financial_week_start,
                   paycheck_group_window_days, end_of_period_target_cents
            FROM household_settings WHERE id = 1"""
     ).fetchone()
@@ -520,6 +520,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
         "generated_on": today.isoformat(),
         "horizon_end": horizon_end.isoformat(),
         "current_cash_cents": starting_cash,
+        "cash_baseline_confirmed": bool(snapshot or settings["starting_cash_confirmed_at"]),
         "end_of_period_target_cents": projection["end_of_period_target_cents"],
         "reserved_cash_cents": projection["reserved_cash_cents"],
         "max_spendable_cents": projection["max_spendable_cents"],
