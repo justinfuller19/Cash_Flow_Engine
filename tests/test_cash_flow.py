@@ -194,7 +194,7 @@ def test_weekly_report_page_and_dashboard_summary_are_available(tmp_path, monkey
 
     dashboard = client.get("/")
     assert dashboard.status_code == 200
-    assert 'id="weekly-summary"' in dashboard.text
+    assert 'id="pay-period-summary"' in dashboard.text
     assert 'href="/weekly"' in dashboard.text
     assert 'id="weekly-category-spending"' in dashboard.text
 
