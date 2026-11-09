@@ -146,10 +146,11 @@ def create_debt(body: DebtCreate):
             cursor = db.execute(
                 """INSERT INTO credit_cards
                    (name, balance_cents, minimum_payment_cents, due_day_of_month,
-                    apr_percent, active, next_due_date)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    apr_percent, active, next_due_date, interest_date)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (name, body.balance_cents, body.minimum_payment_cents, due_day,
-                 body.apr_percent, int(body.active), body.next_due_date.isoformat(),\n                 body.interest_date.isoformat() if body.interest_date else None),
+                 body.apr_percent, int(body.active), body.next_due_date.isoformat(),
+                 body.interest_date.isoformat() if body.interest_date else None),
             )
             row = db.execute(
                 """SELECT id, name, balance_cents, minimum_payment_cents, apr_percent,
@@ -170,6 +171,8 @@ def update_debt(debt_id: int, body: DebtUpdate):
             raise HTTPException(status_code=422, detail="name cannot be blank")
     if "next_due_date" in updates:
         updates["next_due_date"] = updates["next_due_date"].isoformat()
+    if "interest_date" in updates and updates["interest_date"] is not None:
+        updates["interest_date"] = updates["interest_date"].isoformat()
     if "active" in updates:
         updates["active"] = int(updates["active"])
     if not updates:
@@ -251,7 +254,8 @@ button:disabled{opacity:.55}.toggle{background:#475569;margin:4px 0}.status{padd
 <label for="debt-balance">Current balance ($)</label><input id="debt-balance" name="balance" type="number" min="0" step="0.01" required>
 <label for="debt-minimum">Minimum payment ($)</label><input id="debt-minimum" name="minimum" type="number" min="0" step="0.01" required>
 <label for="debt-apr">APR (%)</label><input id="debt-apr" name="apr_percent" type="number" min="0" max="1000" step="0.01" required>
-<label for="debt-date">Next due date</label><input id="debt-date" name="next_due_date" type="date" required>
+<label for="debt-interest-date">Next interest date</label><input id="debt-interest-date" name="interest_date" type="date">
+<label for="debt-date">Next payment due date</label><input id="debt-date" name="next_due_date" type="date" required>
 <button type="submit">Save debt</button></form>
 <ul id="debts" class="list"><li>Loading debts…</li></ul></section>
 </div></main>
@@ -286,8 +290,9 @@ const name=prompt("Debt name:",r.name);if(name===null)return;
 const balance=prompt("Current balance in dollars:",(r.balance_cents/100).toFixed(2));if(balance===null)return;
 const minimum=prompt("Minimum payment in dollars:",(r.minimum_payment_cents/100).toFixed(2));if(minimum===null)return;
 const apr=prompt("APR percent:",String(r.apr_percent));if(apr===null)return;
-const due=prompt("Next due date YYYY-MM-DD:",r.next_due_date||"");if(due===null)return;
-await api("/api/debts/"+r.id,{method:"PATCH",body:JSON.stringify({name:name.trim(),balance_cents:cents(balance),minimum_payment_cents:cents(minimum),apr_percent:Number(apr),next_due_date:due})});
+const due=prompt("Next payment due date YYYY-MM-DD:",r.next_due_date||"");if(due===null)return;
+const interest=prompt("Next interest date YYYY-MM-DD (leave blank if unknown):",r.interest_date||"");if(interest===null)return;
+await api("/api/debts/"+r.id,{method:"PATCH",body:JSON.stringify({name:name.trim(),balance_cents:cents(balance),minimum_payment_cents:cents(minimum),apr_percent:Number(apr),next_due_date:due,interest_date:interest||null})});
 }
 await refresh();message((kind==="bills"?"Bill":"Debt")+" updated.");
 }catch(e){message(e.message,true);}
