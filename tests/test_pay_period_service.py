@@ -188,6 +188,19 @@ def test_due_paychecks_and_bills_are_posted_to_internal_ledger_once():
                VALUES (?, '2026-11-08', 15000, 'scheduled')""",
             (bill_id,),
         )
+        cancelled_bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Water', 9000, 8, '2026-11-08', 0,
+                       'utilities', 'monthly', 0, 1)"""
+        ).lastrowid
+        db.execute(
+            """INSERT INTO bill_occurrence_overrides
+               (bill_id, due_date, amount_cents, status)
+               VALUES (?, '2026-11-08', NULL, 'cancelled')""",
+            (cancelled_bill_id,),
+        )
         first = post_due_scheduled_transactions(db, date(2026, 11, 8))
         second = post_due_scheduled_transactions(db, date(2026, 11, 8))
         rows = db.execute(
