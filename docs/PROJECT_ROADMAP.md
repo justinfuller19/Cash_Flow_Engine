@@ -4,11 +4,14 @@ This document is the long-term implementation outline for CashFlow Engine. It de
 
 ## Product goal
 
-Build a reliable, self-hosted household cash-flow manager for Raspberry Pi OS. It should continuously forecast household income, bills, required debt payments, savings goals, and one shared weekly spending buffer. The app should report how much money is safely available without causing any projected week in the forecast to fall below that buffer. The household—not the app—decides how much of that safe surplus goes to extra debt payments, buffer additions, savings goals, or remains unallocated. Friday is the default start of the configurable seven-day financial week.
+Build a reliable, self-hosted household cash-flow manager for Raspberry Pi OS. The current product direction is a rolling three-month forecast organized into household pay periods. Paychecks within a configurable calendar-day window (default 2) are grouped against the first payday in each group; each period starts on the group's last payday. Bills, savings, and planned debt payments are reserved once. The user-set end-of-period cash target is a soft goal, not a protected buffer or reservation, and may be spent. See docs/PAY_PERIOD_FORECAST_SPEC.md for the authoritative financial rules.
 
-The app is a planning tool. It must not claim that money was transferred or a bill was paid unless a user explicitly records that action. Do not add automatic money movement as part of the early milestones.
+The app is a planning and internal ledger tool. It must never initiate external money movement. The current specification permits internal auto-posting of scheduled income and bills, but these entries must be editable and undoable and must not imply that a bank transaction occurred.
 
 ## Current foundation
+
+**Current direction:** The former weekly mandatory-buffer model is historical. New forecast work must follow docs/PAY_PERIOD_FORECAST_SPEC.md; do not use legacy buffer fields as an active reservation.
+
 
 - [x] Pure Python allocation engine using integer cents.
 - [x] FastAPI application and health endpoint.
@@ -237,3 +240,15 @@ The independent 91-day simulation identified reconciliation edge cases addressed
 - [x] Calculate dated cash checkpoints and test outflows before same-day inflows to expose shortfalls hidden by weekly net totals.
 - [x] Keep savings goals, arrears, and actual contribution reconciliation separate from the former buffer.
 - [x] Full test suite passed: 181 tests on Python 3.11, 3.12, and 3.13.
+
+
+## New milestone — Pay-period forecast (owner-approved, 2026-11-08)
+
+- [x] Define configurable fixed-anchor paycheck grouping (default 2 calendar days) and period boundaries; Phase 1 foundation is in PR branch `feature/pay-period-calendar-foundation`.
+- [ ] Generate a rolling three-month pay-period calendar from saved income schedules.
+- [ ] Replace weekly forward cash calculations with the current-period snapshot rules and pay-period forward forecast.
+- [ ] Implement backward carry-over requirements and soft-target shortfalls.
+- [ ] Integrate savings deadlines, ongoing contributions, and chronological debt interest/payments.
+- [ ] Integrate editable internal auto-posting, transactions, underfunding warnings, and reconciliation.
+- [ ] Replace weekly dashboard/report with the three-month pay-period view and printable output.
+
