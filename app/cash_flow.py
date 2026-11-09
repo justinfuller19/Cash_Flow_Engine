@@ -178,10 +178,13 @@ button.secondary{background:#e2e8f0;color:#17212b}
 .table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:.88rem}th,td{text-align:right;padding:9px 8px;border-top:1px solid #e2e8f0;white-space:nowrap}th:first-child,td:first-child{text-align:left}thead th{color:#64748b;font-weight:650;border-top:0}
 details{margin-top:10px}summary{cursor:pointer;font-weight:650;color:#0e7490}ul.detail-list{padding-left:20px;margin:8px 0}ul.detail-list li{margin:4px 0}
 .footer-note{margin-top:18px;font-size:.86rem;color:#64748b}
+.occurrence-actions{display:inline-flex;gap:5px;flex-wrap:wrap;margin-left:8px}
+.occurrence-actions button{font-size:.75rem;padding:4px 7px;border-radius:6px}
+.occurrence-actions .cancel{background:#9a3412}.occurrence-actions .reset{background:#475569}
 @media(max-width:560px){body{padding:16px 10px 32px}h1{font-size:1.35rem}.metric,.panel,.period{padding:13px}}
 @media print{
  @page{margin:12mm}body{padding:0;background:#fff;color:#111;font-size:10pt}
- header .actions,#status{display:none!important}.metric,.panel,.period{box-shadow:none;border:1px solid #cbd5e1}
+ header .actions,#status,.occurrence-actions{display:none!important}.metric,.panel,.period{box-shadow:none;border:1px solid #cbd5e1}
  .period{break-inside:avoid;page-break-inside:avoid;margin-bottom:8mm}.metrics{grid-template-columns:repeat(5,1fr);gap:5px}
  .metric{padding:8px}.metric strong{font-size:12pt}.period-grid{grid-template-columns:repeat(4,1fr)}
  details:not([open])>*:not(summary){display:block!important}summary{display:none}
@@ -224,7 +227,12 @@ details{margin-top:10px}summary{cursor:pointer;font-weight:650;color:#0e7490}ul.
   $("periods").innerHTML=(report.periods||[]).map(p=>{
    const [label,kind]=statusFor(p);
    const paydays=(p.paycheck_dates||[]).map(dateLabel).join(", ")||"No paycheck dates";
-   const bills=list(p.bills,x=>"<li>"+escapeHtml(x.name)+" · "+dateLabel(x.due_date)+" · "+dollars(x.amount_cents)+(x.autopay?" · scheduled autopay":"")+"</li>");
+   const bills=list(p.bills,x=>{
+    const label=x.cancelled?" · cancelled":(x.is_overridden?" · one-off override":"");
+    const reset=x.is_overridden?"<button type='button' class='reset bill-override-reset' data-bill-id='"+x.bill_id+"' data-due-date='"+x.due_date+"'>Restore</button>":"";
+    const controls=x.cancelled?reset:"<button type='button' class='bill-override-edit' data-bill-id='"+x.bill_id+"' data-due-date='"+x.due_date+"' data-amount='"+x.amount_cents+"'>Edit this date</button><button type='button' class='cancel bill-override-cancel' data-bill-id='"+x.bill_id+"' data-due-date='"+x.due_date+"'>Skip this date</button>"+reset;
+    return "<li>"+escapeHtml(x.name)+" · "+dateLabel(x.due_date)+" · "+dollars(x.amount_cents)+escapeHtml(label)+(x.autopay?" · scheduled autopay":"")+" <span class='occurrence-actions'>"+controls+"</span></li>";
+   });
    const savings=list(p.savings,x=>"<li>"+escapeHtml(x.name)+" · "+dollars(x.amount_cents)+"</li>");
    const debt=list(p.debt_events,x=>"<li>"+escapeHtml(x.debt_name)+" · "+dateLabel(x.date)+" · "+escapeHtml(x.type)+(x.actual?" (recorded)":" (forecast)")+" · "+dollars(x.amount_cents)+"</li>");
    const income=list(p.income_items,x=>"<li>"+escapeHtml(x.name)+" · "+dateLabel(x.date)+" · "+dollars(x.amount_cents)+"</li>");
@@ -233,6 +241,30 @@ details{margin-top:10px}summary{cursor:pointer;font-weight:650;color:#0e7490}ul.
     "<div class='period-grid'><div><span>Cash carried in</span><strong>"+dollars(p.starting_cash_cents)+"</strong></div><div><span>Income</span><strong>"+dollars(p.income_cents)+"</strong></div><div><span>Bills</span><strong>"+dollars(p.bills_cents)+"</strong></div><div><span>Savings</span><strong>"+dollars(p.savings_cents)+"</strong></div><div><span>Debt payments</span><strong>"+dollars(p.debt_payments_cents)+"</strong></div><div><span>Other expenses</span><strong>"+dollars(p.other_expenses_cents)+"</strong></div><div><span>Projected ending cash</span><strong>"+dollars(p.projected_ending_cash_cents)+"</strong></div><div><span>Carry above target</span><strong>"+dollars(p.carry_out_above_target_cents)+"</strong></div></div>"+
     "<details><summary>Scheduled income</summary>"+income+"</details><details><summary>Bills</summary>"+bills+"</details><details><summary>Savings contributions</summary>"+savings+"</details><details><summary>Debt interest and payments</summary>"+debt+"</details><details><summary>Recorded future transactions</summary>"+transactions+"</details></article>";
   }).join("");
+  document.querySelectorAll(".bill-override-edit").forEach(button=>button.addEventListener("click",async()=>{
+   const amount=prompt("New amount in dollars for "+button.dataset.dueDate+" only:",(Number(button.dataset.amount)/100).toFixed(2));
+   if(amount===null)return;
+   const parsed=Number(amount);
+   if(!Number.isFinite(parsed)||parsed<0){alert("Enter a valid non-negative amount.");return;}
+   try{
+    const response=await fetch("/api/bills/"+button.dataset.billId+"/occurrences/"+button.dataset.dueDate,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({amount_cents:Math.round(parsed*100),cancelled:false})});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||"Could not update bill occurrence.");await load();
+   }catch(error){alert(error.message);}
+  }));
+  document.querySelectorAll(".bill-override-cancel").forEach(button=>button.addEventListener("click",async()=>{
+   if(!confirm("Skip this bill occurrence on "+button.dataset.dueDate+"? The recurring schedule will remain unchanged."))return;
+   try{
+    const response=await fetch("/api/bills/"+button.dataset.billId+"/occurrences/"+button.dataset.dueDate,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({cancelled:true})});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||"Could not cancel bill occurrence.");await load();
+   }catch(error){alert(error.message);}
+  }));
+  document.querySelectorAll(".bill-override-reset").forEach(button=>button.addEventListener("click",async()=>{
+   if(!confirm("Restore the recurring amount for "+button.dataset.dueDate+"?"))return;
+   try{
+    const response=await fetch("/api/bills/"+button.dataset.billId+"/occurrences/"+button.dataset.dueDate,{method:"DELETE"});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||"Could not restore bill occurrence.");await load();
+   }catch(error){alert(error.message);}
+  }));
   const posted=report.auto_posted;
   const postedNote=posted&&(posted.posted_paychecks||posted.posted_bills)?" Automatically recorded "+posted.posted_paychecks+" paycheck(s) and "+posted.posted_bills+" bill payment(s) in the internal ledger.":"";
   $("status").textContent=(report.target_maintainable?"Forecast loaded. The end-of-period target is maintainable across the forecast.":"Forecast loaded. Review the carry-over and cash warnings below.")+postedNote;
