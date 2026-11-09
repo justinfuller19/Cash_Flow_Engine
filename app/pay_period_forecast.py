@@ -313,6 +313,9 @@ def transaction_bill_reservation_impact_from_forecast(
                 "total_bill_shortfall_cents": 0}
     events = []
     for period in forecast.get("periods", []):
+        for item in period.get("income_items", []):
+            events.append((date.fromisoformat(item["date"]), 3, "income",
+                           int(item["amount_cents"]), None))
         for item in period.get("transactions", []):
             day = date.fromisoformat(item["date"])
             amount = int(item["amount_cents"])
