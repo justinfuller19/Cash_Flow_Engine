@@ -758,3 +758,46 @@ def test_future_linked_debt_payment_updates_balance_only_when_date_arrives(tmp_p
         event["date"] != due_date.isoformat()
         for event in forecast_after_due["periods"][0]["debt_events"]
     )
+
+def test_early_linked_debt_payment_releases_upcoming_scheduled_payment(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    due_date = today + timedelta(days=10)
+    with database.connect() as db:
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES (?, 100000)""",
+            (today.isoformat(),),
+        )
+        debt_id = db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, planned_payment_cents,
+                due_day_of_month, apr_percent, next_due_date, interest_date, active)
+               VALUES ('Card', 100000, 5000, 10000, ?, 0, ?, NULL, 1)""",
+            (due_date.day, due_date.isoformat()),
+        ).lastrowid
+
+    response = client.post(
+        "/api/transactions",
+        json={
+            "transaction_date": today.isoformat(),
+            "category": "utilities",
+            "transaction_type": "expense",
+            "linked_obligation_type": "debt",
+            "linked_obligation_id": debt_id,
+            "description": "Early card payment",
+            "amount_cents": -10000,
+        },
+    )
+    assert response.status_code == 201, response.text
+    with database.connect() as db:
+        report = build_pay_period_forecast(db, today)
+        balance = db.execute(
+            "SELECT balance_cents FROM credit_cards WHERE id = ?", (debt_id,)
+        ).fetchone()["balance_cents"]
+    assert balance == 90000
+    assert report["current_cash_cents"] == 90000
+    assert all(
+        event["date"] != due_date.isoformat()
+        for period in report["periods"] for event in period["debt_events"]
+    )
