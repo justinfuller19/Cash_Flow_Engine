@@ -360,6 +360,7 @@ def test_transaction_over_max_spendable_warns_even_when_due_date_bills_are_cover
     forecast = {
         "generated_on": "2026-11-01",
         "current_cash_cents": 120000,
+        "cash_baseline_confirmed": True,
         "max_spendable_cents": 10000,
         "periods": [
             {"start_date": "2026-11-01", "end_date": "2026-11-07",
