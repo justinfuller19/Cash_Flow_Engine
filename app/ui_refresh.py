@@ -45,7 +45,7 @@ INTERACTION_SCRIPT = """<script id="cfe-ui-interactions">
  const metrics=document.getElementById('metrics');let arranging=false;
  function arrangeMetrics(){
   if(!metrics||arranging)return;arranging=true;const observer=window.__cfeMetricsObserver;if(observer)observer.disconnect();
-  const old=document.getElementById('cfe-at-a-glance');if(old)old.remove();const cards=Array.from(metrics.querySelectorAll('.metric'));
+  const cards=Array.from(metrics.querySelectorAll('.metric'));
   if(cards.length){
    const maximum=cards.find(c=>(c.querySelector('span')?.textContent||'').toLowerCase().includes('maximum spendable'));
    const warnings=cards.find(c=>(c.querySelector('span')?.textContent||'').toLowerCase().includes('pay-period warnings'));
