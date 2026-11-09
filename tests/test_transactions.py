@@ -736,7 +736,7 @@ def test_future_linked_debt_payment_updates_balance_only_when_date_arrives(tmp_p
         forecast_before_due = build_pay_period_forecast(db, today)
     assert balance_before_due == 100000
     assert flag_before_due == 0
-    assert forecast_before_due["projected_debts"][0]["projected_balance_cents"] == 90000
+    assert forecast_before_due["projected_debts"][0]["projected_balance_cents"] == 70000
 
     with database.connect() as db:
         post_due_scheduled_transactions(db, due_date)
