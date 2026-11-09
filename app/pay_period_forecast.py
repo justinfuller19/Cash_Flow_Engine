@@ -362,13 +362,17 @@ def transaction_bill_reservation_impact_from_forecast(
     excess = max(0, transaction_amount_cents - max_spendable)
     negative_period = None
     if excess:
-        for period in updated_periods:
-            start_date = date.fromisoformat(period["start_date"])
-            if start_date < proposed_date:
-                continue
-            if int(period.get("projected_ending_cash_cents", 0)) - transaction_amount_cents < 0:
-                negative_period = period
-                break
+        transaction_period_index = next(
+            (index for index, period in enumerate(updated_periods)
+             if date.fromisoformat(period["start_date"]) <= proposed_date
+             <= date.fromisoformat(period["end_date"])),
+            None,
+        )
+        if transaction_period_index is not None:
+            for period in updated_periods[transaction_period_index:]:
+                if int(period.get("projected_ending_cash_cents", 0)) - transaction_amount_cents < 0:
+                    negative_period = period
+                    break
     if excess and negative_period:
         period_bills = sorted(
             (bill for bill in negative_period.get("bills", [])
