@@ -369,7 +369,12 @@ def transaction_bill_reservation_impact_from_forecast(
         for period in updated_periods[transaction_period_index:]
     ] if transaction_period_index is not None else []
     spendable_from_transaction_date = max(0, min(future_period_ends)) if future_period_ends else 0
-    excess = max(0, transaction_amount_cents - spendable_from_transaction_date)
+    # Older focused callers may provide only bill events; the live forecast
+    # always includes max_spendable_cents. Preserve bill-only behavior otherwise.
+    excess = (
+        max(0, transaction_amount_cents - spendable_from_transaction_date)
+        if "max_spendable_cents" in forecast else 0
+    )
     negative_period = None
     if excess and transaction_period_index is not None:
         for period in updated_periods[transaction_period_index:]:
@@ -399,7 +404,10 @@ def transaction_bill_reservation_impact_from_forecast(
 
     return {
         "requires_confirmation": bool(impacted) or bool(excess),
-        "underfunded_bills": impacted,
+        "underfunded_bills": [
+            {key: value for key, value in item.items() if key != "bill_id"}
+            for item in impacted
+        ],
         "total_bill_shortfall_cents": sum(item["unfunded_cents"] for item in impacted),
         "exceeds_max_spendable_cents": excess,
     }
