@@ -153,6 +153,9 @@ def record_savings_contribution(goal_id: int, body: SavingsContributionCreate):
             "UPDATE savings_goals SET current_balance_cents = ?, last_contribution_date = ? WHERE id = ?",
             (new_balance, last_date, goal_id),
         )
+        db.execute(
+            "INSERT OR IGNORE INTO categories (name, transaction_type) VALUES ('savings', 'expense')"
+        )
         cursor = db.execute(
             """INSERT INTO transactions
                (transaction_date, category, transaction_type, description, amount_cents, notes)
