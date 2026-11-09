@@ -272,3 +272,18 @@ def test_transaction_warning_compares_recurring_bill_occurrences_individually():
     assert impact["underfunded_bills"] == [
         {"name": "Rent", "due_date": "2026-11-11", "unfunded_cents": 10000}
     ]
+
+def test_negative_opening_cash_is_preserved_and_warned():
+    result = calculate_pay_periods(
+        [{
+            "start_date": "2026-11-01", "end_date": "2026-11-07",
+            "starting_cash_cents": -5000, "income_cents": 0,
+            "bills_cents": 0, "savings_cents": 0,
+            "debt_payments_cents": 0, "other_expenses_cents": 0,
+        }],
+        0,
+    )
+    assert result["periods"][0]["projected_ending_cash_cents"] == -5000
+    assert result["warnings"] == [{
+        "type": "negative_cash", "start_date": "2026-11-01", "shortfall_cents": 5000
+    }]
