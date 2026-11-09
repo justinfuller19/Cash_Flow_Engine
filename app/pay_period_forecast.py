@@ -72,23 +72,35 @@ def calculate_pay_periods(periods: Sequence[Mapping[str, int | str]], end_of_per
 
 def transaction_reservation_impact(transaction_amount_cents: int, available_cash_cents: int,
                                    reserved_bills: Sequence[Mapping[str, int | str]]) -> dict:
-    """List exact bill underfunding caused by a proposed expense; never mutates data."""
+    """List new bill underfunding caused by a proposed expense; never mutates data."""
     for field, value in (("transaction_amount_cents", transaction_amount_cents),
                          ("available_cash_cents", available_cash_cents)):
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f"{field} must be a non-negative integer")
-    remaining = max(0, available_cash_cents - transaction_amount_cents)
-    impacted = []
+    validated = []
     for bill in reserved_bills:
         amount, paid = bill.get("amount_cents", 0), bill.get("paid_cents", 0)
         if any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in (amount, paid)):
             raise ValueError("bill amounts must be non-negative integer cents")
-        unpaid = max(0, amount - paid)
-        funded = min(unpaid, remaining)
-        if unpaid > funded:
+        validated.append((bill, max(0, amount - paid)))
+
+    def funded_by_bill(cash: int) -> list[int]:
+        remaining = cash
+        allocations = []
+        for _, unpaid in validated:
+            funded = min(unpaid, remaining)
+            allocations.append(funded)
+            remaining -= funded
+        return allocations
+
+    before = funded_by_bill(available_cash_cents)
+    after = funded_by_bill(max(0, available_cash_cents - transaction_amount_cents))
+    impacted = []
+    for (bill, _), before_funded, after_funded in zip(validated, before, after):
+        newly_unfunded = max(0, before_funded - after_funded)
+        if newly_unfunded:
             impacted.append({"name": bill.get("name", "Bill"), "due_date": bill.get("due_date"),
-                             "unfunded_cents": unpaid - funded})
-        remaining -= funded
+                             "unfunded_cents": newly_unfunded})
     return {"requires_confirmation": bool(impacted),
             "remaining_cash_after_transaction_cents": max(0, available_cash_cents - transaction_amount_cents),
             "underfunded_bills": impacted,
