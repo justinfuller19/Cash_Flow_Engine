@@ -215,7 +215,7 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 <p id="dashboard-cash-snapshot-status" class="muted" role="status">Loading cash confirmation…</p>
 </div>
 <div class="grid">
-<section class="card"><h2>Three-month pay-period forecast</h2><div id="weekly-summary" class="muted">Loading forecast…</div><h3>Recorded spending by category</h3><ul id="weekly-category-spending" class="list"><li class="muted">Loading…</li></ul><p><a href="/pay-periods">Review all upcoming pay periods and print the forecast →</a></p></section>
+<section class="card"><h2>Three-month pay-period forecast</h2><div id="pay-period-summary" class="muted">Loading forecast…</div><h3>Recorded spending by category</h3><ul id="weekly-category-spending" class="list"><li class="muted">Loading…</li></ul><p><a href="/pay-periods">Review all upcoming pay periods and print the forecast →</a></p></section>
 <section class="card"><h2>Next paydays</h2><ul id="paydays" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Upcoming bills · 30 days</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Debt payments · 30 days</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
@@ -231,9 +231,15 @@ function dollars(cents){return new Intl.NumberFormat(undefined,{style:"currency"
 async function api(url){const r=await fetch(url);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error("Could not load dashboard data.");return d;}
 function renderList(id,items,empty,make){const list=document.getElementById(id);list.replaceChildren();if(!items.length){list.appendChild(el("li","muted",empty));return;}for(const item of items){const li=el("li","");make(li,item);list.appendChild(li);}}
 async function load(){const d=await api("/api/dashboard");
+let payPeriodForecast=null;try{payPeriodForecast=await api("/api/cash-flow/pay-periods");}catch(error){}
 const metrics=document.getElementById("metrics");metrics.replaceChildren();
-const metricValues=[["Active household members",String(d.active_household_members)],["Safe to spend (13-week forecast)",dollars(d.safe_to_spend_cents)],["Actions needing attention",String(d.pending_checklist_count)],["Recorded income this month",dollars(d.month_income_cents)],["Recorded expenses this month",dollars(d.month_expenses_cents)]];
-if(d.projected_cash_shortfall_cents>0)metricValues.push(["Projected cash shortfall",dollars(d.projected_cash_shortfall_cents)]);
+const metricValues=payPeriodForecast?[
+["Current cash",dollars(payPeriodForecast.current_cash_cents)],
+["Reserved cash",dollars(payPeriodForecast.reserved_cash_cents)],
+["Maximum spendable",dollars(payPeriodForecast.max_spendable_cents)],
+["Spendable while keeping target",dollars(payPeriodForecast.spendable_while_keeping_target_cents)],
+["Pay-period warnings",String(payPeriodForecast.warnings.length)]
+]:[["Pay-period forecast","Unavailable"]];
 for(const [label,value] of metricValues){const card=el("div","metric","");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));metrics.appendChild(card);}
 renderList("paydays",d.next_paydays,"No upcoming paydays found.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date));});
 renderList("bills",d.upcoming_bills,"No saved bills due in the next 30 days.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.category+(x.autopay?" · autopay":"")));});
@@ -242,15 +248,15 @@ renderList("goals",d.savings_goals,"No active savings goals.",(li,x)=>{const ong
 
 document.getElementById("checklist-summary").textContent=d.pending_checklist_count?d.pending_checklist_count+" pending or attention-needed action(s).":"No pending checklist actions.";
 renderList("transactions",d.recent_transactions,"No transactions recorded yet.",(li,x)=>{const sign=x.amount_cents<0?"−":"";li.appendChild(el("div","item-title",x.description+" · "+sign+dollars(Math.abs(x.amount_cents))));li.appendChild(el("div","detail",x.transaction_date+" · "+x.category+(x.account_name?" · "+x.account_name:"")));});
-try{
-const forecast=await api("/api/cash-flow/pay-periods");const root=document.getElementById("weekly-summary");root.replaceChildren();
-root.appendChild(el("div","item-title",dollars(forecast.max_spendable_cents)+" maximum spendable across the forecast"));
-root.appendChild(el("div","detail","Spendable while keeping your target: "+dollars(forecast.spendable_while_keeping_target_cents)));
-root.appendChild(el("div","detail","Current cash "+dollars(forecast.current_cash_cents)+" · Reserved for bills, savings, and debt "+dollars(forecast.reserved_cash_cents)));
-const next=forecast.periods.find(p=>!p.is_current_period);
+const root=document.getElementById("pay-period-summary");root.replaceChildren();
+if(payPeriodForecast){
+root.appendChild(el("div","item-title",dollars(payPeriodForecast.max_spendable_cents)+" maximum spendable across the forecast"));
+root.appendChild(el("div","detail","Spendable while keeping your target: "+dollars(payPeriodForecast.spendable_while_keeping_target_cents)));
+root.appendChild(el("div","detail","Current cash "+dollars(payPeriodForecast.current_cash_cents)+" · Reserved for bills, savings, and debt "+dollars(payPeriodForecast.reserved_cash_cents)));
+const next=payPeriodForecast.periods.find(p=>!p.is_current_period);
 if(next)root.appendChild(el("div","detail","Next pay period starts "+next.start_date+" · income "+dollars(next.income_cents)+" · bills "+dollars(next.bills_cents)+" · savings "+dollars(next.savings_cents)+" · debt "+dollars(next.debt_payments_cents)));
-if(forecast.warnings.length)root.appendChild(el("div","detail",forecast.warnings.length+" cash or target warning(s) across the next three months."));
-}catch(error){document.getElementById("weekly-summary").textContent="Pay-period forecast unavailable: "+error.message;}
+if(payPeriodForecast.warnings.length)root.appendChild(el("div","detail",payPeriodForecast.warnings.length+" cash or target warning(s) across the next three months."));
+}else{root.textContent="Pay-period forecast unavailable.";}
 try{
 const weekly=await api("/api/cash-flow/weekly");const categoryRoot=document.getElementById("weekly-category-spending");categoryRoot.replaceChildren();
 const topCategories=weekly.category_spending.slice(0,3);
