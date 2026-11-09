@@ -131,6 +131,7 @@ def initialize_database() -> None:
                 current_balance_cents INTEGER NOT NULL DEFAULT 0
                     CHECK(current_balance_cents >= 0),
                 target_date TEXT,
+                last_contribution_date TEXT,
                 priority INTEGER NOT NULL DEFAULT 100,
                 active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -713,3 +714,10 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
                 "ALTER TABLE credit_cards ADD COLUMN planned_payment_cents "
                 "INTEGER NOT NULL DEFAULT 0 CHECK(planned_payment_cents >= 0)"
             )
+
+    if version < 25:
+        # Version 25 records the last actual savings contribution so the
+        # current pay period is not planned a second time after a contribution.
+        savings_columns = {row["name"] for row in db.execute("PRAGMA table_info(savings_goals)")}
+        if "last_contribution_date" not in savings_columns:
+            db.execute("ALTER TABLE savings_goals ADD COLUMN last_contribution_date TEXT")
