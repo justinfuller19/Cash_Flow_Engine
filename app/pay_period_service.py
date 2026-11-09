@@ -236,7 +236,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
 
     bills = [dict(row) for row in db.execute(
         """SELECT id, name, amount_cents, due_day_of_month, next_due_date,
-                  flexible_window_days, category, frequency, active
+                  flexible_window_days, category, frequency, autopay, active
            FROM bills WHERE active = 1 ORDER BY id"""
     ).fetchall()]
     for bill in bills:
