@@ -59,6 +59,7 @@ class DebtCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     balance_cents: int = Field(ge=0)
     minimum_payment_cents: int = Field(ge=0)
+    planned_payment_cents: int = Field(default=0, ge=0)
     apr_percent: float = Field(ge=0, le=1000)
     next_due_date: date
     interest_date: date | None = None
@@ -70,6 +71,7 @@ class DebtUpdate(PatchModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     balance_cents: int | None = Field(default=None, ge=0)
     minimum_payment_cents: int | None = Field(default=None, ge=0)
+    planned_payment_cents: int | None = Field(default=None, ge=0)
     apr_percent: float | None = Field(default=None, ge=0, le=1000)
     next_due_date: date | None = None
     interest_date: date | None = None
@@ -82,6 +84,7 @@ class DebtOut(BaseModel):
     name: str
     balance_cents: int
     minimum_payment_cents: int
+    planned_payment_cents: int = 0
     apr_percent: float
     due_day_of_month: int | None
     next_due_date: date | None
