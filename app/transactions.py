@@ -225,9 +225,15 @@ def confirm_debt_payment_suggestion(suggestion_id: int):
         # Confirming a suggestion creates the debt link outside the ordinary
         # transaction create/edit handlers, so apply the same balance effect
         # here. The transaction remains the sole record of the cash payment.
-        _adjust_linked_debt_balance(
-            db, "debt", suggestion["debt_id"], suggestion["transaction_type"],
-            suggestion["amount_cents"], 1,
+        debt_applied = int(date.fromisoformat(suggestion["transaction_date"]) <= date.today())
+        if debt_applied:
+            _adjust_linked_debt_balance(
+                db, "debt", suggestion["debt_id"], suggestion["transaction_type"],
+                suggestion["amount_cents"], 1,
+            )
+        db.execute(
+            "UPDATE transactions SET debt_balance_applied = ? WHERE id = ?",
+            (debt_applied, suggestion["transaction_id"]),
         )
         db.execute(
             """UPDATE debt_payment_match_suggestions
