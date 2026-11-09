@@ -335,10 +335,14 @@ def transaction_bill_reservation_impact_from_forecast(
     updated_forecast = dict(forecast)
     updated_forecast["periods"] = updated_periods
     after = bill_funding_shortfalls_from_forecast(updated_forecast)
-    before_by_id = {item["bill_id"]: item for item in before}
+    before_by_occurrence = {
+        (item["bill_id"], item["due_date"]): item for item in before
+    }
     impacted = []
     for item in after:
-        previous = before_by_id.get(item["bill_id"], {}).get("shortfall_cents", 0)
+        previous = before_by_occurrence.get(
+            (item["bill_id"], item["due_date"]), {}
+        ).get("shortfall_cents", 0)
         newly_unfunded = max(0, item["shortfall_cents"] - previous)
         if newly_unfunded:
             impacted.append({
