@@ -306,10 +306,16 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
             continue
         for due_date in occurrences_around(anchor, bill["frequency"], today, horizon_end):
             override = bill_occurrence_overrides.get((bill["id"], due_date.isoformat()))
-            if override and override["status"] == "cancelled":
-                continue
             period = owning_period(due_date)
             if period is None:
+                continue
+            if override and override["status"] == "cancelled":
+                period["bill_items"].append({
+                    "bill_id": bill["id"], "name": bill["name"],
+                    "category": bill["category"], "due_date": due_date.isoformat(),
+                    "amount_cents": 0, "autopay": bool(bill.get("autopay")),
+                    "is_overridden": True, "cancelled": True,
+                })
                 continue
             flexible_days = int(bill.get("flexible_window_days") or 0)
             paid = any(
@@ -330,6 +336,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
                 ),
                 "autopay": bool(bill.get("autopay")),
                 "is_overridden": bool(override),
+                "cancelled": False,
             }
             period["bill_items"].append(item)
 
@@ -658,6 +665,8 @@ def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
                 override["amount_cents"] if override and override["amount_cents"] is not None
                 else bill["amount_cents"]
             )
+            if _money(posted_amount) == 0:
+                continue
             cursor = db.execute(
                 """INSERT INTO transactions
                    (transaction_date, category, transaction_type, linked_obligation_type,
