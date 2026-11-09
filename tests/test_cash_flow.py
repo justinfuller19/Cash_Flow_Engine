@@ -196,7 +196,7 @@ def test_weekly_report_page_and_dashboard_summary_are_available(tmp_path, monkey
     assert dashboard.status_code == 200
     assert 'id="pay-period-summary"' in dashboard.text
     assert 'href="/pay-periods"' in dashboard.text
-    assert "Pay-period outlook" in dashboard.text
+    assert "Three-month pay-period forecast" in dashboard.text
     assert 'id="weekly-category-spending"' in dashboard.text
 
 
