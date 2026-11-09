@@ -262,9 +262,11 @@ Record meaningful implementation updates here. Each entry should include date, p
 - Before production deployment, back up and verify the household databases and account registry; follow the repository's deployment guide.
 - After deployment, verify startup and representative existing household records and reports.
 
-## Guiding rule
+## Current guiding rule
 
-**Do not tell the household that money is safe to spend unless the forecast accounts for known obligations and the protected household cash buffer. Every important number should be explainable and testable.**
+**Do not reintroduce the retired mandatory household cash buffer or weekly safe-to-spend calculation.** The authoritative model is the rolling pay-period forecast in PAY_PERIOD_FORECAST_SPEC.md. The end-of-period target is a soft goal used to calculate target-preserving spendable cash; it is not reserved or deducted from available cash. Every important number should be explainable and testable.
+
+The historical phase notes below describe earlier weekly/buffer implementations. They are retained for project history only and do not define current behavior.
 
 - **2026-10-20 — Phase 4 implementation (PR #40, open):** Added shared integer-cent buffer arithmetic for the pure payday allocation engine and weekly forecast. The weekly API explicitly reports horizon-wide buffer replenishment and safe-to-spend before planned allocations; the dashboard shows safe-to-spend and forecast buffer gap. Regression tests cover underfunded buffers, allocation accounting, future-week gaps, and dashboard metrics. GitHub Actions run #178 passed 141 tests on Python 3.11, 3.12, and 3.13. PR #40 awaits review/merge; no deployment performed.
 
