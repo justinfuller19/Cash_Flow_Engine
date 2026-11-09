@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 
 from . import database
 from .obligation_schemas import (
-    BillCreate, BillOut, BillUpdate, DebtCreate, DebtOut, DebtUpdate,
+    BillCreate, BillOccurrenceOverride, BillOut, BillUpdate, DebtCreate, DebtOut, DebtUpdate,
 )
 
 router = APIRouter()
@@ -113,6 +113,46 @@ def update_bill(bill_id: int, body: BillUpdate):
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=422, detail="Bill update violates a database constraint") from exc
     return _bill_out(row)
+
+
+
+@router.put("/api/bills/{bill_id}/occurrences/{due_date}")
+def set_bill_occurrence_override(bill_id: int, due_date: date, body: BillOccurrenceOverride):
+    """Override or cancel one bill occurrence without changing future recurrences."""
+    with database.connect() as db:
+        if db.execute("SELECT id FROM bills WHERE id = ?", (bill_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Bill not found")
+        status_value = "cancelled" if body.cancelled else "scheduled"
+        amount = None if body.cancelled else body.amount_cents
+        db.execute(
+            """INSERT INTO bill_occurrence_overrides
+               (bill_id, due_date, amount_cents, status)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(bill_id, due_date) DO UPDATE SET
+                   amount_cents = excluded.amount_cents,
+                   status = excluded.status,
+                   updated_at = CURRENT_TIMESTAMP""",
+            (bill_id, due_date.isoformat(), amount, status_value),
+        )
+        row = db.execute(
+            """SELECT bill_id, due_date, amount_cents, status
+               FROM bill_occurrence_overrides WHERE bill_id = ? AND due_date = ?""",
+            (bill_id, due_date.isoformat()),
+        ).fetchone()
+    return dict(row)
+
+
+@router.delete("/api/bills/{bill_id}/occurrences/{due_date}")
+def clear_bill_occurrence_override(bill_id: int, due_date: date):
+    """Remove a one-off override and restore the recurring bill's base amount."""
+    with database.connect() as db:
+        cursor = db.execute(
+            "DELETE FROM bill_occurrence_overrides WHERE bill_id = ? AND due_date = ?",
+            (bill_id, due_date.isoformat()),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Bill occurrence override not found")
+    return {"deleted": True, "bill_id": bill_id, "due_date": due_date.isoformat()}
 
 
 @router.delete("/api/bills/{bill_id}")
