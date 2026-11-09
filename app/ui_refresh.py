@@ -25,7 +25,7 @@ table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;borde
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
 </style>"""
 
-GLOBAL_NAV = """<nav class="cfe-global-nav" aria-label="Main navigation"><a href="/">Home</a><a href="/checklist">Checklist</a><a href="/transactions">Activity</a><details class="cfe-more"><summary>More</summary><div class="cfe-more-menu"><a href="/weekly">Weekly report &amp; allocate</a><a href="/setup">Household &amp; income</a><a href="/bills">Bills &amp; debt</a><a href="/savings">Savings goals</a><a href="/pay-period-settings">Pay period settings</a><a href="/settings-data">Settings &amp; data</a><a href="/account">Account settings</a><a href="/logout">Log out</a></div></details></nav>"""
+GLOBAL_NAV = """<nav class="cfe-global-nav" aria-label="Main navigation"><a href="/">Home</a><a href="/checklist">Checklist</a><a href="/transactions">Activity</a><details class="cfe-more"><summary>More</summary><div class="cfe-more-menu"><a href="/pay-periods">Three-month pay-period forecast</a><a href="/weekly">Legacy weekly report &amp; allocate</a><a href="/setup">Household &amp; income</a><a href="/bills">Bills &amp; debt</a><a href="/savings">Savings goals</a><a href="/pay-period-settings">Pay period settings</a><a href="/settings-data">Settings &amp; data</a><a href="/account">Account settings</a><a href="/logout">Log out</a></div></details></nav>"""
 
 INTERACTION_SCRIPT = """<script id="cfe-ui-interactions">
 (function(){
