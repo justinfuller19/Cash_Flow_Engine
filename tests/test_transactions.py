@@ -661,9 +661,24 @@ def test_expense_requires_confirmation_when_it_newly_underfunds_a_bill(tmp_path,
         debug_forecast = build_pay_period_forecast(db, today)
     assert debug_forecast["current_cash_cents"] == 100000
     assert any(item["bill_id"] == bill_id for period in debug_forecast["periods"] for item in period["bills"])
+    from app.pay_period_forecast import bill_funding_shortfalls_from_forecast
+    baseline_shortfalls = bill_funding_shortfalls_from_forecast(debug_forecast)
+    test_forecast = dict(debug_forecast)
+    test_periods = [dict(period) for period in debug_forecast["periods"]]
+    test_periods[0]["transactions"] = list(test_periods[0]["transactions"]) + [{
+        "date": today.isoformat(), "type": "expense", "amount_cents": 30000,
+    }]
+    test_forecast["periods"] = test_periods
+    simulated_shortfalls = bill_funding_shortfalls_from_forecast(test_forecast)
     debug_impact = transaction_bill_reservation_impact_from_forecast(
         debug_forecast, 30000, today.isoformat()
     )
+    assert simulated_shortfalls, {
+        "baseline": baseline_shortfalls,
+        "simulated": simulated_shortfalls,
+        "current_cash": debug_forecast["current_cash_cents"],
+        "period_bills": [(p["start_date"], p["end_date"], p["bills"]) for p in debug_forecast["periods"] if p["bills"]],
+    }
     assert debug_impact["requires_confirmation"] is True, {
         "impact": debug_impact,
         "generated_on": debug_forecast["generated_on"],
