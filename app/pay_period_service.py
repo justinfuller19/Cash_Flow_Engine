@@ -277,6 +277,10 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
             ), None)
             if match:
                 matched_payday_period = paycheck_period_by_date.get(match["date"])
+                if matched_payday_period is None:
+                    # The transaction belongs to a paycheck group whose
+                    # period starts outside the included three-month window.
+                    continue
         period = matched_payday_period or (owning_period(day) if day else None)
         if period is None:
             continue
