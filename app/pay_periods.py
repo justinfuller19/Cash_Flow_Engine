@@ -37,3 +37,52 @@ def group_paychecks(paycheck_dates: list[date], window_days: int = 2) -> list[di
             "period_end": period_end,
         })
     return result
+
+
+def build_pay_period_calendar(
+    paycheck_dates: list[date],
+    today: date,
+    horizon_end: date,
+    window_days: int = 2,
+) -> list[dict]:
+    """Return the current period and future periods starting within the horizon.
+
+    Callers should supply enough historical paycheck dates to include the
+    paycheck group that established the current period, plus future paydays
+    through at least the horizon end. A period is bounded by the next group's
+    final payday, not its first payday.
+    """
+    if horizon_end < today:
+        raise ValueError("horizon_end must be on or after today")
+    groups = group_paychecks(paycheck_dates, window_days)
+    current_index = next(
+        (
+            index for index, group in enumerate(groups)
+            if group["period_start"] <= today
+            and (group["period_end"] is None or today <= group["period_end"])
+        ),
+        None,
+    )
+    if current_index is None:
+        raise ValueError("paycheck_dates must include the group containing today")
+    return [
+        {
+            **group,
+            "is_current_period": index == current_index,
+            "unreceived_paycheck_dates": tuple(
+                payday for payday in group["paycheck_dates"] if payday > today
+            ),
+        }
+        for index, group in enumerate(groups[current_index:], start=current_index)
+        if index == current_index or group["period_start"] <= horizon_end
+    ]
+
+
+def period_for_due_date(due_date: date, periods: list[dict]) -> dict | None:
+    """Return the period owning a bill due date; period start is inclusive."""
+    for period in periods:
+        if period["period_start"] <= due_date and (
+            period["period_end"] is None or due_date <= period["period_end"]
+        ):
+            return period
+    return None
