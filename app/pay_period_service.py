@@ -455,24 +455,32 @@ def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
         for payday in dates:
             if end_date and payday > end_date:
                 continue
-            already_recorded = db.execute(
-                """SELECT id FROM transactions
+            existing_income = db.execute(
+                """SELECT id, description, amount_cents, linked_obligation_type,
+                          linked_obligation_id
+                   FROM transactions
                    WHERE transaction_type = 'income'
-                     AND linked_obligation_type = 'income'
-                     AND linked_obligation_id = ?
                      AND transaction_date BETWEEN ? AND ?
-                   ORDER BY ABS(julianday(transaction_date) - julianday(?)), id
-                   LIMIT 1""",
-                (source["id"], (payday - timedelta(days=2)).isoformat(),
-                 (payday + timedelta(days=2)).isoformat(), payday.isoformat()),
-            ).fetchone()
-            if already_recorded:
-                continue
+                   ORDER BY id""",
+                ((payday - timedelta(days=2)).isoformat(),
+                 (payday + timedelta(days=2)).isoformat()),
+            ).fetchall()
             amount = _money(source["net_amount_cents"])
             for override in overrides:
                 if override["start_date"] <= payday.isoformat() <= override["end_date"]:
                     amount = _money(override["amount_cents"])
                     break
+            source_name = source["name"].strip().lower()
+            if any(
+                (row["linked_obligation_type"] == "income"
+                 and row["linked_obligation_id"] == source["id"])
+                or (row["linked_obligation_type"] is None
+                    and abs(int(row["amount_cents"])) == amount
+                    and ("paycheck" in (row["description"] or "").lower()
+                         or source_name in (row["description"] or "").lower()))
+                for row in existing_income
+            ):
+                continue
             cursor = db.execute(
                 """INSERT INTO transactions
                    (transaction_date, category, transaction_type, linked_obligation_type,
@@ -500,17 +508,31 @@ def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
         used_transactions: set[int] = set()
         for due_date in dates:
             flex = int(bill.get("flexible_window_days") or 0)
+            pending_match = db.execute(
+                """SELECT id FROM bill_payment_match_suggestions
+                   WHERE bill_id = ? AND due_date = ? AND status = 'pending' LIMIT 1""",
+                (bill["id"], due_date.isoformat()),
+            ).fetchone()
+            if pending_match:
+                continue
             candidates = db.execute(
-                """SELECT id, transaction_date FROM transactions
+                """SELECT id, transaction_date, description, amount_cents, category,
+                          linked_obligation_type, linked_obligation_id
+                   FROM transactions
                    WHERE transaction_type = 'expense'
-                     AND linked_obligation_type = 'bill'
-                     AND linked_obligation_id = ?
                      AND transaction_date BETWEEN ? AND ?
                    ORDER BY ABS(julianday(transaction_date) - julianday(?)), id""",
-                (bill["id"], (due_date - timedelta(days=flex)).isoformat(),
+                ((due_date - timedelta(days=flex)).isoformat(),
                  (due_date + timedelta(days=flex)).isoformat(), due_date.isoformat()),
             ).fetchall()
-            existing = next((row for row in candidates if row["id"] not in used_transactions), None)
+            bill_name = bill["name"].strip().lower()
+            existing = next((row for row in candidates if row["id"] not in used_transactions and (
+                (row["linked_obligation_type"] == "bill" and row["linked_obligation_id"] == bill["id"])
+                or (row["linked_obligation_type"] is None
+                    and abs(int(row["amount_cents"])) == _money(bill["amount_cents"])
+                    and ((row["category"] or "").lower() == (bill.get("category") or "").lower()
+                         or bill_name in (row["description"] or "").lower()))
+            )), None)
             if existing:
                 used_transactions.add(existing["id"])
                 continue
