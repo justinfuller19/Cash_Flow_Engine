@@ -198,3 +198,35 @@ def test_due_paychecks_and_bills_are_posted_to_internal_ledger_once():
     assert {row["amount_cents"] for row in rows} == {50000, -12000}
     assert all("Automatically posted to the internal ledger" in row["notes"] for row in rows)
     assert client.get("/health").status_code == 200
+
+def test_early_linked_bill_payment_releases_reservation_without_double_subtracting():
+    client = _client()
+    with database.connect() as db:
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES ('2026-11-01', 100000)"""
+        )
+        bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Water', 12000, 15, '2026-11-15', 7,
+                       'utilities', 'monthly', 0, 1)"""
+        ).lastrowid
+        db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, linked_obligation_type,
+                linked_obligation_id, description, amount_cents)
+               VALUES ('2026-11-10', 'utilities', 'expense', 'bill', ?,
+                       'Water paid early', -12000)""",
+            (bill_id,),
+        )
+
+    response = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-12"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["current_cash_cents"] == 88000
+    assert not any(
+        item["bill_id"] == bill_id and item["due_date"] == "2026-11-15"
+        for period in report["periods"] for item in period["bills"]
+    )
