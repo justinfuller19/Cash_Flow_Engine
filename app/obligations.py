@@ -276,6 +276,7 @@ button:disabled{opacity:.55}.toggle{background:#475569;margin:4px 0}.status{padd
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div class="grid">
 <section class="card"><h2>Recurring bills</h2>
+<p class="muted">Editing a bill here changes its recurring schedule for future due dates. To change or skip one due date only, use the bill controls in the pay-period forecast.</p>
 <form id="bill-form">
 <label for="bill-name">Bill name</label><input id="bill-name" name="name" maxlength="120" required placeholder="Rent, electricity, internet">
 <label for="bill-amount">Expected amount ($)</label><input id="bill-amount" name="amount" type="number" min="0" step="0.01" required>
