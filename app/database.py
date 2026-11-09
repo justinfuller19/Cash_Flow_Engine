@@ -163,6 +163,7 @@ def initialize_database() -> None:
                 amount_cents INTEGER NOT NULL,
                 account_name TEXT,
                 notes TEXT,
+                debt_balance_applied INTEGER NOT NULL DEFAULT 0 CHECK(debt_balance_applied IN (0, 1)),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -721,3 +722,18 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
         savings_columns = {row["name"] for row in db.execute("PRAGMA table_info(savings_goals)")}
         if "last_contribution_date" not in savings_columns:
             db.execute("ALTER TABLE savings_goals ADD COLUMN last_contribution_date TEXT")
+
+    if version < 26:
+        # Version 26 tracks whether a linked debt payment has been applied to
+        # the saved balance. Existing linked debt expenses already changed
+        # balances under the prior ledger behavior, so mark them as applied.
+        transaction_columns = {row["name"] for row in db.execute("PRAGMA table_info(transactions)")}
+        if "debt_balance_applied" not in transaction_columns:
+            db.execute(
+                "ALTER TABLE transactions ADD COLUMN debt_balance_applied "
+                "INTEGER NOT NULL DEFAULT 0 CHECK(debt_balance_applied IN (0, 1))"
+            )
+        db.execute(
+            """UPDATE transactions SET debt_balance_applied = 1
+               WHERE linked_obligation_type = 'debt' AND transaction_type = 'expense'"""
+        )
