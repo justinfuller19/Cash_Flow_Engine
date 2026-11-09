@@ -257,3 +257,30 @@ def test_unlinked_recorded_paycheck_replaces_estimate_and_keeps_group_period_ass
     assert grouped["income_cents"] == 20000
     assert [item["name"] for item in grouped["income_items"]] == ["Sunday pay"]
     assert [item["description"] for item in grouped["transactions"]] == ["Friday paycheck received"]
+
+def test_actual_savings_contribution_satisfies_current_period_only():
+    client = _client()
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Paycheck', 50000, 'weekly', '2026-11-13', 1)""",
+            (person_id,),
+        )
+        db.execute(
+            """INSERT INTO savings_goals
+               (name, target_amount_cents, current_balance_cents, target_date,
+                contribution_per_period_cents, last_contribution_date, active)
+               VALUES ('General savings', 0, 2500, NULL, 5000, '2026-11-08', 1)"""
+        )
+
+    response = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    current = next(p for p in report["periods"] if p["is_current_period"])
+    following = next(p for p in report["periods"] if p["start_date"] == "2026-11-13")
+    assert current["savings_cents"] == 0
+    assert following["savings_cents"] == 5000
