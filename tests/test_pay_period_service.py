@@ -160,3 +160,41 @@ def test_pay_period_report_page_is_printable_and_exposes_report_fields():
     assert "/api/cash-flow/pay-periods" in response.text
     assert "Carry above target" in response.text
     assert "break-inside:avoid" in response.text
+
+def test_due_paychecks_and_bills_are_posted_to_internal_ledger_once():
+    from app.pay_period_service import post_due_scheduled_transactions
+
+    client = _client()
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Paycheck', 50000, 'weekly', '2026-11-06', 1)""",
+            (person_id,),
+        )
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Electric', 12000, 8, '2026-11-08', 0,
+                       'utilities', 'monthly', 0, 1)"""
+        )
+        first = post_due_scheduled_transactions(db, date(2026, 11, 8))
+        second = post_due_scheduled_transactions(db, date(2026, 11, 8))
+        rows = db.execute(
+            """SELECT transaction_type, linked_obligation_type, description,
+                      amount_cents, notes
+               FROM transactions ORDER BY id"""
+        ).fetchall()
+
+    assert first["posted_paychecks"] == 1
+    assert first["posted_bills"] == 1
+    assert second["posted_paychecks"] == 0
+    assert second["posted_bills"] == 0
+    assert len(rows) == 2
+    assert {row["amount_cents"] for row in rows} == {50000, -12000}
+    assert all("Automatically posted to the internal ledger" in row["notes"] for row in rows)
+    assert client.get("/health").status_code == 200
