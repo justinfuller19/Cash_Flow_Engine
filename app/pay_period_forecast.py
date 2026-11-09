@@ -297,3 +297,78 @@ def project_debt_schedule(debts: Sequence[Mapping], periods: Sequence[Mapping[st
         ],
         "events": debt_events,
     }
+
+def transaction_bill_reservation_impact_from_forecast(
+    forecast: Mapping, transaction_amount_cents: int, transaction_date: str
+) -> dict:
+    """Compare bill funding before/after a proposed expense over the forecast horizon."""
+    from datetime import date
+
+    if isinstance(transaction_amount_cents, bool) or not isinstance(transaction_amount_cents, int) or transaction_amount_cents <= 0:
+        raise ValueError("transaction_amount_cents must be a positive integer")
+    proposed_date = date.fromisoformat(transaction_date)
+    today = date.fromisoformat(forecast["generated_on"])
+    if proposed_date < today:
+        return {"requires_confirmation": False, "underfunded_bills": [],
+                "total_bill_shortfall_cents": 0}
+    events = []
+    for period in forecast.get("periods", []):
+        for item in period.get("transactions", []):
+            day = date.fromisoformat(item["date"])
+            amount = int(item["amount_cents"])
+            if item["type"] == "income":
+                events.append((day, 3, "income", amount, None))
+            elif item["type"] == "expense":
+                events.append((day, 1, "expense", amount, None))
+        for item in period.get("debt_events", []):
+            if item.get("type") == "payment" and not item.get("actual"):
+                events.append((date.fromisoformat(item["date"]), 1, "expense",
+                               int(item["amount_cents"]), None))
+        for item in period.get("savings", []):
+            events.append((date.fromisoformat(period["end_date"]), 1, "expense",
+                           int(item["amount_cents"]), None))
+        for item in period.get("bills", []):
+            events.append((date.fromisoformat(item["due_date"]), 2, "bill",
+                           int(item["amount_cents"]), item))
+    events.sort(key=lambda item: (item[0], item[1], item[4].get("bill_id", 0) if item[4] else 0))
+
+    def simulate(include_proposed: bool) -> dict[int, int]:
+        cash = int(forecast["current_cash_cents"])
+        shortfalls: dict[int, int] = {}
+        schedule = list(events)
+        if include_proposed:
+            schedule.append((proposed_date, 0, "expense", transaction_amount_cents, None))
+            schedule.sort(key=lambda item: (item[0], item[1], item[4].get("bill_id", 0) if item[4] else 0))
+        for _, _, event_type, amount, detail in schedule:
+            if event_type == "income":
+                cash += amount
+            elif event_type == "bill":
+                funded = min(amount, max(0, cash))
+                shortfalls[detail["bill_id"]] = amount - funded
+                cash -= amount
+            else:
+                cash -= amount
+        return shortfalls
+
+    before = simulate(False)
+    after = simulate(True)
+    bill_details = {
+        item["bill_id"]: item
+        for period in forecast.get("periods", [])
+        for item in period.get("bills", [])
+    }
+    impacted = []
+    for bill_id, after_shortfall in after.items():
+        newly_unfunded = max(0, after_shortfall - before.get(bill_id, 0))
+        if newly_unfunded:
+            bill = bill_details[bill_id]
+            impacted.append({
+                "name": bill["name"],
+                "due_date": bill["due_date"],
+                "unfunded_cents": newly_unfunded,
+            })
+    return {
+        "requires_confirmation": bool(impacted),
+        "underfunded_bills": impacted,
+        "total_bill_shortfall_cents": sum(item["unfunded_cents"] for item in impacted),
+    }
