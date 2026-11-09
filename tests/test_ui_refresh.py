@@ -78,7 +78,7 @@ def test_pay_period_dashboard_metric_labels_are_pinned_to_the_script_hooks():
 
     assert "includes('maximum spendable')" in INTERACTION_SCRIPT
     assert "includes('pay-period warnings')" in INTERACTION_SCRIPT
-    assert "Maximum spendable" not in INTERACTION_SCRIPT
+    assert "safe to spend" not in INTERACTION_SCRIPT
     assert "Pay-period warnings need review" in INTERACTION_SCRIPT
     assert "cfe-at-a-glance" not in INTERACTION_SCRIPT
 
