@@ -494,6 +494,25 @@ def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
     created_income = []
     created_bills = []
 
+    # Future-dated linked debt payments do not reduce the saved balance until
+    # their transaction date arrives. Apply them once when the app is next used.
+    due_debt_payments = db.execute(
+        """SELECT id, linked_obligation_id, amount_cents
+           FROM transactions
+           WHERE transaction_type = 'expense' AND linked_obligation_type = 'debt'
+             AND transaction_date <= ? AND debt_balance_applied = 0""",
+        (today.isoformat(),),
+    ).fetchall()
+    for payment in due_debt_payments:
+        db.execute(
+            "UPDATE credit_cards SET balance_cents = MAX(0, balance_cents - ?) WHERE id = ?",
+            (abs(int(payment["amount_cents"])), payment["linked_obligation_id"]),
+        )
+        db.execute(
+            "UPDATE transactions SET debt_balance_applied = 1 WHERE id = ?",
+            (payment["id"],),
+        )
+
     income_rows = [dict(row) for row in db.execute(
         """SELECT id, name, net_amount_cents, frequency, next_payday, end_date
            FROM income_sources WHERE active = 1 ORDER BY id"""
