@@ -346,9 +346,19 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
 
     goals = [dict(row) for row in db.execute(
         """SELECT id, name, target_amount_cents, current_balance_cents,
-                  target_date, contribution_per_period_cents, active
+                  target_date, contribution_per_period_cents, last_contribution_date, active
            FROM savings_goals WHERE active = 1 ORDER BY priority, id"""
     ).fetchall()]
+    current_calendar_period = next((p for p in periods if p["is_current_period"]), periods[0])
+    completed_savings_periods = set()
+    for goal in goals:
+        last_contribution = _as_date(goal.get("last_contribution_date"))
+        if (
+            last_contribution is not None
+            and current_calendar_period["period_start"] <= last_contribution <= today
+        ):
+            completed_savings_periods.add((goal["id"], current_calendar_period["start_date"]))
+
     savings = plan_savings_contributions(
         [{
             "id": goal["id"],
@@ -359,6 +369,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
             "ongoing_per_period_cents": _money(goal["contribution_per_period_cents"]),
         } for goal in goals],
         [p["start_date"] for p in periods],
+        completed_periods=completed_savings_periods,
     )
     savings_by_period: dict[str, list[dict]] = {}
     for goal in savings:
