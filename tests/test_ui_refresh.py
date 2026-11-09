@@ -80,6 +80,7 @@ def test_pay_period_dashboard_metric_labels_are_pinned_to_the_script_hooks():
     assert "includes('pay-period warnings')" in INTERACTION_SCRIPT
     assert "Maximum spendable" not in INTERACTION_SCRIPT
     assert "Pay-period warnings need review" in INTERACTION_SCRIPT
+    assert "cfe-at-a-glance" not in INTERACTION_SCRIPT
 
 
 def test_future_forecast_gap_has_a_visible_warning_and_forecast_link():
