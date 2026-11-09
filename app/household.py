@@ -26,7 +26,7 @@ def _current_financial_week_start(db, today: date | None = None) -> date:
 
 def _read_settings(db) -> dict:
     row = db.execute(
-        "SELECT starting_cash_cents, financial_week_start, updated_at "
+        "SELECT starting_cash_cents, financial_week_start, paycheck_group_window_days, updated_at "
         "FROM household_settings WHERE id = 1"
     ).fetchone()
     if row is None:
