@@ -372,3 +372,33 @@ def test_last_pay_period_is_complete_even_when_it_ends_after_three_month_start_h
     assert final_period["start_date"] == "2027-02-05"
     assert final_period["end_date"] == "2027-02-11"
     assert [bill["due_date"] for bill in final_period["bills"]] == ["2027-02-10"]
+
+def test_early_recorded_paycheck_for_next_period_is_not_pulled_back_into_final_period():
+    client = _client()
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        income_id = db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Weekly pay', 50000, 'weekly', '2026-11-13', 1)""",
+            (person_id,),
+        ).lastrowid
+        db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, linked_obligation_type,
+                linked_obligation_id, description, amount_cents)
+               VALUES ('2027-02-10', 'paychecks', 'income', 'income', ?,
+                       'Early paycheck', 50000)""",
+            (income_id,),
+        )
+
+    report = client.get(
+        "/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"}
+    ).json()
+    final_period = report["periods"][-1]
+    assert final_period["start_date"] == "2027-02-05"
+    assert final_period["end_date"] == "2027-02-11"
+    assert all(item["date"] != "2027-02-10" for item in final_period["transactions"])
+    assert all(item["date"] != "2027-02-12" for item in final_period["income_items"])
