@@ -291,28 +291,21 @@ The API-only simulation findings did not establish a browser-rendering regressio
 
 ## Current implementation progress — pay-period forecast
 
-- [x] Phase 1 foundation: schema v22 setting `paycheck_group_window_days` (default 2), validated household settings API, Settings page, deterministic grouping helper, and fixed-anchor/boundary tests. Implemented on `feature/pay-period-calendar-foundation`; CI and review pending.
-- [ ] Phase 2: connect generated paycheck groups to a rolling three-month pay-period calendar and recurring bill assignment.
-- [ ] Phase 3: forward cash projection and backward carry-over target calculation.
-- [ ] Phase 4: savings and debt chronology.
-- [ ] Phase 5: internal ledger posting, transaction safeguards, and reconciliation.
-- [ ] Phase 6: dashboard, printable report, and Pi compatibility verification.
+PR #54 on `feature/pay-period-calendar-foundation` contains the completed integrated pay-period forecast implementation. These checkboxes describe the current PR branch; they do not imply that the changes have been merged to `main`.
 
-## Superseding pay-period redesign status (2026-11-09)
+- [x] Phase 1: fixed-anchor paycheck grouping and configurable 0–14 day window (default 2), validated settings API, Settings page, and boundary tests.
+- [x] Phase 2: rolling three-month pay-period calendar connected to saved paycheck schedules and recurring bill assignment.
+- [x] Phase 3: current confirmed-cash snapshot reconciliation, integer-cent forward projection, and backward carry-over/soft-target calculations.
+- [x] Phase 4: deadline and ongoing savings planning, actual contribution reconciliation, and chronological debt interest/payment projection.
+- [x] Phase 5: idempotent editable internal ledger posting, transaction safeguards, and cash/debt reconciliation.
+- [x] Phase 6: pay-period dashboard summary, printable report, regression coverage, and documentation alignment.
+- [ ] Verify Raspberry Pi deployment compatibility, resource use, existing-database migrations, and the updater path.
+- [ ] Complete owner-side review of the forecast and printable report before merge/deployment.
 
-PR #54 now contains an integrated rolling three-month pay-period forecast API and printable report, alongside the fixed-anchor grouping foundation, current/future period boundary helpers, a pure integer-cent pay-period projection/backward carry-over module, a configurable soft target, debt interest/planned-payment fields, deadline/ongoing savings planning, and chronological debt projection. Regression tests cover the owner-provided calculation example and calendar boundaries. These are implementation components only; the live app still uses the legacy weekly forecast until the three-month schedule integration, savings/debt chronology, ledger safeguards, and new reporting UI are completed. The pay-period specification remains authoritative.
+The review feedback on PR #54 was checked against the latest branch:
+- The $150 max-spendable boundary case now has a dedicated live API regression and is expected to require confirmation while identifying the affected bill/date.
+- The orphaned `app/buffer.py` helper is deleted on the current branch.
+- The legacy `/api/plan/preview` schema rejects non-empty retired `buffers` with HTTP 422; a regression test covers this compatibility guard.
+- The authoritative `docs/PAY_PERIOD_FORECAST_SPEC.md` implementation-status section now agrees with its completed checklists.
 
-
-- [x] Due paychecks and bills can be idempotently posted to the internal transaction ledger when the live forecast is opened; entries are linked and editable/deletable, and no external payment is initiated.
-- [x] Manual expense creation now compares the proposed transaction against dated bill funding and asks for explicit confirmation with exact bill names, due dates, and new shortfall amounts.
-- [x] The printable report includes bill-level underfunding warnings in addition to negative-cash and target/carry-over warnings.
-- [x] Ongoing savings goals now expose a fixed per-pay-period contribution setting; dated goals remain dynamically recalculated by remaining pay periods.
-
-
-- [x] Actual savings contributions are recorded as linked internal-ledger expenses, update saved goal balances, satisfy the current pay period, and reverse correctly when the transaction is edited or deleted.
-- [x] Future-dated linked debt payments remain unapplied to the saved debt balance until their transaction date; the live forecast projects them chronologically and applies them once when due.
-- [x] Multi-month recurring bill schedules support every two, three, four, and six months, plus quarterly and yearly schedules.
-- [x] Negative opening cash is preserved so overdrafts are surfaced instead of silently clamped to zero.
-
-
-- [x] Recurring bills support per-occurrence amount overrides, one-occurrence cancellation, and restore-to-recurring-amount controls without changing the underlying schedule.
+Historical weekly/buffer phases above remain for project history only. The pay-period specification is authoritative. PR #54 remains a draft pending the two verification items above; do not merge or deploy without explicit owner approval.
