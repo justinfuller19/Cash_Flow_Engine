@@ -164,6 +164,14 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
         return next((period for period in periods
                      if period["period_start"] <= day <= period["period_end"]), None)
 
+    # Every paycheck in a close-payday group belongs to the period beginning
+    # on that group's last payday, even when the first payday precedes it.
+    paycheck_period_by_date = {
+        payday: period
+        for period in periods
+        for payday in period.get("paycheck_dates", ())
+    }
+
     future_transactions = [dict(row) for row in db.execute(
         """SELECT id, transaction_date, transaction_type, linked_obligation_type,
                   linked_obligation_id, category, description, amount_cents
@@ -189,7 +197,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
     for payday, items in income_by_date.items():
         if payday <= today:
             continue
-        period = owning_period(payday)
+        period = paycheck_period_by_date.get(payday)
         if period is None:
             continue
         for item in items:
@@ -203,7 +211,17 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
     # counted once; matching a scheduled paycheck suppresses its estimate above.
     for transaction in future_transactions:
         day = _as_date(transaction["transaction_date"])
-        period = owning_period(day) if day else None
+        matched_payday_period = None
+        if transaction.get("linked_obligation_type") == "income" and transaction.get("linked_obligation_id"):
+            match = next((
+                item for item in income_occurrences
+                if item["income_source_id"] == transaction["linked_obligation_id"]
+                and item["date"] > today
+                and abs((item["date"] - day).days) <= 2
+            ), None) if day else None
+            if match:
+                matched_payday_period = paycheck_period_by_date.get(match["date"])
+        period = matched_payday_period or (owning_period(day) if day else None)
         if period is None:
             continue
         amount = abs(int(transaction["amount_cents"]))
@@ -246,7 +264,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
                 "category": bill["category"],
                 "due_date": due_date.isoformat(),
                 "amount_cents": _money(bill["amount_cents"]),
-                "autopay": False,
+                "autopay": bool(bill.get("autopay")),
             }
             period["bill_items"].append(item)
 
@@ -337,10 +355,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
         )
         future_tx_expense = sum(
             item["amount_cents"] for item in period["transaction_items"] if item["type"] == "expense"
-            and not any(
-                tx["id"] == item["transaction_id"] and tx.get("linked_obligation_type") == "debt"
-                for tx in future_transactions
-            )
+
         )
         projection_input.append({
             "start_date": period["start_date"],
