@@ -125,3 +125,64 @@ def test_ongoing_savings_uses_fixed_per_period_amount_and_subtracts_actual():
     assert [p["planned_contribution_cents"] for p in result["periods"]] == [
         3000, 5000
     ]
+
+def test_debt_interest_is_added_before_payment_and_balance_stops_at_zero():
+    from app.pay_period_forecast import project_debt_schedule
+
+    result = project_debt_schedule(
+        [{
+            "id": 1, "name": "Card", "balance_cents": 100000,
+            "minimum_payment_cents": 10000, "planned_payment_cents": 15000,
+            "apr_percent": 12.0, "interest_date": "2026-11-15",
+            "next_due_date": "2026-11-20",
+        }],
+        [
+            {"start_date": "2026-11-01", "end_date": "2026-11-30"},
+            {"start_date": "2026-12-01", "end_date": "2026-12-31"},
+        ],
+        as_of_date="2026-11-10",
+    )
+    assert [p["estimated_interest_cents"] for p in result["periods"]] == [1000, 860]
+    assert [p["debt_payments_cents"] for p in result["periods"]] == [15000, 15000]
+    assert result["debts"][0]["projected_balance_cents"] == 71860
+    assert [event["type"] for event in result["events"]] == [
+        "interest", "payment", "interest", "payment"
+    ]
+
+
+def test_debt_payment_is_capped_at_remaining_balance_and_future_payments_stop():
+    from app.pay_period_forecast import project_debt_schedule
+
+    result = project_debt_schedule(
+        [{
+            "id": 2, "name": "Small balance", "balance_cents": 5000,
+            "minimum_payment_cents": 10000, "planned_payment_cents": 12000,
+            "apr_percent": 0, "interest_date": None,
+            "next_due_date": "2026-11-20",
+        }],
+        [
+            {"start_date": "2026-11-01", "end_date": "2026-11-30"},
+            {"start_date": "2026-12-01", "end_date": "2026-12-31"},
+        ],
+        as_of_date="2026-11-10",
+    )
+    assert result["periods"][0]["debt_payments_cents"] == 5000
+    assert result["periods"][1]["debt_payments_cents"] == 0
+    assert result["debts"][0]["projected_balance_cents"] == 0
+
+
+def test_debt_interest_recurrence_handles_year_boundary():
+    from app.pay_period_forecast import project_debt_schedule
+
+    result = project_debt_schedule(
+        [{
+            "id": 3, "name": "Loan", "balance_cents": 100000,
+            "minimum_payment_cents": 0, "planned_payment_cents": 0,
+            "apr_percent": 12.0, "interest_date": "2026-12-15",
+            "next_due_date": "2027-01-20",
+        }],
+        [{"start_date": "2027-01-01", "end_date": "2027-01-31"}],
+        as_of_date="2026-12-20",
+    )
+    assert result["periods"][0]["estimated_interest_cents"] == 1000
+    assert result["periods"][0]["debt_payments_cents"] == 0
