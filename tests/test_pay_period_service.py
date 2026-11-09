@@ -343,3 +343,32 @@ def test_one_off_bill_amount_override_and_cancellation_do_not_change_recurring_s
     bill = next(item for p in report["periods"] for item in p["bills"] if item["due_date"] == "2026-11-15")
     assert bill["amount_cents"] == 8000
     assert bill["is_overridden"] is False
+
+def test_last_pay_period_is_complete_even_when_it_ends_after_three_month_start_horizon():
+    client = _client()
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Weekly pay', 50000, 'weekly', '2026-11-13', 1)""",
+            (person_id,),
+        )
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('One-time insurance', 18000, 10, '2027-02-10', 0,
+                       'insurance', 'irregular', 0, 1)"""
+        )
+
+    response = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["horizon_end"] == "2027-02-11"
+    final_period = report["periods"][-1]
+    assert final_period["start_date"] == "2027-02-05"
+    assert final_period["end_date"] == "2027-02-11"
+    assert [bill["due_date"] for bill in final_period["bills"]] == ["2027-02-10"]
