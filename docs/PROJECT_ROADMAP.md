@@ -256,6 +256,9 @@ The independent 91-day simulation identified reconciliation edge cases addressed
 
 - [x] Fixed-anchor paycheck grouping and configurable grouping window foundation.
 - [x] Pure integer-cent forward period projection and backward required-carry-over calculation added on PR #54.
+- [x] Current/future pay-period calendar boundary helper and bill due-date period assignment helper added.
+- [x] Household soft end-of-period target setting added (default $0); migration v23 adds the target and optional debt interest date.
+- [x] Debt management API and form now persist the next interest date separately from the next payment due date.
 - [x] Regression coverage added for the owner-provided four-period example, soft-target semantics, carry-forward balances, validation, and transaction reservation impact.
 - [ ] Connect recurring paycheck and bill schedules to the rolling three-month pay-period calendar.
 - [ ] Add deadline/ongoing savings and chronological debt/interest projections.
