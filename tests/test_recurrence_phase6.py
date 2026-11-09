@@ -52,3 +52,46 @@ def test_invalid_window_and_frequency_are_rejected():
         occurrences_between(date(2026, 1, 1), "weekly", date(2026, 2, 1), date(2026, 1, 1))
     with pytest.raises(ValueError):
         next_occurrence(date(2026, 1, 1), "sometimes")
+
+def test_occurrences_around_includes_paydays_before_a_future_anchor():
+    from app.forecast import occurrences_around
+
+    assert occurrences_around(
+        date(2026, 11, 13), "biweekly", date(2026, 10, 30), date(2026, 11, 27)
+    ) == [
+        date(2026, 10, 30), date(2026, 11, 13), date(2026, 11, 27)
+    ]
+
+
+def test_monthly_occurrences_around_reconstructs_prior_month_from_next_payday():
+    from app.forecast import occurrences_around
+
+    assert occurrences_around(
+        date(2026, 11, 15), "monthly", date(2026, 10, 1), date(2026, 12, 31)
+    ) == [
+        date(2026, 10, 15), date(2026, 11, 15), date(2026, 12, 15)
+    ]
+
+
+def test_semimonthly_occurrences_around_includes_first_payday_before_anchor():
+    from app.forecast import occurrences_around
+
+    assert occurrences_around(
+        date(2026, 11, 15), "semimonthly", date(2026, 11, 1), date(2026, 11, 30)
+    ) == [date(2026, 11, 1), date(2026, 11, 15)]
+
+def test_multi_month_bill_recurrences_keep_the_original_day_anchor():
+    from app.forecast import occurrences_between
+
+    anchor = date(2026, 1, 31)
+    assert occurrences_between(
+        anchor, "every_two_months", date(2026, 1, 1), date(2026, 7, 31)
+    ) == [
+        date(2026, 1, 31), date(2026, 3, 31), date(2026, 5, 31), date(2026, 7, 31)
+    ]
+    assert occurrences_between(
+        anchor, "every_four_months", date(2026, 1, 1), date(2026, 12, 31)
+    ) == [date(2026, 1, 31), date(2026, 5, 31), date(2026, 9, 30)]
+    assert occurrences_between(
+        anchor, "every_six_months", date(2026, 1, 1), date(2027, 1, 31)
+    ) == [date(2026, 1, 31), date(2026, 7, 31), date(2027, 1, 31)]

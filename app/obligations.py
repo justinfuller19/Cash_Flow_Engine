@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 
 from . import database
 from .obligation_schemas import (
-    BillCreate, BillOut, BillUpdate, DebtCreate, DebtOut, DebtUpdate,
+    BillCreate, BillOccurrenceOverride, BillOut, BillUpdate, DebtCreate, DebtOut, DebtUpdate,
 )
 
 router = APIRouter()
@@ -115,6 +115,46 @@ def update_bill(bill_id: int, body: BillUpdate):
     return _bill_out(row)
 
 
+
+@router.put("/api/bills/{bill_id}/occurrences/{due_date}")
+def set_bill_occurrence_override(bill_id: int, due_date: date, body: BillOccurrenceOverride):
+    """Override or cancel one bill occurrence without changing future recurrences."""
+    with database.connect() as db:
+        if db.execute("SELECT id FROM bills WHERE id = ?", (bill_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Bill not found")
+        status_value = "cancelled" if body.cancelled else "scheduled"
+        amount = None if body.cancelled else body.amount_cents
+        db.execute(
+            """INSERT INTO bill_occurrence_overrides
+               (bill_id, due_date, amount_cents, status)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(bill_id, due_date) DO UPDATE SET
+                   amount_cents = excluded.amount_cents,
+                   status = excluded.status,
+                   updated_at = CURRENT_TIMESTAMP""",
+            (bill_id, due_date.isoformat(), amount, status_value),
+        )
+        row = db.execute(
+            """SELECT bill_id, due_date, amount_cents, status
+               FROM bill_occurrence_overrides WHERE bill_id = ? AND due_date = ?""",
+            (bill_id, due_date.isoformat()),
+        ).fetchone()
+    return dict(row)
+
+
+@router.delete("/api/bills/{bill_id}/occurrences/{due_date}")
+def clear_bill_occurrence_override(bill_id: int, due_date: date):
+    """Remove a one-off override and restore the recurring bill's base amount."""
+    with database.connect() as db:
+        cursor = db.execute(
+            "DELETE FROM bill_occurrence_overrides WHERE bill_id = ? AND due_date = ?",
+            (bill_id, due_date.isoformat()),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Bill occurrence override not found")
+    return {"deleted": True, "bill_id": bill_id, "due_date": due_date.isoformat()}
+
+
 @router.delete("/api/bills/{bill_id}")
 def delete_bill(bill_id: int):
     with database.connect() as db:
@@ -128,8 +168,8 @@ def delete_bill(bill_id: int):
 def list_debts():
     with database.connect() as db:
         rows = db.execute(
-            """SELECT id, name, balance_cents, minimum_payment_cents, apr_percent,
-                      due_day_of_month, next_due_date, active, created_at
+            """SELECT id, name, balance_cents, minimum_payment_cents, planned_payment_cents, apr_percent,
+                      due_day_of_month, next_due_date, interest_date, active, created_at
                FROM credit_cards ORDER BY COALESCE(next_due_date, '9999-12-31'), id"""
         ).fetchall()
     return [_debt_out(row) for row in rows]
@@ -145,15 +185,16 @@ def create_debt(body: DebtCreate):
         with database.connect() as db:
             cursor = db.execute(
                 """INSERT INTO credit_cards
-                   (name, balance_cents, minimum_payment_cents, due_day_of_month,
-                    apr_percent, active, next_due_date)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (name, body.balance_cents, body.minimum_payment_cents, due_day,
-                 body.apr_percent, int(body.active), body.next_due_date.isoformat()),
+                   (name, balance_cents, minimum_payment_cents, planned_payment_cents, due_day_of_month,
+                    apr_percent, active, next_due_date, interest_date)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (name, body.balance_cents, body.minimum_payment_cents, body.planned_payment_cents, due_day,
+                 body.apr_percent, int(body.active), body.next_due_date.isoformat(),
+                 body.interest_date.isoformat() if body.interest_date else None),
             )
             row = db.execute(
-                """SELECT id, name, balance_cents, minimum_payment_cents, apr_percent,
-                          due_day_of_month, next_due_date, active, created_at
+                """SELECT id, name, balance_cents, minimum_payment_cents, planned_payment_cents, apr_percent,
+                          due_day_of_month, next_due_date, interest_date, active, created_at
                    FROM credit_cards WHERE id = ?""", (cursor.lastrowid,)
             ).fetchone()
     except sqlite3.IntegrityError as exc:
@@ -170,12 +211,14 @@ def update_debt(debt_id: int, body: DebtUpdate):
             raise HTTPException(status_code=422, detail="name cannot be blank")
     if "next_due_date" in updates:
         updates["next_due_date"] = updates["next_due_date"].isoformat()
+    if "interest_date" in updates and updates["interest_date"] is not None:
+        updates["interest_date"] = updates["interest_date"].isoformat()
     if "active" in updates:
         updates["active"] = int(updates["active"])
     if not updates:
         raise HTTPException(status_code=422, detail="no fields to update")
-    allowed = {"name", "balance_cents", "minimum_payment_cents", "apr_percent",
-               "next_due_date", "due_day_of_month", "active"}
+    allowed = {"name", "balance_cents", "minimum_payment_cents", "planned_payment_cents", "apr_percent",
+               "next_due_date", "interest_date", "due_day_of_month", "active"}
     if not set(updates) <= allowed:
         raise HTTPException(status_code=422, detail="unsupported field")
     try:
@@ -192,8 +235,8 @@ def update_debt(debt_id: int, body: DebtUpdate):
                 (debt_id,),
             )
             row = db.execute(
-                """SELECT id, name, balance_cents, minimum_payment_cents, apr_percent,
-                          due_day_of_month, next_due_date, active, created_at
+                """SELECT id, name, balance_cents, minimum_payment_cents, planned_payment_cents, apr_percent,
+                          due_day_of_month, next_due_date, interest_date, active, created_at
                    FROM credit_cards WHERE id = ?""", (debt_id,)
             ).fetchone()
     except sqlite3.IntegrityError as exc:
@@ -233,12 +276,13 @@ button:disabled{opacity:.55}.toggle{background:#475569;margin:4px 0}.status{padd
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <div class="grid">
 <section class="card"><h2>Recurring bills</h2>
+<p class="muted">Editing a bill here changes its recurring schedule for future due dates. To change or skip one due date only, use the bill controls in the pay-period forecast.</p>
 <form id="bill-form">
 <label for="bill-name">Bill name</label><input id="bill-name" name="name" maxlength="120" required placeholder="Rent, electricity, internet">
 <label for="bill-amount">Expected amount ($)</label><input id="bill-amount" name="amount" type="number" min="0" step="0.01" required>
 <label for="bill-date">Next due date</label><input id="bill-date" name="next_due_date" type="date" required>
 <label for="bill-frequency">Recurrence</label><select id="bill-frequency" name="frequency">
-<option value="weekly">Weekly</option><option value="biweekly">Every two weeks</option><option value="semimonthly">1st and 15th</option><option value="twice_monthly_last">15th and last calendar day</option><option value="first_third_friday">1st and 3rd Friday</option><option value="last_business_day">Last business day</option><option value="monthly" selected>Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option><option value="irregular">One-time / irregular</option></select>
+<option value="weekly">Weekly</option><option value="biweekly">Every two weeks</option><option value="semimonthly">1st and 15th</option><option value="twice_monthly_last">15th and last calendar day</option><option value="first_third_friday">1st and 3rd Friday</option><option value="last_business_day">Last business day</option><option value="monthly" selected>Monthly</option><option value="every_two_months">Every two months</option><option value="quarterly">Quarterly</option><option value="every_four_months">Every four months</option><option value="every_six_months">Every six months</option><option value="yearly">Yearly</option><option value="irregular">One-time / irregular</option></select>
 <label for="bill-category">Category</label><select id="bill-category" name="category">
 <option value="housing">Housing</option><option value="utilities">Utilities</option><option value="transportation">Transportation</option><option value="insurance">Insurance</option><option value="subscriptions">Subscriptions</option><option value="food">Food</option><option value="other" selected>Other</option></select>
 <label for="bill-window">Flexible window (days)</label><input id="bill-window" name="flexible_window_days" type="number" min="0" max="31" step="1" value="0" required>
@@ -250,8 +294,10 @@ button:disabled{opacity:.55}.toggle{background:#475569;margin:4px 0}.status{padd
 <label for="debt-name">Account name</label><input id="debt-name" name="name" maxlength="120" required placeholder="Credit card, auto loan">
 <label for="debt-balance">Current balance ($)</label><input id="debt-balance" name="balance" type="number" min="0" step="0.01" required>
 <label for="debt-minimum">Minimum payment ($)</label><input id="debt-minimum" name="minimum" type="number" min="0" step="0.01" required>
+<label for="debt-planned">Planned payment ($, 0 uses minimum)</label><input id="debt-planned" name="planned_payment" type="number" min="0" step="0.01" value="0" required>
 <label for="debt-apr">APR (%)</label><input id="debt-apr" name="apr_percent" type="number" min="0" max="1000" step="0.01" required>
-<label for="debt-date">Next due date</label><input id="debt-date" name="next_due_date" type="date" required>
+<label for="debt-interest-date">Next interest date</label><input id="debt-interest-date" name="interest_date" type="date">
+<label for="debt-date">Next payment due date</label><input id="debt-date" name="next_due_date" type="date" required>
 <button type="submit">Save debt</button></form>
 <ul id="debts" class="list"><li>Loading debts…</li></ul></section>
 </div></main>
@@ -266,7 +312,7 @@ function addToggle(item,endpoint,active,label){const b=el("button","toggle",acti
 function render(list,records,kind){list.replaceChildren();if(!records.length){list.appendChild(el("li","muted","No "+kind+" saved yet."));return;}
 for(const r of records){const li=el("li");li.appendChild(el("div","title",r.name+" · "+dollars(kind==="bills"?r.amount_cents:r.balance_cents)));
 const detail=kind==="bills"?r.category+" · "+r.frequency+" · due "+(r.next_due_date||"not set")+(r.autopay?" · autopay":""):
-"Minimum "+dollars(r.minimum_payment_cents)+" · "+r.apr_percent+"% APR · due "+(r.next_due_date||"not set");
+"Minimum "+dollars(r.minimum_payment_cents)+" · planned "+dollars(r.planned_payment_cents||r.minimum_payment_cents)+" · "+r.apr_percent+"% APR · interest "+(r.interest_date||"not set")+" · payment due "+(r.next_due_date||"not set");
 li.appendChild(el("div","detail",detail+(r.active?"":" · inactive")));
 const edit=el("button","toggle",kind==="bills"?"Edit bill":"Edit debt");edit.type="button";
 edit.addEventListener("click",async()=>{
@@ -275,7 +321,7 @@ if(kind==="bills"){
 const name=prompt("Bill name:",r.name);if(name===null)return;
 const amount=prompt("Amount in dollars:",(r.amount_cents/100).toFixed(2));if(amount===null)return;
 const due=prompt("Next due date YYYY-MM-DD:",r.next_due_date||"");if(due===null)return;
-const frequency=prompt("Frequency (weekly, biweekly, monthly, quarterly, yearly, irregular):",r.frequency);if(frequency===null)return;
+const frequency=prompt("Frequency (weekly, biweekly, monthly, every_two_months, quarterly, every_four_months, every_six_months, yearly, irregular):",r.frequency);if(frequency===null)return;
 const category=prompt("Category:",r.category);if(category===null)return;
 const window=prompt("Flexible window in days:",String(r.flexible_window_days));if(window===null)return;
 const autopayText=prompt("Autopay true or false:",String(r.autopay));if(autopayText===null)return;
@@ -285,9 +331,11 @@ await api("/api/bills/"+r.id,{method:"PATCH",body:JSON.stringify({name:name.trim
 const name=prompt("Debt name:",r.name);if(name===null)return;
 const balance=prompt("Current balance in dollars:",(r.balance_cents/100).toFixed(2));if(balance===null)return;
 const minimum=prompt("Minimum payment in dollars:",(r.minimum_payment_cents/100).toFixed(2));if(minimum===null)return;
+const planned=prompt("Planned payment in dollars (0 uses minimum):",((r.planned_payment_cents||0)/100).toFixed(2));if(planned===null)return;
 const apr=prompt("APR percent:",String(r.apr_percent));if(apr===null)return;
-const due=prompt("Next due date YYYY-MM-DD:",r.next_due_date||"");if(due===null)return;
-await api("/api/debts/"+r.id,{method:"PATCH",body:JSON.stringify({name:name.trim(),balance_cents:cents(balance),minimum_payment_cents:cents(minimum),apr_percent:Number(apr),next_due_date:due})});
+const due=prompt("Next payment due date YYYY-MM-DD:",r.next_due_date||"");if(due===null)return;
+const interest=prompt("Next interest date YYYY-MM-DD (leave blank if unknown):",r.interest_date||"");if(interest===null)return;
+await api("/api/debts/"+r.id,{method:"PATCH",body:JSON.stringify({name:name.trim(),balance_cents:cents(balance),minimum_payment_cents:cents(minimum),planned_payment_cents:cents(planned),apr_percent:Number(apr),next_due_date:due,interest_date:interest||null})});
 }
 await refresh();message((kind==="bills"?"Bill":"Debt")+" updated.");
 }catch(e){message(e.message,true);}
@@ -297,6 +345,6 @@ const remove=el("button","toggle","Delete "+(kind==="bills"?"bill":"debt"));remo
 async function refresh(){const [b,d]=await Promise.all([api("/api/bills"),api("/api/debts")]);render(document.getElementById("bills"),b,"bills");render(document.getElementById("debts"),d,"debts");}
 function bindForm(id,url,convert,success){const form=document.getElementById(id);form.addEventListener("submit",async(e)=>{e.preventDefault();const button=form.querySelector("button");button.disabled=true;try{await api(url,{method:"POST",body:JSON.stringify(convert(form))});form.reset();await refresh();message(success);}catch(err){message(err.message,true);}finally{button.disabled=false;}});}
 bindForm("bill-form","/api/bills",f=>({name:f.elements.name.value.trim(),amount_cents:cents(f.elements.amount.value),next_due_date:f.elements.next_due_date.value,frequency:f.elements.frequency.value,category:f.elements.category.value,flexible_window_days:Number(f.elements.flexible_window_days.value),autopay:f.elements.autopay.checked}),"Bill saved.");
-bindForm("debt-form","/api/debts",f=>({name:f.elements.name.value.trim(),balance_cents:cents(f.elements.balance.value),minimum_payment_cents:cents(f.elements.minimum.value),apr_percent:Number(f.elements.apr_percent.value),next_due_date:f.elements.next_due_date.value}),"Debt saved.");
+bindForm("debt-form","/api/debts",f=>({name:f.elements.name.value.trim(),balance_cents:cents(f.elements.balance.value),minimum_payment_cents:cents(f.elements.minimum.value),planned_payment_cents:cents(f.elements.planned_payment.value),apr_percent:Number(f.elements.apr_percent.value),next_due_date:f.elements.next_due_date.value,interest_date:f.elements.interest_date.value||null}),"Debt saved.");
 refresh().catch(e=>message("Could not load saved records: "+e.message,true));
 </script></body></html>"""

@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 24
 
 
 def base_database_path() -> Path:
@@ -106,8 +106,11 @@ def initialize_database() -> None:
                 balance_cents INTEGER NOT NULL DEFAULT 0 CHECK(balance_cents >= 0),
                 minimum_payment_cents INTEGER NOT NULL DEFAULT 0
                     CHECK(minimum_payment_cents >= 0),
+                planned_payment_cents INTEGER NOT NULL DEFAULT 0
+                    CHECK(planned_payment_cents >= 0),
                 due_day_of_month INTEGER CHECK(due_day_of_month BETWEEN 1 AND 31),
                 apr_percent REAL NOT NULL DEFAULT 0 CHECK(apr_percent >= 0),
+                interest_date TEXT,
                 active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -128,6 +131,7 @@ def initialize_database() -> None:
                 current_balance_cents INTEGER NOT NULL DEFAULT 0
                     CHECK(current_balance_cents >= 0),
                 target_date TEXT,
+                last_contribution_date TEXT,
                 priority INTEGER NOT NULL DEFAULT 100,
                 active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -159,6 +163,7 @@ def initialize_database() -> None:
                 amount_cents INTEGER NOT NULL,
                 account_name TEXT,
                 notes TEXT,
+                debt_balance_applied INTEGER NOT NULL DEFAULT 0 CHECK(debt_balance_applied IN (0, 1)),
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -198,6 +203,10 @@ def initialize_database() -> None:
                     CHECK(starting_cash_cents >= 0),
                 financial_week_start TEXT NOT NULL DEFAULT 'Friday'
                     CHECK(financial_week_start IN ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')),
+                paycheck_group_window_days INTEGER NOT NULL DEFAULT 2
+                    CHECK(paycheck_group_window_days BETWEEN 0 AND 14),
+                end_of_period_target_cents INTEGER NOT NULL DEFAULT 0
+                    CHECK(end_of_period_target_cents >= 0),
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -671,3 +680,81 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
             "ON bill_payment_match_suggestions(status, transaction_id)"
         )
 
+
+
+    if version < 22:
+        # Version 22 adds the household-configurable paycheck grouping window.
+        # Existing households receive the agreed two-day default.
+        settings_columns = {row["name"] for row in db.execute("PRAGMA table_info(household_settings)")}
+        if "paycheck_group_window_days" not in settings_columns:
+            db.execute(
+                "ALTER TABLE household_settings ADD COLUMN paycheck_group_window_days "
+                "INTEGER NOT NULL DEFAULT 2 CHECK(paycheck_group_window_days BETWEEN 0 AND 14)"
+            )
+
+    if version < 23:
+        # Version 23 adds the soft end-of-period target and the next scheduled
+        # interest date for each debt. Both are configuration only; no balances
+        # or historical transactions are changed.
+        settings_columns = {row["name"] for row in db.execute("PRAGMA table_info(household_settings)")}
+        if "end_of_period_target_cents" not in settings_columns:
+            db.execute(
+                "ALTER TABLE household_settings ADD COLUMN end_of_period_target_cents "
+                "INTEGER NOT NULL DEFAULT 0 CHECK(end_of_period_target_cents >= 0)"
+            )
+        debt_columns = {row["name"] for row in db.execute("PRAGMA table_info(credit_cards)")}
+        if "interest_date" not in debt_columns:
+            db.execute("ALTER TABLE credit_cards ADD COLUMN interest_date TEXT")
+
+    if version < 24:
+        # Version 24 adds an optional user-selected planned payment amount.
+        # Zero means use the saved minimum payment amount.
+        debt_columns = {row["name"] for row in db.execute("PRAGMA table_info(credit_cards)")}
+        if "planned_payment_cents" not in debt_columns:
+            db.execute(
+                "ALTER TABLE credit_cards ADD COLUMN planned_payment_cents "
+                "INTEGER NOT NULL DEFAULT 0 CHECK(planned_payment_cents >= 0)"
+            )
+
+    if version < 25:
+        # Version 25 records the last actual savings contribution so the
+        # current pay period is not planned a second time after a contribution.
+        savings_columns = {row["name"] for row in db.execute("PRAGMA table_info(savings_goals)")}
+        if "last_contribution_date" not in savings_columns:
+            db.execute("ALTER TABLE savings_goals ADD COLUMN last_contribution_date TEXT")
+
+    if version < 26:
+        # Version 26 tracks whether a linked debt payment has been applied to
+        # the saved balance. Existing linked debt expenses already changed
+        # balances under the prior ledger behavior, so mark them as applied.
+        transaction_columns = {row["name"] for row in db.execute("PRAGMA table_info(transactions)")}
+        if "debt_balance_applied" not in transaction_columns:
+            db.execute(
+                "ALTER TABLE transactions ADD COLUMN debt_balance_applied "
+                "INTEGER NOT NULL DEFAULT 0 CHECK(debt_balance_applied IN (0, 1))"
+            )
+        db.execute(
+            """UPDATE transactions SET debt_balance_applied = 1
+               WHERE linked_obligation_type = 'debt' AND transaction_type = 'expense'"""
+        )
+
+    if version < 27:
+        # Version 27 supports a one-off bill amount override or cancellation
+        # without changing the recurring bill schedule.
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS bill_occurrence_overrides (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bill_id INTEGER NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+                due_date TEXT NOT NULL,
+                amount_cents INTEGER CHECK(amount_cents IS NULL OR amount_cents >= 0),
+                status TEXT NOT NULL DEFAULT 'scheduled'
+                    CHECK(status IN ('scheduled', 'cancelled')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(bill_id, due_date)
+            )"""
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_bill_occurrence_overrides_due "
+            "ON bill_occurrence_overrides(bill_id, due_date)"
+        )

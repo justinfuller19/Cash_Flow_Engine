@@ -20,7 +20,8 @@ def test_database_initializes_expected_tables(tmp_path, monkeypatch):
 
     assert {"persons", "income_sources", "bills", "credit_cards",
             "savings_accounts", "savings_goals", "transactions", "categories",
-            "payday_plans", "plan_items", "email_notification_log"} <= names
+            "payday_plans", "plan_items", "email_notification_log",
+            "bill_occurrence_overrides"} <= names
 
 
 def test_person_and_income_source_endpoints_persist(tmp_path, monkeypatch):
@@ -382,3 +383,18 @@ def test_schema_v8_adds_scheduled_item_links(tmp_path, monkeypatch):
             "SELECT 1 FROM sqlite_master WHERE type = 'index' "
             "AND name = 'idx_transactions_linked_obligation'"
         ).fetchone() is not None
+
+def test_latest_pay_period_migrations_include_new_financial_fields(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "latest-schema.db"))
+    database.initialize_database()
+    with database.connect() as db:
+        version = db.execute("PRAGMA user_version").fetchone()[0]
+        transaction_columns = {row["name"] for row in db.execute("PRAGMA table_info(transactions)")}
+        savings_columns = {row["name"] for row in db.execute("PRAGMA table_info(savings_goals)")}
+        debt_columns = {row["name"] for row in db.execute("PRAGMA table_info(credit_cards)")}
+        settings_columns = {row["name"] for row in db.execute("PRAGMA table_info(household_settings)")}
+    assert version == database.SCHEMA_VERSION
+    assert "debt_balance_applied" in transaction_columns
+    assert "last_contribution_date" in savings_columns
+    assert {"planned_payment_cents", "interest_date"} <= debt_columns
+    assert {"paycheck_group_window_days", "end_of_period_target_cents"} <= settings_columns

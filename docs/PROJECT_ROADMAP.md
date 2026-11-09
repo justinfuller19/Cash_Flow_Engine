@@ -4,11 +4,14 @@ This document is the long-term implementation outline for CashFlow Engine. It de
 
 ## Product goal
 
-Build a reliable, self-hosted household cash-flow manager for Raspberry Pi OS. It should continuously forecast household income, bills, required debt payments, savings goals, and one shared weekly spending buffer. The app should report how much money is safely available without causing any projected week in the forecast to fall below that buffer. The household—not the app—decides how much of that safe surplus goes to extra debt payments, buffer additions, savings goals, or remains unallocated. Friday is the default start of the configurable seven-day financial week.
+Build a reliable, self-hosted household cash-flow manager for Raspberry Pi OS. The current product direction is a rolling three-month forecast organized into household pay periods. Paychecks within a configurable calendar-day window (default 2) are grouped against the first payday in each group; each period starts on the group's last payday. Bills, savings, and planned debt payments are reserved once. The user-set end-of-period cash target is a soft goal, not a protected buffer or reservation, and may be spent. See docs/PAY_PERIOD_FORECAST_SPEC.md for the authoritative financial rules.
 
-The app is a planning tool. It must not claim that money was transferred or a bill was paid unless a user explicitly records that action. Do not add automatic money movement as part of the early milestones.
+The app is a planning and internal ledger tool. It must never initiate external money movement. The current specification permits internal auto-posting of scheduled income and bills, but these entries must be editable and undoable and must not imply that a bank transaction occurred.
 
 ## Current foundation
+
+**Current direction:** The former weekly mandatory-buffer model is historical. New forecast work must follow docs/PAY_PERIOD_FORECAST_SPEC.md; do not use legacy buffer fields as an active reservation.
+
 
 - [x] Pure Python allocation engine using integer cents.
 - [x] FastAPI application and health endpoint.
@@ -237,3 +240,21 @@ The independent 91-day simulation identified reconciliation edge cases addressed
 - [x] Calculate dated cash checkpoints and test outflows before same-day inflows to expose shortfalls hidden by weekly net totals.
 - [x] Keep savings goals, arrears, and actual contribution reconciliation separate from the former buffer.
 - [x] Full test suite passed: 181 tests on Python 3.11, 3.12, and 3.13.
+
+
+## New milestone — Pay-period forecast (owner-approved, 2026-11-08)
+
+The owner-approved redesign is implemented in PR #54 on `feature/pay-period-calendar-foundation`. The earlier weekly/buffer milestones and the initial unchecked status below are historical; the integrated pay-period forecast is now the active implementation on this PR branch, not yet merged to `main`.
+
+- [x] Define configurable fixed-anchor paycheck grouping (default 2 calendar days) and period boundaries.
+- [x] Generate the rolling three-month pay-period calendar from saved income schedules.
+- [x] Apply current-period confirmed-cash snapshot rules and avoid re-counting received income or paid bills.
+- [x] Implement integer-cent forward cash projection and backward carry-over requirements with a soft end-of-period target.
+- [x] Integrate recurring bills, paycheck and bill overrides, savings deadlines and ongoing contributions, and chronological debt interest/payments.
+- [x] Integrate editable/idempotent internal ledger posting, transaction confirmation safeguards, and reconciliation.
+- [x] Replace the active dashboard forecast summary with pay-period metrics and provide the printable three-month report at `/pay-periods`; retain `/weekly` as a clearly labeled legacy report.
+- [x] Add regression coverage for paycheck grouping, bill assignment, cash reconciliation, savings and debt behavior, transaction safeguards, and the owner-provided $150 purchase scenario.
+- [ ] Verify Raspberry Pi deployment compatibility, resource use, existing-database migrations, and the updater path.
+- [ ] Complete owner-side review of the forecast and printable report before merge/deployment.
+
+PR #54 remains a draft. Its branch contains the integrated implementation and regression tests; the remaining unchecked items are deployment and owner verification, not missing forecast features. Do not merge or deploy without explicit owner approval.

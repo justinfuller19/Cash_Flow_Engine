@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from . import database
 from .household import CASH_SNAPSHOT_STALE_DAYS
 from .forecast import occurrences_between
+from .pay_period_service import build_pay_period_forecast, post_due_scheduled_transactions
 
 router = APIRouter()
 
@@ -146,6 +147,157 @@ def _daily_cash_forecast(report: dict) -> list[dict]:
         balance = ending
         cursor += timedelta(days=1)
     return daily
+
+
+
+@router.get("/pay-periods", response_class=HTMLResponse)
+def pay_period_report_page():
+    """Printable three-month report for the rolling pay-period forecast."""
+    return """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Three-Month Pay-Period Forecast · CashFlow Engine</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#17212b;background:#f3f6fa}*{box-sizing:border-box}
+body{margin:0;padding:24px 14px 48px}main{max-width:1180px;margin:auto}
+header{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+h1{font-size:1.65rem;letter-spacing:-.035em;margin:0;color:#155e75}h2{font-size:1.12rem;margin:0 0 12px}
+p{line-height:1.5}.muted{color:#64748b}.actions{display:flex;gap:8px;flex-wrap:wrap}
+button,.button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:#fff;font:inherit;font-weight:650;cursor:pointer;text-decoration:none}
+button.secondary{background:#e2e8f0;color:#17212b}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;margin:18px 0}
+.metric,.panel,.period{background:#fff;border:1px solid #e2e8f0;border-radius:13px;padding:16px;box-shadow:0 4px 18px #172b4d08}
+.metric span{display:block;color:#64748b;font-size:.88rem}.metric strong{display:block;font-size:1.35rem;color:#155e75;margin-top:4px}
+#status{padding:12px;border-radius:9px;background:#e0f2fe;color:#075985;margin:12px 0}#status.error{background:#fee2e2;color:#991b1b}
+#warnings{margin:12px 0;padding:0;list-style:none}#warnings li{padding:10px 12px;margin:6px 0;border-left:4px solid #d97706;background:#fff7ed;border-radius:6px}
+.periods{display:grid;gap:14px}.period{break-inside:avoid;page-break-inside:avoid}
+.period-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.period-title{font-weight:750;font-size:1.05rem}.tag{font-size:.8rem;font-weight:700;padding:4px 8px;border-radius:99px;background:#e2e8f0}
+.tag.good{background:#dcfce7;color:#166534}.tag.warn{background:#fef3c7;color:#92400e}.tag.bad{background:#fee2e2;color:#991b1b}
+.period-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:12px 0}
+.period-grid div{padding:9px;background:#f8fafc;border-radius:8px}.period-grid span{display:block;font-size:.78rem;color:#64748b}.period-grid strong{font-size:.98rem}
+.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:.88rem}th,td{text-align:right;padding:9px 8px;border-top:1px solid #e2e8f0;white-space:nowrap}th:first-child,td:first-child{text-align:left}thead th{color:#64748b;font-weight:650;border-top:0}
+details{margin-top:10px}summary{cursor:pointer;font-weight:650;color:#0e7490}ul.detail-list{padding-left:20px;margin:8px 0}ul.detail-list li{margin:4px 0}
+.footer-note{margin-top:18px;font-size:.86rem;color:#64748b}
+.occurrence-actions{display:inline-flex;gap:5px;flex-wrap:wrap;margin-left:8px}
+.occurrence-actions button{font-size:.75rem;padding:4px 7px;border-radius:6px}
+.occurrence-actions .cancel{background:#9a3412}.occurrence-actions .reset{background:#475569}
+@media(max-width:560px){body{padding:16px 10px 32px}h1{font-size:1.35rem}.metric,.panel,.period{padding:13px}}
+@media print{
+ @page{margin:12mm}body{padding:0;background:#fff;color:#111;font-size:10pt}
+ header .actions,#status,.occurrence-actions{display:none!important}.metric,.panel,.period{box-shadow:none;border:1px solid #cbd5e1}
+ .period{break-inside:avoid;page-break-inside:avoid;margin-bottom:8mm}.metrics{grid-template-columns:repeat(5,1fr);gap:5px}
+ .metric{padding:8px}.metric strong{font-size:12pt}.period-grid{grid-template-columns:repeat(4,1fr)}
+ details:not([open])>*:not(summary){display:block!important}summary{display:none}
+}
+</style></head><body><main>
+<header><div><h1>Three-Month Pay-Period Forecast</h1><p class="muted" id="generated">Preparing report…</p></div>
+<div class="actions"><button class="secondary" id="refresh" type="button">Refresh forecast</button><button id="print" type="button">Print / Save PDF</button></div></header>
+<p class="muted">Use the bill controls in each period to change or skip one due date only. To change the recurring amount for all future occurrences, edit the bill in <a href="/bills">Bills</a>.</p>
+<div id="status" role="status" aria-live="polite">Loading saved household schedules and transactions…</div>
+<section class="metrics" id="metrics"></section>
+<ul id="warnings"></ul>
+<section class="panel"><h2>Pay-period detail</h2><div class="table-wrap"><table><thead><tr>
+<th>Period</th><th>Income</th><th>Bills</th><th>Savings</th><th>Debt</th><th>Other expenses</th><th>Projected end</th><th>Carry above target</th><th>Status</th>
+</tr></thead><tbody id="summary-rows"></tbody></table></div>
+<p class="footer-note">The end-of-period target is a goal, not reserved money. Reserved cash includes scheduled bills, savings contributions, and planned debt payments. Forecast interest changes projected debt balances only; it is not recorded as a transaction.</p></section>
+<section class="periods" id="periods"></section>
+</main>
+<script>
+(function(){
+ const $=id=>document.getElementById(id);
+ const dollars=cents=>new Intl.NumberFormat(undefined,{style:"currency",currency:"USD"}).format((Number(cents)||0)/100);
+ const escapeHtml=value=>String(value??"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+ const dateLabel=value=>{if(!value)return "—";const [y,m,d]=value.split("-").map(Number);return new Date(y,m-1,d).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});};
+ function statusFor(p){if(p.projected_ending_cash_cents<0)return ["Negative cash","bad"];if(p.target_shortfall_cents>0)return ["Carry-over needed","warn"];if(p.below_target_cents>0)return ["Below target","warn"];return ["On track","good"];}
+ function list(items,render){return items&&items.length?"<ul class='detail-list'>"+items.map(render).join("")+"</ul>":"<p class='muted'>None scheduled.</p>";}
+ function render(report){
+  $("generated").textContent="Generated "+dateLabel(report.generated_on)+" · Forecast through "+dateLabel(report.horizon_end)+" · Current cash after recorded activity";
+  const metrics=[
+   ["Current cash",report.current_cash_cents],
+   ["Reserved cash",report.reserved_cash_cents],
+   ["Maximum spendable",report.max_spendable_cents],
+   ["Spendable while keeping target",report.spendable_while_keeping_target_cents],
+   ["End-of-period target",report.end_of_period_target_cents]
+  ];
+  $("metrics").innerHTML=metrics.map(([label,value])=>"<div class='metric'><span>"+escapeHtml(label)+"</span><strong>"+dollars(value)+"</strong></div>").join("");
+  $("warnings").innerHTML=(report.warnings||[]).map(w=>"<li>"+escapeHtml(w.type==="bill_underfunded"?"Bill "+w.name+" due "+dateLabel(w.start_date)+" is underfunded by "+dollars(w.shortfall_cents):w.type==="negative_cash"?"Projected negative cash in the period starting "+dateLabel(w.start_date):"The required carry-over is short by "+dollars(w.shortfall_cents)+" in the period starting "+dateLabel(w.start_date))+"</li>").join("");
+  $("summary-rows").innerHTML=(report.periods||[]).map(p=>{
+   const [label]=statusFor(p);
+   return "<tr><td>"+dateLabel(p.start_date)+" – "+dateLabel(p.end_date)+(p.is_current_period?" · Current":"")+"</td><td>"+dollars(p.income_cents)+"</td><td>"+dollars(p.bills_cents)+"</td><td>"+dollars(p.savings_cents)+"</td><td>"+dollars(p.debt_payments_cents)+"</td><td>"+dollars(p.other_expenses_cents)+"</td><td>"+dollars(p.projected_ending_cash_cents)+"</td><td>"+dollars(p.carry_out_above_target_cents)+"</td><td>"+escapeHtml(label)+"</td></tr>";
+  }).join("");
+  $("periods").innerHTML=(report.periods||[]).map(p=>{
+   const [label,kind]=statusFor(p);
+   const paydays=(p.paycheck_dates||[]).map(dateLabel).join(", ")||"No paycheck dates";
+   const bills=list(p.bills,x=>{
+    const label=x.cancelled?" · cancelled":(x.is_overridden?" · one-off override":"");
+    const reset=x.is_overridden?"<button type='button' class='reset bill-override-reset' data-bill-id='"+x.bill_id+"' data-due-date='"+x.due_date+"'>Restore</button>":"";
+    const controls=x.cancelled?reset:"<button type='button' class='bill-override-edit' data-bill-id='"+x.bill_id+"' data-due-date='"+x.due_date+"' data-amount='"+x.amount_cents+"'>Edit this date</button><button type='button' class='cancel bill-override-cancel' data-bill-id='"+x.bill_id+"' data-due-date='"+x.due_date+"'>Skip this date</button>"+reset;
+    return "<li>"+escapeHtml(x.name)+" · "+dateLabel(x.due_date)+" · "+dollars(x.amount_cents)+escapeHtml(label)+(x.autopay?" · scheduled autopay":"")+" <span class='occurrence-actions'>"+controls+"</span></li>";
+   });
+   const savings=list(p.savings,x=>"<li>"+escapeHtml(x.name)+" · "+dollars(x.amount_cents)+"</li>");
+   const debt=list(p.debt_events,x=>"<li>"+escapeHtml(x.debt_name)+" · "+dateLabel(x.date)+" · "+escapeHtml(x.type)+(x.actual?" (recorded)":" (forecast)")+" · "+dollars(x.amount_cents)+"</li>");
+   const income=list(p.income_items,x=>"<li>"+escapeHtml(x.name)+" · "+dateLabel(x.date)+" · "+dollars(x.amount_cents)+"</li>");
+   const transactions=list(p.transactions,x=>"<li>"+dateLabel(x.date)+" · "+escapeHtml(x.description)+" · "+dollars(x.amount_cents)+" · "+escapeHtml(x.type)+"</li>");
+   return "<article class='period'><div class='period-head'><div><div class='period-title'>"+dateLabel(p.start_date)+" – "+dateLabel(p.end_date)+(p.is_current_period?" · Current period":"")+"</div><div class='muted'>Paydays: "+escapeHtml(paydays)+"</div></div><span class='tag "+kind+"'>"+escapeHtml(label)+"</span></div>"+
+    "<div class='period-grid'><div><span>Cash carried in</span><strong>"+dollars(p.starting_cash_cents)+"</strong></div><div><span>Income</span><strong>"+dollars(p.income_cents)+"</strong></div><div><span>Bills</span><strong>"+dollars(p.bills_cents)+"</strong></div><div><span>Savings</span><strong>"+dollars(p.savings_cents)+"</strong></div><div><span>Debt payments</span><strong>"+dollars(p.debt_payments_cents)+"</strong></div><div><span>Other expenses</span><strong>"+dollars(p.other_expenses_cents)+"</strong></div><div><span>Projected ending cash</span><strong>"+dollars(p.projected_ending_cash_cents)+"</strong></div><div><span>Carry above target</span><strong>"+dollars(p.carry_out_above_target_cents)+"</strong></div></div>"+
+    "<details><summary>Scheduled income</summary>"+income+"</details><details><summary>Bills</summary>"+bills+"</details><details><summary>Savings contributions</summary>"+savings+"</details><details><summary>Debt interest and payments</summary>"+debt+"</details><details><summary>Recorded future transactions</summary>"+transactions+"</details></article>";
+  }).join("");
+  document.querySelectorAll(".bill-override-edit").forEach(button=>button.addEventListener("click",async()=>{
+   const amount=prompt("New amount in dollars for "+button.dataset.dueDate+" only:",(Number(button.dataset.amount)/100).toFixed(2));
+   if(amount===null)return;
+   const parsed=Number(amount);
+   if(!Number.isFinite(parsed)||parsed<0){alert("Enter a valid non-negative amount.");return;}
+   try{
+    const response=await fetch("/api/bills/"+button.dataset.billId+"/occurrences/"+button.dataset.dueDate,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({amount_cents:Math.round(parsed*100),cancelled:false})});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||"Could not update bill occurrence.");await load();
+   }catch(error){alert(error.message);}
+  }));
+  document.querySelectorAll(".bill-override-cancel").forEach(button=>button.addEventListener("click",async()=>{
+   if(!confirm("Skip this bill occurrence on "+button.dataset.dueDate+"? The recurring schedule will remain unchanged."))return;
+   try{
+    const response=await fetch("/api/bills/"+button.dataset.billId+"/occurrences/"+button.dataset.dueDate,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({cancelled:true})});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||"Could not cancel bill occurrence.");await load();
+   }catch(error){alert(error.message);}
+  }));
+  document.querySelectorAll(".bill-override-reset").forEach(button=>button.addEventListener("click",async()=>{
+   if(!confirm("Restore the recurring amount for "+button.dataset.dueDate+"?"))return;
+   try{
+    const response=await fetch("/api/bills/"+button.dataset.billId+"/occurrences/"+button.dataset.dueDate,{method:"DELETE"});
+    const data=await response.json();if(!response.ok)throw new Error(data.detail||"Could not restore bill occurrence.");await load();
+   }catch(error){alert(error.message);}
+  }));
+  const posted=report.auto_posted;
+  const postedNote=posted&&(posted.posted_paychecks||posted.posted_bills)?" Automatically recorded "+posted.posted_paychecks+" paycheck(s) and "+posted.posted_bills+" bill payment(s) in the internal ledger.":"";
+  $("status").textContent=(report.target_maintainable?"Forecast loaded. The end-of-period target is maintainable across the forecast.":"Forecast loaded. Review the carry-over and cash warnings below.")+postedNote;
+  $("status").classList.toggle("error",!report.target_maintainable);
+ }
+ async function load(){
+  $("status").textContent="Loading saved household schedules and transactions…";
+  $("status").classList.remove("error");
+  try{const response=await fetch("/api/cash-flow/pay-periods");const data=await response.json();if(!response.ok)throw new Error(data.detail||"Forecast request failed");render(data);}
+  catch(error){$("status").textContent="Forecast unavailable: "+error.message;$("status").classList.add("error");}
+ }
+ $("refresh").addEventListener("click",load);
+ $("print").addEventListener("click",()=>window.print());
+ load();
+})();
+</script></body></html>"""
+
+
+@router.get("/api/cash-flow/pay-periods")
+def pay_period_cash_flow(as_of_date: date | None = Query(default=None)):
+    """Build the rolling three-calendar-month forecast from saved household records."""
+    try:
+        with database.connect() as db:
+            auto_posted = None
+            if as_of_date is None:
+                auto_posted = post_due_scheduled_transactions(db)
+            report = build_pay_period_forecast(db, as_of_date)
+            if auto_posted is not None:
+                report["auto_posted"] = auto_posted
+            return report
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/api/cash-flow/weekly")

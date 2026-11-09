@@ -25,7 +25,7 @@ table{width:100%;border-collapse:separate;border-spacing:0;overflow:hidden;borde
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
 </style>"""
 
-GLOBAL_NAV = """<nav class="cfe-global-nav" aria-label="Main navigation"><a href="/">Home</a><a href="/checklist">Checklist</a><a href="/transactions">Activity</a><details class="cfe-more"><summary>More</summary><div class="cfe-more-menu"><a href="/weekly">Weekly report &amp; allocate</a><a href="/setup">Household &amp; income</a><a href="/bills">Bills &amp; debt</a><a href="/savings">Savings goals</a><a href="/settings-data">Settings &amp; data</a><a href="/account">Account settings</a><a href="/logout">Log out</a></div></details></nav>"""
+GLOBAL_NAV = """<nav class="cfe-global-nav" aria-label="Main navigation"><a href="/">Home</a><a href="/checklist">Checklist</a><a href="/transactions">Activity</a><details class="cfe-more"><summary>More</summary><div class="cfe-more-menu"><a href="/pay-periods">Three-month pay-period forecast</a><a href="/weekly">Legacy weekly report &amp; allocate</a><a href="/setup">Household &amp; income</a><a href="/bills">Bills &amp; debt</a><a href="/savings">Savings goals</a><a href="/pay-period-settings">Pay period settings</a><a href="/settings-data">Settings &amp; data</a><a href="/account">Account settings</a><a href="/logout">Log out</a></div></details></nav>"""
 
 INTERACTION_SCRIPT = """<script id="cfe-ui-interactions">
 (function(){
@@ -35,51 +35,47 @@ INTERACTION_SCRIPT = """<script id="cfe-ui-interactions">
  const home=!!document.getElementById('dashboard-cash-snapshot-form');
  if(!home)return;
  const intro=document.querySelector('main>p.muted');
- if(intro){intro.classList.add('cfe-home-intro');intro.textContent='Your household money at a glance. Start with what is safe to spend, then take care of anything that needs attention.';}
+ if(intro){intro.classList.add('cfe-home-intro');intro.textContent='Your household money at a glance. Start with current cash, reserved obligations, and what is spendable across the next three months.';}
  const nav=document.querySelector('nav[aria-label="Main navigation"]');
  if(nav&&!nav.classList.contains('cfe-global-nav')){
   const replacement=document.createElement('nav');replacement.className='cfe-global-nav';replacement.setAttribute('aria-label','Main navigation');
-  replacement.innerHTML='<a href="/">Home</a><a href="/checklist">Checklist</a><a href="/transactions">Activity</a><details class="cfe-more"><summary>More</summary><div class="cfe-more-menu"><a href="/weekly">Weekly report &amp; allocate</a><a href="/setup">Household &amp; income</a><a href="/bills">Bills &amp; debt</a><a href="/savings">Savings goals</a><a href="/settings-data">Settings &amp; data</a><a href="/account">Account settings</a><a href="/logout">Log out</a></div></details>';
+  replacement.innerHTML='<a href="/">Home</a><a href="/checklist">Checklist</a><a href="/transactions">Activity</a><details class="cfe-more"><summary>More</summary><div class="cfe-more-menu"><a href="/pay-periods">Three-month pay-period forecast</a><a href="/weekly">Legacy weekly report &amp; allocate</a><a href="/setup">Household &amp; income</a><a href="/bills">Bills &amp; debt</a><a href="/savings">Savings goals</a><a href="/pay-period-settings">Pay period settings</a><a href="/settings-data">Settings &amp; data</a><a href="/account">Account settings</a><a href="/logout">Log out</a></div></details>';
   nav.replaceWith(replacement);markCurrent();
  }
  const metrics=document.getElementById('metrics');let arranging=false;
  function arrangeMetrics(){
   if(!metrics||arranging)return;arranging=true;const observer=window.__cfeMetricsObserver;if(observer)observer.disconnect();
-  const old=document.getElementById('cfe-at-a-glance');if(old)old.remove();const cards=Array.from(metrics.querySelectorAll('.metric'));
+  const cards=Array.from(metrics.querySelectorAll('.metric'));
   if(cards.length){
-   const safe=cards.find(c=>(c.querySelector('span')?.textContent||'').toLowerCase().includes('safe to spend'));
-   const attention=cards.find(c=>(c.querySelector('span')?.textContent||'').toLowerCase().includes('actions needing attention'));
-   if(safe){safe.classList.add('cfe-safe-hero');const label=safe.querySelector('span');if(label)label.textContent='Safe to spend this week';metrics.prepend(safe);}
-   if(attention){attention.classList.add('cfe-attention-metric');const label=attention.querySelector('span');if(label)label.textContent='Checklist actions left';if(safe)safe.after(attention);else metrics.prepend(attention);}
-   const secondary=Array.from(metrics.querySelectorAll('.metric')).filter(c=>c!==safe&&c!==attention);
-   if(secondary.length){const details=document.createElement('details');details.id='cfe-at-a-glance';const summary=document.createElement('summary');summary.textContent='At a glance · household and monthly totals';details.appendChild(summary);const grid=document.createElement('div');grid.className='metrics';
-    secondary.forEach(card=>{const label=card.querySelector('span');if(label){if(label.textContent.trim()==='Projected cash shortfall'){card.classList.add('cfe-forecast-gap-metric');}}grid.appendChild(card);});
-    details.appendChild(grid);metrics.after(details);
-   }
+   const maximum=cards.find(c=>(c.querySelector('span')?.textContent||'').toLowerCase().includes('maximum spendable'));
+   const warnings=cards.find(c=>(c.querySelector('span')?.textContent||'').toLowerCase().includes('pay-period warnings'));
+   if(maximum){maximum.classList.add('cfe-safe-hero');metrics.prepend(maximum);}
+   if(warnings){warnings.classList.add('cfe-attention-metric','cfe-pay-period-warning-metric');if(maximum)maximum.after(warnings);else metrics.prepend(warnings);}
+   // Keep current cash, reserved cash, maximum spendable, and target-preserving
+   // spendable visible together at the top of the dashboard.
   }
   syncForecastWarning();
   if(observer)observer.observe(metrics,{childList:true,subtree:true});arranging=false;
  }
  function syncForecastWarning(){
-  const gap=metrics&&metrics.querySelector('.cfe-forecast-gap-metric');
+  const gap=metrics&&metrics.querySelector('.cfe-pay-period-warning-metric');
   const value=gap&&gap.querySelector('strong');
-  const raw=value?(value.textContent||'').replace(/[^0-9.()-]/g,'').trim():'';
-  const numeric=raw.includes('(')&&raw.includes(')')?-Math.abs(parseFloat(raw.replace(/[()]/g,''))):parseFloat(raw);
+  const numeric=value?parseInt(value.textContent||'0',10):0;
   let warning=document.getElementById('cfe-forecast-warning');
   if(!Number.isFinite(numeric)||numeric<=0){if(warning)warning.remove();return;}
-  if(!warning){warning=document.createElement('section');warning.id='cfe-forecast-warning';warning.className='cfe-forecast-warning';warning.setAttribute('role','status');const content=document.createElement('div');const heading=document.createElement('strong');heading.textContent='Future cash-flow gap detected';const message=document.createElement('span');message.className='cfe-forecast-warning-amount';content.append(heading,message);const link=document.createElement('a');link.href='/weekly';link.textContent='Review forecast →';warning.append(content,link);const intro=document.querySelector('.cfe-home-intro');if(intro)intro.after(warning);else metrics.before(warning);}
-  const amount=warning.querySelector('.cfe-forecast-warning-amount');if(amount)amount.textContent='The forecast shows '+(value.textContent||'a cash shortfall')+' projected before later income arrives.';
+  if(!warning){warning=document.createElement('section');warning.id='cfe-forecast-warning';warning.className='cfe-forecast-warning';warning.setAttribute('role','status');const content=document.createElement('div');const heading=document.createElement('strong');heading.textContent='Pay-period warnings need review';const message=document.createElement('span');message.className='cfe-forecast-warning-amount';content.append(heading,message);const link=document.createElement('a');link.href='/pay-periods';link.textContent='Review pay-period forecast →';warning.append(content,link);const intro=document.querySelector('.cfe-home-intro');if(intro)intro.after(warning);else metrics.before(warning);}
+  const amount=warning.querySelector('.cfe-forecast-warning-amount');if(amount)amount.textContent='The next three months contain '+numeric+' cash, bill-funding, or target warning(s).';
  }
  if(metrics){const observer=new MutationObserver(()=>arrangeMetrics());window.__cfeMetricsObserver=observer;observer.observe(metrics,{childList:true,subtree:true});if(metrics.children.length)arrangeMetrics();}
  const actions=document.createElement('div');actions.id='cfe-home-actions';actions.setAttribute('aria-label','Quick actions');
- actions.innerHTML='<a class="cfe-action-card" href="/checklist"><span class="cfe-action-icon" aria-hidden="true">✓</span><span><strong>This week’s checklist</strong><small>Review bills and money tasks</small></span></a><a class="cfe-action-card" href="/transactions"><span class="cfe-action-icon" aria-hidden="true">＋</span><span><strong>Record money in or out</strong><small>Add or review a transaction</small></span></a><a class="cfe-action-card" href="/weekly"><span class="cfe-action-icon" aria-hidden="true">↗</span><span><strong>Review the forecast</strong><small>See future cash needs and choices</small></span></a>';
+ actions.innerHTML='<a class="cfe-action-card" href="/checklist"><span class="cfe-action-icon" aria-hidden="true">✓</span><span><strong>This week’s checklist</strong><small>Review bills and money tasks</small></span></a><a class="cfe-action-card" href="/transactions"><span class="cfe-action-icon" aria-hidden="true">＋</span><span><strong>Record money in or out</strong><small>Add or review a transaction</small></span></a><a class="cfe-action-card" href="/pay-periods"><span class="cfe-action-icon" aria-hidden="true">↗</span><span><strong>Review pay-period forecast</strong><small>See the next three months of cash needs</small></span></a>';
  const status=document.getElementById('status');if(status)status.after(actions);
  const cashStatus=document.getElementById('dashboard-cash-snapshot-status');
  function updateCashStatus(){if(cashStatus){const t=(cashStatus.textContent||'').toLowerCase();cashStatus.classList.toggle('cfe-needs-attention',t.includes('out of date')||t.includes('no cash snapshot'));}}
  if(cashStatus){new MutationObserver(updateCashStatus).observe(cashStatus,{childList:true,characterData:true,subtree:true});updateCashStatus();}
- const weekly=document.getElementById('weekly-summary');
- function addExplanation(){if(!weekly||weekly.querySelector('.cfe-explanation'))return;const details=document.createElement('details');details.className='cfe-explanation';const summary=document.createElement('summary');summary.textContent='How is safe-to-spend calculated?';details.appendChild(summary);const p=document.createElement('p');p.textContent='This amount comes from CashFlow Engine’s existing forecast. It considers the confirmed cash snapshot, recorded transactions, expected income, upcoming obligations, planned savings and allocations, and daily cash checkpoints across future weeks. Same-day outflows are tested before inflows because exact bank posting times are unknown. There is no mandatory household cash floor. This explanation does not change the calculation.';details.appendChild(p);weekly.appendChild(details);}
- if(weekly){new MutationObserver(addExplanation).observe(weekly,{childList:true});addExplanation();}
+ const payPeriod=document.getElementById('pay-period-summary');
+ function addExplanation(){if(!payPeriod||payPeriod.querySelector('.cfe-explanation'))return;const details=document.createElement('details');details.className='cfe-explanation';const summary=document.createElement('summary');summary.textContent='How is maximum spendable calculated?';details.appendChild(summary);const p=document.createElement('p');p.textContent='Maximum spendable is the lowest projected ending cash across the rolling three-month pay-period forecast, clamped at zero. Spendable while keeping your target subtracts your soft end-of-period target; the target itself is not reserved. The forecast reserves scheduled bills, savings contributions, and planned debt payments, groups close paychecks into the period starting on the group’s last payday, and checks bill funding by due date. Forecast amounts are estimates, not a bank balance guarantee.';details.appendChild(p);payPeriod.appendChild(details);}
+ if(payPeriod){new MutationObserver(addExplanation).observe(payPeriod,{childList:true});addExplanation();}
 })();
 </script>"""
 

@@ -5,14 +5,14 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 
-BillFrequency = Literal["weekly", "biweekly", "semimonthly", "twice_monthly_last", "first_third_friday", "last_business_day", "monthly", "quarterly", "yearly", "irregular"]
+BillFrequency = Literal["weekly", "biweekly", "semimonthly", "twice_monthly_last", "first_third_friday", "last_business_day", "monthly", "quarterly", "every_two_months", "every_four_months", "every_six_months", "yearly", "irregular"]
 
 
 class PatchModel(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def reject_explicit_nulls(cls, value: Any) -> Any:
-        if isinstance(value, dict) and any(item is None for item in value.values()):
+        if isinstance(value, dict) and any(item is None for key, item in value.items() if key != "interest_date"):
             raise ValueError("PATCH fields cannot be null")
         return value
 
@@ -55,12 +55,27 @@ class BillOut(BaseModel):
     created_at: str
 
 
+
+
+class BillOccurrenceOverride(BaseModel):
+    amount_cents: int | None = Field(default=None, ge=0)
+    cancelled: bool = False
+
+    @model_validator(mode="after")
+    def validate_occurrence_override(self):
+        if not self.cancelled and self.amount_cents is None:
+            raise ValueError("Set an amount or mark the occurrence cancelled")
+        return self
+
+
 class DebtCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     balance_cents: int = Field(ge=0)
     minimum_payment_cents: int = Field(ge=0)
+    planned_payment_cents: int = Field(default=0, ge=0)
     apr_percent: float = Field(ge=0, le=1000)
     next_due_date: date
+    interest_date: date | None = None
     due_day_of_month: int | None = Field(default=None, ge=1, le=31)
     active: bool = True
 
@@ -69,8 +84,10 @@ class DebtUpdate(PatchModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     balance_cents: int | None = Field(default=None, ge=0)
     minimum_payment_cents: int | None = Field(default=None, ge=0)
+    planned_payment_cents: int | None = Field(default=None, ge=0)
     apr_percent: float | None = Field(default=None, ge=0, le=1000)
     next_due_date: date | None = None
+    interest_date: date | None = None
     due_day_of_month: int | None = Field(default=None, ge=1, le=31)
     active: bool | None = None
 
@@ -80,8 +97,10 @@ class DebtOut(BaseModel):
     name: str
     balance_cents: int
     minimum_payment_cents: int
+    planned_payment_cents: int = 0
     apr_percent: float
     due_day_of_month: int | None
     next_due_date: date | None
+    interest_date: date | None = None
     active: bool
     created_at: str

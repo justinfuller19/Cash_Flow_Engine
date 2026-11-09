@@ -23,6 +23,7 @@ def test_create_list_edit_and_deactivate_savings_goal(tmp_path, monkeypatch):
             "current_balance_cents": 125000,
             "target_date": "2027-12-31",
             "priority": 1,
+            "contribution_per_period_cents": 7500,
         },
     )
     assert response.status_code == 201, response.text
@@ -31,16 +32,19 @@ def test_create_list_edit_and_deactivate_savings_goal(tmp_path, monkeypatch):
     assert goal["current_balance_cents"] == 125000
     assert goal["target_date"] == "2027-12-31"
     assert goal["active"] is True
+    assert goal["contribution_per_period_cents"] == 7500
     assert client.get("/api/savings-goals").json()[0]["id"] == goal["id"]
 
     response = client.patch(
         f"/api/savings-goals/{goal['id']}",
-        json={"target_amount_cents": 1500000, "current_balance_cents": 200000, "priority": 2},
+        json={"target_amount_cents": 1500000, "current_balance_cents": 200000, "priority": 2,
+              "contribution_per_period_cents": 9000},
     )
     assert response.status_code == 200
     assert response.json()["target_amount_cents"] == 1500000
     assert response.json()["current_balance_cents"] == 200000
     assert response.json()["priority"] == 2
+    assert response.json()["contribution_per_period_cents"] == 9000
 
     response = client.patch(f"/api/savings-goals/{goal['id']}", json={"target_date": None})
     assert response.status_code == 200
@@ -92,6 +96,7 @@ def test_undated_general_savings_uses_weekly_amount_and_carries_missed_weeks(tmp
         "name": "General savings",
         "current_balance_cents": 0,
         "weekly_target_cents": 2500,
+        "contribution_per_period_cents": 2500,
         "priority": 1,
     })
     assert created.status_code == 201, created.text
@@ -99,7 +104,7 @@ def test_undated_general_savings_uses_weekly_amount_and_carries_missed_weeks(tmp
     assert goal["target_amount_cents"] == 0
     assert goal["target_date"] is None
     assert goal["weekly_target_cents"] == 2500
-    assert "contribution_per_period_cents" not in goal
+    assert goal["contribution_per_period_cents"] == 2500
 
     first = client.get("/api/cash-flow/weekly", params={"forecast_weeks": 1})
     assert first.status_code == 200, first.text
@@ -123,12 +128,12 @@ def test_undated_general_savings_uses_weekly_amount_and_carries_missed_weeks(tmp
     assert next_plan["planned_this_week_cents"] == 5000
 
 
-def test_savings_page_uses_weekly_not_per_payday_language(tmp_path, monkeypatch):
+def test_savings_page_uses_pay_period_contribution_language(tmp_path, monkeypatch):
     client = client_for(tmp_path, monkeypatch)
     response = client.get("/savings")
     assert response.status_code == 200
-    assert "Weekly savings amount" in response.text
-    assert "Legacy per-payday amount" not in response.text
+    assert "Ongoing contribution per pay period" in response.text
+    assert "Weekly savings amount" not in response.text
     assert "per payday" not in response.text
 
 
@@ -151,3 +156,77 @@ def test_schema_migration_converts_legacy_undated_amount_to_weekly_target(tmp_pa
         ).fetchone()
     assert row["weekly_target_cents"] == 7500
     assert row["contribution_per_period_cents"] == 0
+
+def test_recorded_savings_contribution_updates_goal_and_is_reversed_when_transaction_deleted(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    created = client.post(
+        "/api/savings-goals",
+        json={
+            "name": "Emergency fund",
+            "target_amount_cents": 100000,
+            "current_balance_cents": 20000,
+            "target_date": None,
+            "priority": 1,
+            "contribution_per_period_cents": 5000,
+        },
+    )
+    assert created.status_code == 201, created.text
+    goal_id = created.json()["id"]
+
+    contribution = client.post(
+        f"/api/savings-goals/{goal_id}/contributions",
+        json={"amount_cents": 2500},
+    )
+    assert contribution.status_code == 201, contribution.text
+    assert contribution.json()["goal"]["current_balance_cents"] == 22500
+    assert contribution.json()["goal"]["last_contribution_date"] == date.today().isoformat()
+
+    transaction_id = contribution.json()["transaction_id"]
+    transactions = client.get("/api/transactions").json()
+    assert any(item["id"] == transaction_id for item in transactions)
+
+    deleted = client.delete(f"/api/transactions/{transaction_id}")
+    assert deleted.status_code == 200, deleted.text
+    goals = client.get("/api/savings-goals").json()
+    goal = next(item for item in goals if item["id"] == goal_id)
+    assert goal["current_balance_cents"] == 20000
+    assert goal["last_contribution_date"] is None
+
+def test_savings_contribution_requires_confirmation_if_it_would_underfund_a_bill(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    due = today + timedelta(days=1)
+    with database.connect() as db:
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES (?, 10000)""",
+            (today.isoformat(),),
+        )
+        goal_id = db.execute(
+            """INSERT INTO savings_goals
+               (name, target_amount_cents, current_balance_cents, target_date,
+                contribution_per_period_cents, active)
+               VALUES ('Emergency fund', 0, 0, NULL, 5000, 1)"""
+        ).lastrowid
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Electric', 9000, ?, ?, 0, 'utilities', 'irregular', 0, 1)""",
+            (due.day, due.isoformat()),
+        )
+
+    path = f"/api/savings-goals/{goal_id}/contributions"
+    blocked = client.post(path, json={"amount_cents": 5000})
+    assert blocked.status_code == 409
+    detail = blocked.json()["detail"]
+    assert detail["underfunded_bills"] == [{
+        "name": "Electric", "due_date": due.isoformat(), "unfunded_cents": 4000
+    }]
+
+    confirmed = client.post(
+        path,
+        json={"amount_cents": 5000, "confirm_reserved_bill_impact": True},
+    )
+    assert confirmed.status_code == 201, confirmed.text
+    assert confirmed.json()["goal"]["current_balance_cents"] == 5000

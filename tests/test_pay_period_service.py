@@ -1,0 +1,510 @@
+"""Integration tests for the saved-record rolling pay-period forecast."""
+from datetime import date, timedelta
+
+from fastapi.testclient import TestClient
+
+from app import database
+from app.main import app
+
+
+def _client():
+    database.initialize_database()
+    return TestClient(app)
+
+
+def test_pay_period_api_uses_snapshot_and_projects_saved_records_once():
+    client = _client()
+    as_of = date(2026, 11, 8)
+    with database.connect() as db:
+        db.execute(
+            """UPDATE household_settings
+               SET starting_cash_cents = 100000, end_of_period_target_cents = 20000,
+                   paycheck_group_window_days = 2 WHERE id = 1"""
+        )
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES ('2026-10-30', 100000)"""
+        )
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Paycheck', 50000, 'biweekly', '2026-11-13', 1)""",
+            (person_id,),
+        )
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Rent', 30000, 10, '2026-11-10', 0, 'housing', 'monthly', 0, 1)"""
+        )
+        db.execute(
+            """INSERT INTO savings_goals
+               (name, target_amount_cents, current_balance_cents, target_date,
+                contribution_per_period_cents, active)
+               VALUES ('General savings', 0, 0, NULL, 5000, 1)"""
+        )
+        db.execute(
+            """INSERT INTO credit_cards
+               (name, balance_cents, minimum_payment_cents, planned_payment_cents,
+                due_day_of_month, apr_percent, next_due_date, interest_date, active)
+               VALUES ('Card', 100000, 5000, 7000, 20, 12.0,
+                       '2026-11-20', '2026-11-15', 1)"""
+        )
+        db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, description, amount_cents)
+               VALUES ('2026-11-04', 'groceries', 'expense', 'Groceries', -5000)"""
+        )
+
+    response = client.get(
+        "/api/cash-flow/pay-periods", params={"as_of_date": as_of.isoformat()}
+    )
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["generated_on"] == "2026-11-08"
+    assert report["current_cash_cents"] == 95000
+    assert report["end_of_period_target_cents"] == 20000
+
+    current = next(p for p in report["periods"] if p["is_current_period"])
+    assert current["start_date"] == "2026-10-30"
+    assert current["end_date"] == "2026-11-12"
+    assert current["income_cents"] == 0
+    assert current["bills_cents"] == 30000
+    assert current["savings_cents"] == 5000
+    assert current["debt_payments_cents"] == 0
+    assert current["projected_ending_cash_cents"] == 60000
+
+    following = next(p for p in report["periods"] if p["start_date"] == "2026-11-13")
+    assert following["income_cents"] == 50000
+    assert following["bills_cents"] == 0
+    assert following["savings_cents"] == 5000
+    assert following["debt_payments_cents"] == 7000
+    assert following["estimated_interest_cents"] == 1000
+    assert following["projected_ending_cash_cents"] == 98000
+    assert report["projected_debts"][0]["projected_balance_cents"] == 82637
+
+
+def test_paychecks_within_group_window_both_belong_to_group_last_payday_period():
+    client = _client()
+    with database.connect() as db:
+        db.execute("UPDATE household_settings SET paycheck_group_window_days = 2 WHERE id = 1")
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES ('2026-11-01', 50000)"""
+        )
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        for name, payday in (("Friday pay", "2026-11-13"), ("Sunday pay", "2026-11-15")):
+            db.execute(
+                """INSERT INTO income_sources
+                   (person_id, name, net_amount_cents, frequency, next_payday, active)
+                   VALUES (?, ?, 10000, 'weekly', ?, 1)""",
+                (person_id, name, payday),
+            )
+
+    response = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    grouped = next(p for p in report["periods"] if p["start_date"] == "2026-11-15")
+    assert grouped["paycheck_dates"] == ["2026-11-13", "2026-11-15"]
+    assert grouped["income_cents"] == 20000
+    assert {item["name"] for item in grouped["income_items"]} == {"Friday pay", "Sunday pay"}
+
+
+def test_future_recorded_bill_payment_replaces_scheduled_bill_without_double_counting():
+    client = _client()
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Paycheck', 100000, 'weekly', '2026-11-13', 1)""",
+            (person_id,),
+        )
+        bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Electric', 12000, 10, '2026-12-10', 2,
+                       'utilities', 'monthly', 0, 1)"""
+        ).lastrowid
+        db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, linked_obligation_type,
+                linked_obligation_id, description, amount_cents)
+               VALUES ('2026-12-09', 'utilities', 'expense', 'bill', ?,
+                       'Electric paid early', -12000)""",
+            (bill_id,),
+        )
+
+    response = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    period = next(p for p in report["periods"] if p["start_date"] <= "2026-12-09" <= p["end_date"])
+    assert not any(item["bill_id"] == bill_id and item["due_date"] == "2026-12-10" for item in period["bills"])
+    assert period["other_expenses_cents"] >= 12000
+
+
+def test_pay_period_report_page_is_printable_and_exposes_report_fields():
+    client = _client()
+    response = client.get("/pay-periods")
+    assert response.status_code == 200
+    assert "Three-Month Pay-Period Forecast" in response.text
+    assert "Print / Save PDF" in response.text
+    assert "/api/cash-flow/pay-periods" in response.text
+    assert "Carry above target" in response.text
+    assert "break-inside:avoid" in response.text
+    assert "bill-override-edit" in response.text
+    assert "bill-override-cancel" in response.text
+    assert "bill-override-reset" in response.text
+
+def test_due_paychecks_and_bills_are_posted_to_internal_ledger_once():
+    from app.pay_period_service import post_due_scheduled_transactions
+
+    client = _client()
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Paycheck', 50000, 'weekly', '2026-11-06', 1)""",
+            (person_id,),
+        )
+        bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Electric', 12000, 8, '2026-11-08', 0,
+                       'utilities', 'monthly', 0, 1)"""
+        ).lastrowid
+        db.execute(
+            """INSERT INTO bill_occurrence_overrides
+               (bill_id, due_date, amount_cents, status)
+               VALUES (?, '2026-11-08', 15000, 'scheduled')""",
+            (bill_id,),
+        )
+        cancelled_bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Water', 9000, 8, '2026-11-08', 0,
+                       'utilities', 'monthly', 0, 1)"""
+        ).lastrowid
+        db.execute(
+            """INSERT INTO bill_occurrence_overrides
+               (bill_id, due_date, amount_cents, status)
+               VALUES (?, '2026-11-08', NULL, 'cancelled')""",
+            (cancelled_bill_id,),
+        )
+        first = post_due_scheduled_transactions(db, date(2026, 11, 8))
+        second = post_due_scheduled_transactions(db, date(2026, 11, 8))
+        rows = db.execute(
+            """SELECT transaction_type, linked_obligation_type, description,
+                      amount_cents, notes
+               FROM transactions ORDER BY id"""
+        ).fetchall()
+
+    assert first["posted_paychecks"] == 1
+    assert first["posted_bills"] == 1
+    assert second["posted_paychecks"] == 0
+    assert second["posted_bills"] == 0
+    assert len(rows) == 2
+    assert {row["amount_cents"] for row in rows} == {50000, -15000}
+    assert all("Automatically posted to the internal ledger" in row["notes"] for row in rows)
+    assert client.get("/health").status_code == 200
+
+def test_early_linked_bill_payment_releases_reservation_without_double_subtracting():
+    client = _client()
+    with database.connect() as db:
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES ('2026-11-01', 100000)"""
+        )
+        bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Water', 12000, 15, '2026-11-15', 0,
+                       'utilities', 'monthly', 0, 1)"""
+        ).lastrowid
+        db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, linked_obligation_type,
+                linked_obligation_id, description, amount_cents)
+               VALUES ('2026-11-10', 'utilities', 'expense', 'bill', ?,
+                       'Water paid early', -12000)""",
+            (bill_id,),
+        )
+
+    response = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-12"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["current_cash_cents"] == 88000
+    assert not any(
+        item["bill_id"] == bill_id and item["due_date"] == "2026-11-15"
+        for period in report["periods"] for item in period["bills"]
+    )
+
+def test_unlinked_recorded_paycheck_replaces_estimate_and_keeps_group_period_assignment():
+    client = _client()
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        for name, payday in (("Friday pay", "2026-11-13"), ("Sunday pay", "2026-11-15")):
+            db.execute(
+                """INSERT INTO income_sources
+                   (person_id, name, net_amount_cents, frequency, next_payday, active)
+                   VALUES (?, ?, 10000, 'weekly', ?, 1)""",
+                (person_id, name, payday),
+            )
+        db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, description, amount_cents)
+               VALUES ('2026-11-13', 'paychecks', 'income', 'Friday paycheck received', 10000)"""
+        )
+
+    response = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    grouped = next(p for p in report["periods"] if p["start_date"] == "2026-11-15")
+    assert grouped["income_cents"] == 20000
+    assert [item["name"] for item in grouped["income_items"]] == ["Sunday pay"]
+    assert [item["description"] for item in grouped["transactions"]] == ["Friday paycheck received"]
+
+def test_actual_savings_contribution_satisfies_current_period_only():
+    client = _client()
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Paycheck', 50000, 'weekly', '2026-11-13', 1)""",
+            (person_id,),
+        )
+        db.execute(
+            """INSERT INTO savings_goals
+               (name, target_amount_cents, current_balance_cents, target_date,
+                contribution_per_period_cents, last_contribution_date, active)
+               VALUES ('General savings', 0, 2500, NULL, 5000, '2026-11-08', 1)"""
+        )
+
+    response = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    current = next(p for p in report["periods"] if p["is_current_period"])
+    following = next(p for p in report["periods"] if p["start_date"] == "2026-11-13")
+    assert current["savings_cents"] == 0
+    assert following["savings_cents"] == 5000
+
+def test_one_off_bill_amount_override_and_cancellation_do_not_change_recurring_schedule():
+    client = _client()
+    with database.connect() as db:
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES ('2026-11-01', 100000)"""
+        )
+        bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Water', 8000, 15, '2026-11-15', 0,
+                       'utilities', 'monthly', 0, 1)"""
+        ).lastrowid
+
+    path = f"/api/bills/{bill_id}/occurrences/2026-11-15"
+    updated = client.put(path, json={"amount_cents": 12000})
+    assert updated.status_code == 200, updated.text
+    report = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"}).json()
+    bill = next(item for p in report["periods"] for item in p["bills"] if item["due_date"] == "2026-11-15")
+    assert bill["amount_cents"] == 12000
+    assert bill["is_overridden"] is True
+
+    cancelled = client.put(path, json={"cancelled": True})
+    assert cancelled.status_code == 200, cancelled.text
+    report = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"}).json()
+    bill = next(item for p in report["periods"] for item in p["bills"] if item["due_date"] == "2026-11-15")
+    assert bill["amount_cents"] == 0
+    assert bill["cancelled"] is True
+
+    restored = client.delete(path)
+    assert restored.status_code == 200, restored.text
+    report = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"}).json()
+    bill = next(item for p in report["periods"] for item in p["bills"] if item["due_date"] == "2026-11-15")
+    assert bill["amount_cents"] == 8000
+    assert bill["is_overridden"] is False
+
+def test_last_pay_period_is_complete_even_when_it_ends_after_three_month_start_horizon():
+    client = _client()
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Weekly pay', 50000, 'weekly', '2026-11-13', 1)""",
+            (person_id,),
+        )
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('One-time insurance', 18000, 10, '2027-02-10', 0,
+                       'insurance', 'irregular', 0, 1)"""
+        )
+
+    response = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert report["horizon_end"] == "2027-02-11"
+    final_period = report["periods"][-1]
+    assert final_period["start_date"] == "2027-02-05"
+    assert final_period["end_date"] == "2027-02-11"
+    assert [bill["due_date"] for bill in final_period["bills"]] == ["2027-02-10"]
+
+def test_early_recorded_paycheck_for_next_period_is_not_pulled_back_into_final_period():
+    client = _client()
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        income_id = db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, active)
+               VALUES (?, 'Weekly pay', 50000, 'weekly', '2026-11-13', 1)""",
+            (person_id,),
+        ).lastrowid
+        db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, linked_obligation_type,
+                linked_obligation_id, description, amount_cents)
+               VALUES ('2027-02-10', 'paychecks', 'income', 'income', ?,
+                       'Early paycheck', 50000)""",
+            (income_id,),
+        )
+
+    report = client.get(
+        "/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"}
+    ).json()
+    final_period = report["periods"][-1]
+    assert final_period["start_date"] == "2027-02-05"
+    assert final_period["end_date"] == "2027-02-11"
+    assert all(item["date"] != "2027-02-10" for item in final_period["transactions"])
+    assert all(item["date"] != "2027-02-12" for item in final_period["income_items"])
+
+
+def test_legacy_preview_rejects_retired_buffer_reservations():
+    client = _client()
+    response = client.post("/api/plan/preview", json={
+        "plan_date": "2026-11-09",
+        "period_start": "2026-11-09",
+        "period_end": "2026-11-15",
+        "starting_cash_cents": 100000,
+        "buffers": [{"name": "Legacy buffer", "amount_cents": 20000}],
+    })
+    assert response.status_code == 422
+    assert "Buffer reservations are retired" in response.text
+
+
+def test_owner_150_dollar_purchase_requires_confirmation_and_reports_p3_bill_shortfall():
+    client = _client()
+    today = date.today()
+    first_future_payday = today + timedelta(days=4)
+    second_future_payday = today + timedelta(days=11)
+    third_future_payday = today + timedelta(days=18)
+    with database.connect() as db:
+        db.execute(
+            """UPDATE household_settings
+               SET starting_cash_cents = 120000, end_of_period_target_cents = 20000,
+                   paycheck_group_window_days = 2 WHERE id = 1"""
+        )
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES (?, 120000)""",
+            (today.isoformat(),),
+        )
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        db.execute(
+            """INSERT INTO income_sources
+               (person_id, name, net_amount_cents, frequency, next_payday, end_date, active)
+               VALUES (?, 'Weekly pay', 100000, 'weekly', ?, ?, 1)""",
+            (person_id, first_future_payday.isoformat(), third_future_payday.isoformat()),
+        )
+        for name, due_date, amount in (
+            ("First period bills", today + timedelta(days=1), 30000),
+            ("Second period bills", first_future_payday + timedelta(days=1), 40000),
+            ("Other", second_future_payday + timedelta(days=1), 225000),
+            ("Fourth period bills", third_future_payday + timedelta(days=1), 30000),
+        ):
+            db.execute(
+                """INSERT INTO bills
+                   (name, amount_cents, due_day_of_month, next_due_date,
+                    flexible_window_days, category, frequency, autopay, active)
+                   VALUES (?, ?, ?, ?, 0, 'other', 'irregular', 0, 1)""",
+                (name, amount, due_date.day, due_date.isoformat()),
+            )
+        db.execute(
+            """INSERT INTO savings_goals
+               (name, target_amount_cents, current_balance_cents, target_date,
+                contribution_per_period_cents, active)
+               VALUES ('General savings', 0, 0, NULL, 5000, 1)"""
+        )
+
+    forecast = client.get(
+        "/api/cash-flow/pay-periods", params={"as_of_date": today.isoformat()}
+    )
+    assert forecast.status_code == 200, forecast.text
+    assert [p["projected_ending_cash_cents"] for p in forecast.json()["periods"]] == [
+        85000, 140000, 10000, 75000
+    ]
+    payload = {
+        "transaction_date": today.isoformat(),
+        "transaction_type": "expense",
+        "category": "other",
+        "description": "Large purchase",
+        "amount_cents": -15000,
+    }
+    blocked = client.post("/api/transactions", json=payload)
+    assert blocked.status_code == 409, blocked.text
+    detail = blocked.json()["detail"]
+    assert detail["exceeds_max_spendable_cents"] == 5000
+    assert detail["underfunded_bills"] == [{
+        "name": "Other",
+        "due_date": (second_future_payday + timedelta(days=1)).isoformat(),
+        "unfunded_cents": 5000,
+    }]
+
+    confirmed = client.post(
+        "/api/transactions",
+        json={**payload, "confirm_reserved_bill_impact": True},
+    )
+    assert confirmed.status_code == 201, confirmed.text
+    after = client.get(
+        "/api/cash-flow/pay-periods", params={"as_of_date": today.isoformat()}
+    ).json()
+    third = next(
+        period for period in after["periods"]
+        if period["start_date"] == second_future_payday.isoformat()
+    )
+    assert third["projected_ending_cash_cents"] == -5000
+    assert after["bill_shortfalls"] == [{
+        "bill_id": next(
+            bill["bill_id"] for bill in third["bills"] if bill["name"] == "Other"
+        ),
+        "name": "Other",
+        "due_date": (second_future_payday + timedelta(days=1)).isoformat(),
+        "shortfall_cents": 5000,
+    }]

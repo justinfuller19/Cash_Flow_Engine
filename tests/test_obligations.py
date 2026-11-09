@@ -70,24 +70,30 @@ def test_debt_create_update_and_deactivate(tmp_path, monkeypatch):
             "name": "Travel card",
             "balance_cents": 230045,
             "minimum_payment_cents": 8500,
+            "planned_payment_cents": 12000,
             "apr_percent": 24.99,
             "next_due_date": "2026-11-22",
+            "interest_date": "2026-11-25",
         },
     )
     assert created.status_code == 201, created.text
     debt = created.json()
     assert debt["balance_cents"] == 230045
     assert debt["minimum_payment_cents"] == 8500
+    assert debt["planned_payment_cents"] == 12000
     assert debt["due_day_of_month"] == 22
+    assert debt["interest_date"] == "2026-11-25"
     assert client.get("/api/debts").json()[0]["id"] == debt["id"]
 
     updated = client.patch(
         f"/api/debts/{debt['id']}",
-        json={"balance_cents": 215000, "minimum_payment_cents": 7500},
+        json={"balance_cents": 215000, "minimum_payment_cents": 7500, "planned_payment_cents": 10000, "interest_date": "2026-12-25"},
     )
     assert updated.status_code == 200
     assert updated.json()["balance_cents"] == 215000
     assert updated.json()["minimum_payment_cents"] == 7500
+    assert updated.json()["planned_payment_cents"] == 10000
+    assert updated.json()["interest_date"] == "2026-12-25"
 
     inactive = client.patch(f"/api/debts/{debt['id']}", json={"active": False})
     assert inactive.status_code == 200
@@ -155,7 +161,7 @@ def test_bills_page_and_schema_migration(tmp_path, monkeypatch):
         old_bill = db.execute("SELECT category, frequency, autopay FROM bills").fetchone()
         version = db.execute("PRAGMA user_version").fetchone()[0]
     assert {"category", "frequency", "autopay"} <= bill_columns
-    assert "next_due_date" in debt_columns
+    assert {"next_due_date", "interest_date", "planned_payment_cents"} <= debt_columns
     assert tuple(old_bill) == ("other", "monthly", 0)
     assert version == database.SCHEMA_VERSION
 

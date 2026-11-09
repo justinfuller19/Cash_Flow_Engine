@@ -194,8 +194,9 @@ def test_weekly_report_page_and_dashboard_summary_are_available(tmp_path, monkey
 
     dashboard = client.get("/")
     assert dashboard.status_code == 200
-    assert 'id="weekly-summary"' in dashboard.text
-    assert 'href="/weekly"' in dashboard.text
+    assert 'id="pay-period-summary"' in dashboard.text
+    assert 'href="/pay-periods"' in dashboard.text
+    assert "Three-month pay-period forecast" in dashboard.text
     assert 'id="weekly-category-spending"' in dashboard.text
 
 
@@ -305,8 +306,9 @@ def test_dashboard_explains_daily_cash_forecast(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)
     response = client.get("/")
     assert response.status_code == 200
-    assert "projected_shortfall_cents" in response.text
-    assert "future daily cash checkpoints" in response.text
+    assert "/api/cash-flow/pay-periods" in response.text
+    assert "maximum spendable across the forecast" in response.text
+    assert "/pay-periods" in response.text
 
 def test_household_financial_week_start_defaults_to_friday_and_is_editable(tmp_path, monkeypatch):
     client = setup_client(tmp_path, monkeypatch)

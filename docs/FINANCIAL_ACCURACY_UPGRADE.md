@@ -1,7 +1,11 @@
 # Cash Flow Engine — Financial Accuracy & Forecast Reliability Upgrade
 
-**Status:** Planned  
+**Status:** Historical weekly/buffer phases retained for reference; current work follows docs/PAY_PERIOD_FORECAST_SPEC.md  
 **Purpose:** Track implementation progress for this upgrade. Update the checkboxes and status as code, tests, and documentation are completed. A checkbox may be marked complete only when the change is present in the PR branch and supported by tests. An open PR is not part of `main` until merged.
+
+## Current owner-approved direction (2026-11-08)
+
+The weekly mandatory-buffer model described in the historical phases below is superseded. The active product specification is docs/PAY_PERIOD_FORECAST_SPEC.md: rolling three-month pay periods, a configurable fixed-anchor paycheck grouping window (2 days by default), and a spendable soft end-of-period target. Do not mark historical buffer semantics as current behavior or reintroduce a mandatory buffer.
 
 ## Goal
 
@@ -258,9 +262,11 @@ Record meaningful implementation updates here. Each entry should include date, p
 - Before production deployment, back up and verify the household databases and account registry; follow the repository's deployment guide.
 - After deployment, verify startup and representative existing household records and reports.
 
-## Guiding rule
+## Current guiding rule
 
-**Do not tell the household that money is safe to spend unless the forecast accounts for known obligations and the protected household cash buffer. Every important number should be explainable and testable.**
+**Do not reintroduce the retired mandatory household cash buffer or weekly safe-to-spend calculation.** The authoritative model is the rolling pay-period forecast in PAY_PERIOD_FORECAST_SPEC.md. The end-of-period target is a soft goal used to calculate target-preserving spendable cash; it is not reserved or deducted from available cash. Every important number should be explainable and testable.
+
+The historical phase notes below describe earlier weekly/buffer implementations. They are retained for project history only and do not define current behavior.
 
 - **2026-10-20 — Phase 4 implementation (PR #40, open):** Added shared integer-cent buffer arithmetic for the pure payday allocation engine and weekly forecast. The weekly API explicitly reports horizon-wide buffer replenishment and safe-to-spend before planned allocations; the dashboard shows safe-to-spend and forecast buffer gap. Regression tests cover underfunded buffers, allocation accounting, future-week gaps, and dashboard metrics. GitHub Actions run #178 passed 141 tests on Python 3.11, 3.12, and 3.13. PR #40 awaits review/merge; no deployment performed.
 
@@ -281,3 +287,25 @@ Record meaningful implementation updates here. Each entry should include date, p
 - [ ] Run the full Python 3.11/3.12/3.13 CI matrix and inspect results before merge/deployment.
 
 The API-only simulation findings did not establish a browser-rendering regression. This change does not alter the production database schema.
+
+
+## Current implementation progress — pay-period forecast
+
+PR #54 on `feature/pay-period-calendar-foundation` contains the completed integrated pay-period forecast implementation. These checkboxes describe the current PR branch; they do not imply that the changes have been merged to `main`.
+
+- [x] Phase 1: fixed-anchor paycheck grouping and configurable 0–14 day window (default 2), validated settings API, Settings page, and boundary tests.
+- [x] Phase 2: rolling three-month pay-period calendar connected to saved paycheck schedules and recurring bill assignment.
+- [x] Phase 3: current confirmed-cash snapshot reconciliation, integer-cent forward projection, and backward carry-over/soft-target calculations.
+- [x] Phase 4: deadline and ongoing savings planning, actual contribution reconciliation, and chronological debt interest/payment projection.
+- [x] Phase 5: idempotent editable internal ledger posting, transaction safeguards, and cash/debt reconciliation.
+- [x] Phase 6: pay-period dashboard summary, printable report, regression coverage, and documentation alignment.
+- [ ] Verify Raspberry Pi deployment compatibility, resource use, existing-database migrations, and the updater path.
+- [ ] Complete owner-side review of the forecast and printable report before merge/deployment.
+
+The review feedback on PR #54 was checked against the latest branch:
+- The $150 max-spendable boundary case now has a dedicated live API regression and is expected to require confirmation while identifying the affected bill/date.
+- The orphaned `app/buffer.py` helper is deleted on the current branch.
+- The legacy `/api/plan/preview` schema rejects non-empty retired `buffers` with HTTP 422; a regression test covers this compatibility guard.
+- The authoritative `docs/PAY_PERIOD_FORECAST_SPEC.md` implementation-status section now agrees with its completed checklists.
+
+Historical weekly/buffer phases above remain for project history only. The pay-period specification is authoritative. PR #54 remains a draft pending the two verification items above; do not merge or deploy without explicit owner approval.

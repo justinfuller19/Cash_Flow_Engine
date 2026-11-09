@@ -9,6 +9,8 @@ from fastapi.responses import HTMLResponse
 from . import database
 from .transaction_schemas import TransactionCreate, TransactionOut, TransactionUpdate
 from .forecast import occurrences_between
+from .pay_period_forecast import transaction_bill_reservation_impact_from_forecast
+from .pay_period_service import build_pay_period_forecast
 
 router = APIRouter()
 
@@ -223,9 +225,15 @@ def confirm_debt_payment_suggestion(suggestion_id: int):
         # Confirming a suggestion creates the debt link outside the ordinary
         # transaction create/edit handlers, so apply the same balance effect
         # here. The transaction remains the sole record of the cash payment.
-        _adjust_linked_debt_balance(
-            db, "debt", suggestion["debt_id"], suggestion["transaction_type"],
-            suggestion["amount_cents"], 1,
+        debt_applied = int(date.fromisoformat(suggestion["transaction_date"]) <= date.today())
+        if debt_applied:
+            _adjust_linked_debt_balance(
+                db, "debt", suggestion["debt_id"], suggestion["transaction_type"],
+                suggestion["amount_cents"], 1,
+            )
+        db.execute(
+            "UPDATE transactions SET debt_balance_applied = ? WHERE id = ?",
+            (debt_applied, suggestion["transaction_id"]),
         )
         db.execute(
             """UPDATE debt_payment_match_suggestions
@@ -492,6 +500,44 @@ def _adjust_linked_debt_balance(db, link_type: str | None, link_id: int | None,
     )
 
 
+def _savings_goal_id_from_notes(notes: str | None) -> int | None:
+    prefix = "cashflow_savings_goal_id="
+    for part in (notes or "").split(";"):
+        if part.startswith(prefix):
+            try:
+                return int(part[len(prefix):])
+            except ValueError:
+                return None
+    return None
+
+
+def _adjust_savings_contribution(db, notes: str | None, transaction_date: str,
+                                 transaction_type: str, amount_cents: int, direction: int) -> int | None:
+    goal_id = _savings_goal_id_from_notes(notes)
+    if goal_id is None or transaction_type != "expense":
+        return goal_id
+    if date.fromisoformat(transaction_date) <= date.today():
+        db.execute(
+            "UPDATE savings_goals SET current_balance_cents = MAX(0, current_balance_cents + ?) WHERE id = ?",
+            (abs(amount_cents) * direction, goal_id),
+        )
+    return goal_id
+
+
+def _refresh_last_savings_contribution_date(db, goal_id: int) -> None:
+    latest = db.execute(
+        """SELECT MAX(transaction_date) FROM transactions
+           WHERE transaction_type = 'expense' AND amount_cents < 0
+             AND transaction_date <= ?
+             AND notes LIKE ?""",
+        (date.today().isoformat(), f"%cashflow_savings_goal_id={goal_id};%"),
+    ).fetchone()[0]
+    db.execute(
+        "UPDATE savings_goals SET last_contribution_date = ? WHERE id = ?",
+        (latest, goal_id),
+    )
+
+
 def _validate_category(db, category: str, transaction_type: str) -> None:
     exists = db.execute(
         "SELECT id FROM categories WHERE lower(name) = lower(?) AND transaction_type = ?",
@@ -544,6 +590,7 @@ def list_transactions(
 @router.post("/api/transactions", response_model=TransactionOut, status_code=status.HTTP_201_CREATED)
 def create_transaction(body: TransactionCreate):
     values = _clean(body.model_dump())
+    confirm_reserved_bill_impact = values.pop("confirm_reserved_bill_impact", False)
     transaction_type = values["transaction_type"] or (
         "income" if values["category"] in {
             "income", "paycheck", "paychecks", "side income", "reimbursements", "other income"
@@ -560,17 +607,44 @@ def create_transaction(body: TransactionCreate):
         with database.connect() as db:
             _validate_category(db, values["category"], transaction_type)
             _validate_link(db, transaction_type, values["linked_obligation_type"], values["linked_obligation_id"])
+            if (
+                transaction_type == "expense"
+                and values["linked_obligation_type"] not in {"bill", "debt"}
+                and date.fromisoformat(values["transaction_date"]) >= date.today()
+                and not confirm_reserved_bill_impact
+            ):
+                forecast = build_pay_period_forecast(db, date.today())
+                impact = transaction_bill_reservation_impact_from_forecast(
+                    forecast, abs(values["amount_cents"]), values["transaction_date"]
+                )
+                if impact["requires_confirmation"]:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "message": "This expense exceeds the cash available without disrupting the forecast. Confirm to record it anyway.",
+                            **impact,
+                        },
+                    )
+            debt_balance_applied = int(
+                values["linked_obligation_type"] == "debt"
+                and transaction_type == "expense"
+                and date.fromisoformat(values["transaction_date"]) <= date.today()
+            )
             cursor = db.execute(
                 """INSERT INTO transactions
-                   (transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, description, amount_cents, account_name, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (transaction_date, category, transaction_type, linked_obligation_type,
+                    linked_obligation_id, description, amount_cents, account_name, notes,
+                    debt_balance_applied)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (values["transaction_date"], values["category"], transaction_type, values["linked_obligation_type"],
-                 values["linked_obligation_id"], values["description"], values["amount_cents"], values["account_name"], values["notes"]),
+                 values["linked_obligation_id"], values["description"], values["amount_cents"],
+                 values["account_name"], values["notes"], debt_balance_applied),
             )
-            _adjust_linked_debt_balance(
-                db, values["linked_obligation_type"], values["linked_obligation_id"],
-                transaction_type, values["amount_cents"], 1,
-            )
+            if debt_balance_applied:
+                _adjust_linked_debt_balance(
+                    db, values["linked_obligation_type"], values["linked_obligation_id"],
+                    transaction_type, values["amount_cents"], 1,
+                )
             row = db.execute(
                 """SELECT id, transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, description, amount_cents,
                           account_name, notes, created_at
@@ -592,14 +666,19 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
     try:
         with database.connect() as db:
             current = db.execute(
-                "SELECT id, category, transaction_type, linked_obligation_type, linked_obligation_id, amount_cents "
+                "SELECT id, transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, amount_cents, notes, debt_balance_applied "
                 "FROM transactions WHERE id = ?",
                 (transaction_id,),
             ).fetchone()
             if current is None:
                 raise HTTPException(status_code=404, detail="Transaction not found")
-            _adjust_linked_debt_balance(
-                db, current["linked_obligation_type"], current["linked_obligation_id"],
+            if current["debt_balance_applied"]:
+                _adjust_linked_debt_balance(
+                    db, current["linked_obligation_type"], current["linked_obligation_id"],
+                    current["transaction_type"], current["amount_cents"], -1,
+                )
+            old_savings_goal_id = _adjust_savings_contribution(
+                db, current["notes"], current["transaction_date"],
                 current["transaction_type"], current["amount_cents"], -1,
             )
             category = updates.get("category", current["category"])
@@ -623,7 +702,23 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
             assignments = ", ".join(f"{key} = ?" for key in updates)
             db.execute(f"UPDATE transactions SET {assignments} WHERE id = ?", (*updates.values(), transaction_id))
             updated_amount = updates.get("amount_cents", current["amount_cents"])
-            _adjust_linked_debt_balance(db, link_type, link_id, transaction_type, updated_amount, 1)
+            updated_date = updates.get("transaction_date", current["transaction_date"])
+            debt_balance_applied = int(
+                link_type == "debt" and transaction_type == "expense"
+                and date.fromisoformat(updated_date) <= date.today()
+            )
+            if debt_balance_applied:
+                _adjust_linked_debt_balance(db, link_type, link_id, transaction_type, updated_amount, 1)
+            db.execute(
+                "UPDATE transactions SET debt_balance_applied = ? WHERE id = ?",
+                (debt_balance_applied, transaction_id),
+            )
+            updated_notes = updates.get("notes", current["notes"])
+            new_savings_goal_id = _adjust_savings_contribution(
+                db, updated_notes, updated_date, transaction_type, updated_amount, 1,
+            )
+            for goal_id in {old_savings_goal_id, new_savings_goal_id} - {None}:
+                _refresh_last_savings_contribution_date(db, goal_id)
             # A dismissed suggestion may be reconsidered only after transaction
             # data changes; confirmed links remain immutable review history.
             db.execute(
@@ -652,16 +747,23 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
 def delete_transaction(transaction_id: int):
     with database.connect() as db:
         current = db.execute(
-            "SELECT transaction_type, linked_obligation_type, linked_obligation_id, amount_cents "
+            "SELECT transaction_date, transaction_type, linked_obligation_type, linked_obligation_id, amount_cents, notes, debt_balance_applied "
             "FROM transactions WHERE id = ?", (transaction_id,)
         ).fetchone()
         if current is None:
             raise HTTPException(status_code=404, detail="Transaction not found")
-        _adjust_linked_debt_balance(
-            db, current["linked_obligation_type"], current["linked_obligation_id"],
+        if current["debt_balance_applied"]:
+            _adjust_linked_debt_balance(
+                db, current["linked_obligation_type"], current["linked_obligation_id"],
+                current["transaction_type"], current["amount_cents"], -1,
+            )
+        savings_goal_id = _adjust_savings_contribution(
+            db, current["notes"], current["transaction_date"],
             current["transaction_type"], current["amount_cents"], -1,
         )
         db.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
+        if savings_goal_id is not None:
+            _refresh_last_savings_contribution_date(db, savings_goal_id)
     return {"deleted": True, "id": transaction_id}
 
 
@@ -682,7 +784,7 @@ button{border:0;border-radius:8px;padding:10px 12px;background:#0e7490;color:whi
 .list{padding:0;list-style:none}.list li{padding:13px 0;border-top:1px solid #e2e8f0;overflow-wrap:anywhere}
 .title{font-weight:700}.detail{color:#5c687a;font-size:.9rem;margin-top:4px}.positive{color:#166534}.negative{color:#b91c1c}
 </style></head><body><main><a href="/">← Dashboard</a> · <a href="/categories">Manage Categories</a><h1>Transactions</h1>
-<p class="muted">Record actual account activity for reference. Enter income as a positive amount and expenses as a negative amount in the ledger. These entries do not automatically change bank balances or rewrite saved payday plans.</p>
+<p class="muted">Record actual account activity for reference. Enter income as a positive amount and expenses as a negative amount. Expenses that exceed max spendable or would underfund scheduled bills require confirmation. Due paychecks and bills may also be posted automatically to this internal ledger; edit or delete those entries to correct them. No bank payments or transfers are initiated.</p>
 <div id="status" class="status" role="status" aria-live="polite" hidden></div>
 <section class="card"><h2>Add a transaction</h2><form id="transaction-form">
 <div><label for="tx-date">Date</label><input id="tx-date" name="transaction_date" type="date" required></div>
@@ -702,7 +804,7 @@ const box=document.getElementById("status");
 function message(text,error=false){box.textContent=text;box.classList.toggle("error",error);box.hidden=false;}
 function dollars(cents){const sign=cents<0?"−":"";return sign+new Intl.NumberFormat(undefined,{style:"currency",currency:"USD"}).format(Math.abs(cents)/100);}
 function cents(value){const n=Number(value);if(!Number.isFinite(n)||n<=0)throw Error("Enter an amount greater than zero.");return Math.round((n+Number.EPSILON)*100);}
-async function api(url,options={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...options});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"Please check your entries.");return d;}
+async function api(url,options={}){const r=await fetch(url,{headers:{"Content-Type":"application/json"},...options});const d=await r.json().catch(()=>({}));if(!r.ok){const error=new Error(typeof d.detail==="string"?d.detail:(d.detail?.message||"Please check your entries."));error.status=r.status;error.data=d.detail;throw error;}return d;}
 function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;n.textContent=txt;return n;}
 async function refreshDebtSuggestions(){const root=document.getElementById("debt-suggestions");root.replaceChildren();const rows=await api("/api/debt-payment-suggestions");if(!rows.length){root.appendChild(el("li","muted","No possible debt-payment matches need review."));return;}
 for(const row of rows){const li=el("li","");li.appendChild(el("div","title",row.description+" · "+dollars(row.amount_cents)+" → "+row.debt_name));li.appendChild(el("div","detail","Transaction "+row.transaction_date+" · suggested due date "+row.due_date+" · "+(row.confidence==="high"?"Description/account name match":"Needs careful review")));li.appendChild(el("div","detail",row.reason));const confirm=el("button","", "Confirm match");confirm.type="button";confirm.addEventListener("click",async()=>{confirm.disabled=true;try{await api("/api/debt-payment-suggestions/"+row.id+"/confirm",{method:"POST"});await refresh();message("Transaction linked to "+row.debt_name+".");}catch(e){message(e.message,true);confirm.disabled=false;}});li.appendChild(confirm);const dismiss=el("button","edit","Dismiss");dismiss.type="button";dismiss.style.marginLeft="8px";dismiss.addEventListener("click",async()=>{dismiss.disabled=true;try{await api("/api/debt-payment-suggestions/"+row.id+"/dismiss",{method:"POST"});await refreshDebtSuggestions();message("Suggestion dismissed. It will not reappear unless transaction data changes.");}catch(e){message(e.message,true);dismiss.disabled=false;}});li.appendChild(dismiss);root.appendChild(li);}}
@@ -713,7 +815,7 @@ const remove=el("button","edit","Delete");remove.type="button";remove.addEventLi
 async function loadCategories(){const type=document.getElementById("tx-type").value;const categories=await api("/api/categories?transaction_type="+encodeURIComponent(type));const select=document.getElementById("tx-category");select.replaceChildren();for(const category of categories){const option=document.createElement("option");option.value=category.name;option.textContent=category.name.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ");select.appendChild(option);}if(!categories.length)select.appendChild(new Option("Add a category first",""));await loadScheduledItems(type);}
 async function loadScheduledItems(type){const select=document.getElementById("tx-linked");select.replaceChildren();select.appendChild(new Option("Not linked",""));if(type==="income"){const rows=await api("/api/income-sources");for(const row of rows.filter(x=>x.active)){select.appendChild(new Option("Income: "+row.name,"income:"+row.id));}}else if(type==="expense"){const [bills,debts]=await Promise.all([api("/api/bills"),api("/api/debts")]);for(const row of bills.filter(x=>x.active))select.appendChild(new Option("Bill: "+row.name,"bill:"+row.id));for(const row of debts.filter(x=>x.active))select.appendChild(new Option("Debt: "+row.name,"debt:"+row.id));}}
 document.getElementById("tx-type").addEventListener("change",()=>loadCategories().catch(e=>message(e.message,true)));
-document.getElementById("transaction-form").addEventListener("submit",async(e)=>{e.preventDefault();const f=e.currentTarget;const b=f.querySelector("button");b.disabled=true;try{let amount=cents(f.elements.amount.value);const transactionType=f.elements.transaction_type.value;if(transactionType==="expense")amount=-amount;const linkValue=f.elements.linked_obligation.value;const linkParts=linkValue?linkValue.split(":"):[];await api("/api/transactions",{method:"POST",body:JSON.stringify({transaction_date:f.elements.transaction_date.value,transaction_type:transactionType,category:f.elements.category.value,linked_obligation_type:linkParts[0]||null,linked_obligation_id:linkParts.length?Number(linkParts[1]):null,description:f.elements.description.value.trim(),amount_cents:amount,account_name:f.elements.account_name.value.trim()||null,notes:f.elements.notes.value.trim()||null})});f.reset();f.elements.transaction_date.value=new Date().toISOString().slice(0,10);await loadCategories();await refresh();message("Transaction saved.");}catch(err){message(err.message,true);}finally{b.disabled=false;}});
+document.getElementById("transaction-form").addEventListener("submit",async(e)=>{e.preventDefault();const f=e.currentTarget;const b=f.querySelector("button");b.disabled=true;try{let amount=cents(f.elements.amount.value);const transactionType=f.elements.transaction_type.value;if(transactionType==="expense")amount=-amount;const linkValue=f.elements.linked_obligation.value;const linkParts=linkValue?linkValue.split(":"):[];const payload={transaction_date:f.elements.transaction_date.value,transaction_type:transactionType,category:f.elements.category.value,linked_obligation_type:linkParts[0]||null,linked_obligation_id:linkParts.length?Number(linkParts[1]):null,description:f.elements.description.value.trim(),amount_cents:amount,account_name:f.elements.account_name.value.trim()||null,notes:f.elements.notes.value.trim()||null};try{await api("/api/transactions",{method:"POST",body:JSON.stringify(payload)});}catch(err){if(err.status!==409||!err.data||!err.data.underfunded_bills)throw err;const affected=err.data.underfunded_bills.map(x=>x.name+" due "+x.due_date+": "+dollars(x.unfunded_cents)+" short").join("\n");const excess=Number(err.data.exceeds_max_spendable_cents||0);const warning=excess>0?"This transaction exceeds max spendable by "+dollars(excess)+".\n\n":"";const billWarning=affected||"No specific bill due-date shortfall was identified.";if(!confirm(warning+"This transaction would leave scheduled bills underfunded:\n\n"+billWarning+"\n\nRecord the transaction anyway?")){message("Transaction not saved. No bills were changed.");return;}payload.confirm_reserved_bill_impact=true;await api("/api/transactions",{method:"POST",body:JSON.stringify(payload)});}f.reset();f.elements.transaction_date.value=new Date().toISOString().slice(0,10);await loadCategories();await refresh();message("Transaction saved.");}catch(err){message(err.message,true);}finally{b.disabled=false;}});
 document.getElementById("tx-date").value=new Date().toISOString().slice(0,10);
 refresh().catch(e=>message("Could not load transactions: "+e.message,true));
 </script></body></html>"""
