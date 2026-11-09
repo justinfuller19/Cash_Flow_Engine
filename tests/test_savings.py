@@ -191,3 +191,42 @@ def test_recorded_savings_contribution_updates_goal_and_is_reversed_when_transac
     goal = next(item for item in goals if item["id"] == goal_id)
     assert goal["current_balance_cents"] == 20000
     assert goal["last_contribution_date"] is None
+
+def test_savings_contribution_requires_confirmation_if_it_would_underfund_a_bill(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch)
+    today = date.today()
+    due = today + timedelta(days=1)
+    with database.connect() as db:
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES (?, 10000)""",
+            (today.isoformat(),),
+        )
+        goal_id = db.execute(
+            """INSERT INTO savings_goals
+               (name, target_amount_cents, current_balance_cents, target_date,
+                contribution_per_period_cents, active)
+               VALUES ('Emergency fund', 0, 0, NULL, 5000, 1)"""
+        ).lastrowid
+        db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Electric', 9000, ?, ?, 0, 'utilities', 'irregular', 0, 1)""",
+            (due.day, due.isoformat()),
+        )
+
+    path = f"/api/savings-goals/{goal_id}/contributions"
+    blocked = client.post(path, json={"amount_cents": 5000})
+    assert blocked.status_code == 409
+    detail = blocked.json()["detail"]
+    assert detail["underfunded_bills"] == [{
+        "name": "Electric", "due_date": due.isoformat(), "unfunded_cents": 4000
+    }]
+
+    confirmed = client.post(
+        path,
+        json={"amount_cents": 5000, "confirm_reserved_bill_impact": True},
+    )
+    assert confirmed.status_code == 201, confirmed.text
+    assert confirmed.json()["goal"]["current_balance_cents"] == 5000
