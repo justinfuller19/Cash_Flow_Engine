@@ -128,7 +128,7 @@ def delete_bill(bill_id: int):
 def list_debts():
     with database.connect() as db:
         rows = db.execute(
-            """SELECT id, name, balance_cents, minimum_payment_cents, apr_percent,
+            """SELECT id, name, balance_cents, minimum_payment_cents, planned_payment_cents, apr_percent,
                       due_day_of_month, next_due_date, interest_date, active, created_at
                FROM credit_cards ORDER BY COALESCE(next_due_date, '9999-12-31'), id"""
         ).fetchall()
@@ -145,15 +145,15 @@ def create_debt(body: DebtCreate):
         with database.connect() as db:
             cursor = db.execute(
                 """INSERT INTO credit_cards
-                   (name, balance_cents, minimum_payment_cents, due_day_of_month,
+                   (name, balance_cents, minimum_payment_cents, planned_payment_cents, due_day_of_month,
                     apr_percent, active, next_due_date, interest_date)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (name, body.balance_cents, body.minimum_payment_cents, due_day,
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (name, body.balance_cents, body.minimum_payment_cents, body.planned_payment_cents, due_day,
                  body.apr_percent, int(body.active), body.next_due_date.isoformat(),
                  body.interest_date.isoformat() if body.interest_date else None),
             )
             row = db.execute(
-                """SELECT id, name, balance_cents, minimum_payment_cents, apr_percent,
+                """SELECT id, name, balance_cents, minimum_payment_cents, planned_payment_cents, apr_percent,
                           due_day_of_month, next_due_date, interest_date, active, created_at
                    FROM credit_cards WHERE id = ?""", (cursor.lastrowid,)
             ).fetchone()
@@ -177,7 +177,7 @@ def update_debt(debt_id: int, body: DebtUpdate):
         updates["active"] = int(updates["active"])
     if not updates:
         raise HTTPException(status_code=422, detail="no fields to update")
-    allowed = {"name", "balance_cents", "minimum_payment_cents", "apr_percent",
+    allowed = {"name", "balance_cents", "minimum_payment_cents", "planned_payment_cents", "apr_percent",
                "next_due_date", "interest_date", "due_day_of_month", "active"}
     if not set(updates) <= allowed:
         raise HTTPException(status_code=422, detail="unsupported field")
@@ -253,6 +253,7 @@ button:disabled{opacity:.55}.toggle{background:#475569;margin:4px 0}.status{padd
 <label for="debt-name">Account name</label><input id="debt-name" name="name" maxlength="120" required placeholder="Credit card, auto loan">
 <label for="debt-balance">Current balance ($)</label><input id="debt-balance" name="balance" type="number" min="0" step="0.01" required>
 <label for="debt-minimum">Minimum payment ($)</label><input id="debt-minimum" name="minimum" type="number" min="0" step="0.01" required>
+<label for="debt-planned">Planned payment ($, 0 uses minimum)</label><input id="debt-planned" name="planned_payment" type="number" min="0" step="0.01" value="0" required>
 <label for="debt-apr">APR (%)</label><input id="debt-apr" name="apr_percent" type="number" min="0" max="1000" step="0.01" required>
 <label for="debt-interest-date">Next interest date</label><input id="debt-interest-date" name="interest_date" type="date">
 <label for="debt-date">Next payment due date</label><input id="debt-date" name="next_due_date" type="date" required>
@@ -270,7 +271,7 @@ function addToggle(item,endpoint,active,label){const b=el("button","toggle",acti
 function render(list,records,kind){list.replaceChildren();if(!records.length){list.appendChild(el("li","muted","No "+kind+" saved yet."));return;}
 for(const r of records){const li=el("li");li.appendChild(el("div","title",r.name+" · "+dollars(kind==="bills"?r.amount_cents:r.balance_cents)));
 const detail=kind==="bills"?r.category+" · "+r.frequency+" · due "+(r.next_due_date||"not set")+(r.autopay?" · autopay":""):
-"Minimum "+dollars(r.minimum_payment_cents)+" · "+r.apr_percent+"% APR · interest "+(r.interest_date||"not set")+" · payment due "+(r.next_due_date||"not set");
+"Minimum "+dollars(r.minimum_payment_cents)+" · planned "+dollars(r.planned_payment_cents||r.minimum_payment_cents)+" · "+r.apr_percent+"% APR · interest "+(r.interest_date||"not set")+" · payment due "+(r.next_due_date||"not set");
 li.appendChild(el("div","detail",detail+(r.active?"":" · inactive")));
 const edit=el("button","toggle",kind==="bills"?"Edit bill":"Edit debt");edit.type="button";
 edit.addEventListener("click",async()=>{
@@ -289,10 +290,11 @@ await api("/api/bills/"+r.id,{method:"PATCH",body:JSON.stringify({name:name.trim
 const name=prompt("Debt name:",r.name);if(name===null)return;
 const balance=prompt("Current balance in dollars:",(r.balance_cents/100).toFixed(2));if(balance===null)return;
 const minimum=prompt("Minimum payment in dollars:",(r.minimum_payment_cents/100).toFixed(2));if(minimum===null)return;
+const planned=prompt("Planned payment in dollars (0 uses minimum):",((r.planned_payment_cents||0)/100).toFixed(2));if(planned===null)return;
 const apr=prompt("APR percent:",String(r.apr_percent));if(apr===null)return;
 const due=prompt("Next payment due date YYYY-MM-DD:",r.next_due_date||"");if(due===null)return;
 const interest=prompt("Next interest date YYYY-MM-DD (leave blank if unknown):",r.interest_date||"");if(interest===null)return;
-await api("/api/debts/"+r.id,{method:"PATCH",body:JSON.stringify({name:name.trim(),balance_cents:cents(balance),minimum_payment_cents:cents(minimum),apr_percent:Number(apr),next_due_date:due,interest_date:interest||null})});
+await api("/api/debts/"+r.id,{method:"PATCH",body:JSON.stringify({name:name.trim(),balance_cents:cents(balance),minimum_payment_cents:cents(minimum),planned_payment_cents:cents(planned),apr_percent:Number(apr),next_due_date:due,interest_date:interest||null})});
 }
 await refresh();message((kind==="bills"?"Bill":"Debt")+" updated.");
 }catch(e){message(e.message,true);}
@@ -302,6 +304,6 @@ const remove=el("button","toggle","Delete "+(kind==="bills"?"bill":"debt"));remo
 async function refresh(){const [b,d]=await Promise.all([api("/api/bills"),api("/api/debts")]);render(document.getElementById("bills"),b,"bills");render(document.getElementById("debts"),d,"debts");}
 function bindForm(id,url,convert,success){const form=document.getElementById(id);form.addEventListener("submit",async(e)=>{e.preventDefault();const button=form.querySelector("button");button.disabled=true;try{await api(url,{method:"POST",body:JSON.stringify(convert(form))});form.reset();await refresh();message(success);}catch(err){message(err.message,true);}finally{button.disabled=false;}});}
 bindForm("bill-form","/api/bills",f=>({name:f.elements.name.value.trim(),amount_cents:cents(f.elements.amount.value),next_due_date:f.elements.next_due_date.value,frequency:f.elements.frequency.value,category:f.elements.category.value,flexible_window_days:Number(f.elements.flexible_window_days.value),autopay:f.elements.autopay.checked}),"Bill saved.");
-bindForm("debt-form","/api/debts",f=>({name:f.elements.name.value.trim(),balance_cents:cents(f.elements.balance.value),minimum_payment_cents:cents(f.elements.minimum.value),apr_percent:Number(f.elements.apr_percent.value),next_due_date:f.elements.next_due_date.value,interest_date:f.elements.interest_date.value||null}),"Debt saved.");
+bindForm("debt-form","/api/debts",f=>({name:f.elements.name.value.trim(),balance_cents:cents(f.elements.balance.value),minimum_payment_cents:cents(f.elements.minimum.value),planned_payment_cents:cents(f.elements.planned_payment.value),apr_percent:Number(f.elements.apr_percent.value),next_due_date:f.elements.next_due_date.value,interest_date:f.elements.interest_date.value||null}),"Debt saved.");
 refresh().catch(e=>message("Could not load saved records: "+e.message,true));
 </script></body></html>"""
