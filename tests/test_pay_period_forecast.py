@@ -285,9 +285,10 @@ def test_negative_opening_cash_is_preserved_and_warned():
         0,
     )
     assert result["periods"][0]["projected_ending_cash_cents"] == -5000
-    assert result["warnings"] == [{
-        "type": "negative_cash", "start_date": "2026-11-01", "shortfall_cents": 5000
-    }]
+    assert result["warnings"] == [
+        {"type": "negative_cash", "start_date": "2026-11-01", "shortfall_cents": 5000},
+        {"type": "target_shortfall", "start_date": "2026-11-01", "shortfall_cents": 5000},
+    ]
 
 def test_completed_savings_period_is_not_reserved_twice():
     from app.pay_period_forecast import plan_savings_contributions
