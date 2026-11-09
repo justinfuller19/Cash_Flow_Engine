@@ -68,7 +68,7 @@ def create_savings_goal(body: SavingsGoalCreate):
             )
             row = db.execute(
                 """SELECT id, name, target_amount_cents, current_balance_cents,
-                          target_date, priority, weekly_target_cents, schedule_start_date, active, created_at
+                          target_date, priority, weekly_target_cents, contribution_per_period_cents, schedule_start_date, active, created_at
                    FROM savings_goals WHERE id = ?""", (cursor.lastrowid,)
             ).fetchone()
     except sqlite3.IntegrityError as exc:
