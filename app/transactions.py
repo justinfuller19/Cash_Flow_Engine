@@ -494,6 +494,44 @@ def _adjust_linked_debt_balance(db, link_type: str | None, link_id: int | None,
     )
 
 
+def _savings_goal_id_from_notes(notes: str | None) -> int | None:
+    prefix = "cashflow_savings_goal_id="
+    for part in (notes or "").split(";"):
+        if part.startswith(prefix):
+            try:
+                return int(part[len(prefix):])
+            except ValueError:
+                return None
+    return None
+
+
+def _adjust_savings_contribution(db, notes: str | None, transaction_date: str,
+                                 transaction_type: str, amount_cents: int, direction: int) -> int | None:
+    goal_id = _savings_goal_id_from_notes(notes)
+    if goal_id is None or transaction_type != "expense":
+        return goal_id
+    if date.fromisoformat(transaction_date) <= date.today():
+        db.execute(
+            "UPDATE savings_goals SET current_balance_cents = MAX(0, current_balance_cents + ?) WHERE id = ?",
+            (abs(amount_cents) * direction, goal_id),
+        )
+    return goal_id
+
+
+def _refresh_last_savings_contribution_date(db, goal_id: int) -> None:
+    latest = db.execute(
+        """SELECT MAX(transaction_date) FROM transactions
+           WHERE transaction_type = 'expense' AND amount_cents < 0
+             AND transaction_date <= ?
+             AND notes LIKE ?""",
+        (date.today().isoformat(), f"%cashflow_savings_goal_id={goal_id};%"),
+    ).fetchone()[0]
+    db.execute(
+        "UPDATE savings_goals SET last_contribution_date = ? WHERE id = ?",
+        (latest, goal_id),
+    )
+
+
 def _validate_category(db, category: str, transaction_type: str) -> None:
     exists = db.execute(
         "SELECT id FROM categories WHERE lower(name) = lower(?) AND transaction_type = ?",
@@ -613,7 +651,7 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
     try:
         with database.connect() as db:
             current = db.execute(
-                "SELECT id, category, transaction_type, linked_obligation_type, linked_obligation_id, amount_cents "
+                "SELECT id, transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, amount_cents, notes "
                 "FROM transactions WHERE id = ?",
                 (transaction_id,),
             ).fetchone()
@@ -621,6 +659,10 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
                 raise HTTPException(status_code=404, detail="Transaction not found")
             _adjust_linked_debt_balance(
                 db, current["linked_obligation_type"], current["linked_obligation_id"],
+                current["transaction_type"], current["amount_cents"], -1,
+            )
+            old_savings_goal_id = _adjust_savings_contribution(
+                db, current["notes"], current["transaction_date"],
                 current["transaction_type"], current["amount_cents"], -1,
             )
             category = updates.get("category", current["category"])
@@ -645,6 +687,13 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
             db.execute(f"UPDATE transactions SET {assignments} WHERE id = ?", (*updates.values(), transaction_id))
             updated_amount = updates.get("amount_cents", current["amount_cents"])
             _adjust_linked_debt_balance(db, link_type, link_id, transaction_type, updated_amount, 1)
+            updated_date = updates.get("transaction_date", current["transaction_date"])
+            updated_notes = updates.get("notes", current["notes"])
+            new_savings_goal_id = _adjust_savings_contribution(
+                db, updated_notes, updated_date, transaction_type, updated_amount, 1,
+            )
+            for goal_id in {old_savings_goal_id, new_savings_goal_id} - {None}:
+                _refresh_last_savings_contribution_date(db, goal_id)
             # A dismissed suggestion may be reconsidered only after transaction
             # data changes; confirmed links remain immutable review history.
             db.execute(
@@ -673,7 +722,7 @@ def update_transaction(transaction_id: int, body: TransactionUpdate):
 def delete_transaction(transaction_id: int):
     with database.connect() as db:
         current = db.execute(
-            "SELECT transaction_type, linked_obligation_type, linked_obligation_id, amount_cents "
+            "SELECT transaction_date, transaction_type, linked_obligation_type, linked_obligation_id, amount_cents, notes "
             "FROM transactions WHERE id = ?", (transaction_id,)
         ).fetchone()
         if current is None:
@@ -682,7 +731,13 @@ def delete_transaction(transaction_id: int):
             db, current["linked_obligation_type"], current["linked_obligation_id"],
             current["transaction_type"], current["amount_cents"], -1,
         )
+        savings_goal_id = _adjust_savings_contribution(
+            db, current["notes"], current["transaction_date"],
+            current["transaction_type"], current["amount_cents"], -1,
+        )
         db.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
+        if savings_goal_id is not None:
+            _refresh_last_savings_contribution_date(db, savings_goal_id)
     return {"deleted": True, "id": transaction_id}
 
 
