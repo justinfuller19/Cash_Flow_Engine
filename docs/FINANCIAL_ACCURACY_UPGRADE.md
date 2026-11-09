@@ -305,3 +305,9 @@ PR #54 now contains an integrated rolling three-month pay-period forecast API an
 - [x] Manual expense creation now compares the proposed transaction against dated bill funding and asks for explicit confirmation with exact bill names, due dates, and new shortfall amounts.
 - [x] The printable report includes bill-level underfunding warnings in addition to negative-cash and target/carry-over warnings.
 - [x] Ongoing savings goals now expose a fixed per-pay-period contribution setting; dated goals remain dynamically recalculated by remaining pay periods.
+
+
+- [x] Actual savings contributions are recorded as linked internal-ledger expenses, update saved goal balances, satisfy the current pay period, and reverse correctly when the transaction is edited or deleted.
+- [x] Future-dated linked debt payments remain unapplied to the saved debt balance until their transaction date; the live forecast projects them chronologically and applies them once when due.
+- [x] Multi-month recurring bill schedules support every two, three, four, and six months, plus quarterly and yearly schedules.
+- [x] Negative opening cash is preserved so overdrafts are surfaced instead of silently clamped to zero.
