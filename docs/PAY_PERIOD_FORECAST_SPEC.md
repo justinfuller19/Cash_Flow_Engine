@@ -80,3 +80,6 @@ Actual contributions can be recorded from the savings-goal page. Each contributi
 ## Grouped-paycheck bill funding
 
 When several paychecks are grouped, the group contributes all of its income to the period beginning on the group's final payday. For bill-level funding checks, those grouped paycheck amounts become available on that period start, not on the earlier paycheck dates. A bill due on the period start is funded after that day's paycheck income; a bill due between grouped paydays remains assigned to the preceding period and cannot use the grouped income.
+
+
+Actual savings contributions are subject to the same bill-funding safeguard as other expenses. The current period's planned contribution for that goal is replaced by the actual dated contribution when evaluating the warning, so it is not counted twice. If recording it would newly underfund scheduled bills, the user sees the exact bill dates and shortfalls and must explicitly confirm.
