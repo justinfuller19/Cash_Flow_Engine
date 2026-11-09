@@ -284,3 +284,40 @@ def test_actual_savings_contribution_satisfies_current_period_only():
     following = next(p for p in report["periods"] if p["start_date"] == "2026-11-13")
     assert current["savings_cents"] == 0
     assert following["savings_cents"] == 5000
+
+def test_one_off_bill_amount_override_and_cancellation_do_not_change_recurring_schedule():
+    client = _client()
+    with database.connect() as db:
+        db.execute(
+            """INSERT INTO cash_balance_snapshots
+               (effective_week_start, balance_cents) VALUES ('2026-11-01', 100000)"""
+        )
+        bill_id = db.execute(
+            """INSERT INTO bills
+               (name, amount_cents, due_day_of_month, next_due_date,
+                flexible_window_days, category, frequency, autopay, active)
+               VALUES ('Water', 8000, 15, '2026-11-15', 0,
+                       'utilities', 'monthly', 0, 1)"""
+        ).lastrowid
+
+    path = f"/api/bills/{bill_id}/occurrences/2026-11-15"
+    updated = client.put(path, json={"amount_cents": 12000})
+    assert updated.status_code == 200, updated.text
+    report = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"}).json()
+    bill = next(item for p in report["periods"] for item in p["bills"] if item["due_date"] == "2026-11-15")
+    assert bill["amount_cents"] == 12000
+    assert bill["is_overridden"] is True
+
+    cancelled = client.put(path, json={"cancelled": True})
+    assert cancelled.status_code == 200, cancelled.text
+    report = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"}).json()
+    bill = next(item for p in report["periods"] for item in p["bills"] if item["due_date"] == "2026-11-15")
+    assert bill["amount_cents"] == 0
+    assert bill["cancelled"] is True
+
+    restored = client.delete(path)
+    assert restored.status_code == 200, restored.text
+    report = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"}).json()
+    bill = next(item for p in report["periods"] for item in p["bills"] if item["due_date"] == "2026-11-15")
+    assert bill["amount_cents"] == 8000
+    assert bill["is_overridden"] is False
