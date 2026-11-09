@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import HTMLResponse
 
 from . import database
-from .savings_schemas import SavingsGoalCreate, SavingsGoalOut, SavingsGoalUpdate
+from .savings_schemas import SavingsContributionCreate, SavingsGoalCreate, SavingsGoalOut, SavingsGoalUpdate
 
 router = APIRouter()
 
@@ -37,7 +37,7 @@ def list_savings_goals():
     with database.connect() as db:
         rows = db.execute(
             """SELECT id, name, target_amount_cents, current_balance_cents,
-                      target_date, priority, weekly_target_cents, contribution_per_period_cents, schedule_start_date, active, created_at
+                      target_date, priority, weekly_target_cents, contribution_per_period_cents, last_contribution_date, schedule_start_date, active, created_at
                FROM savings_goals ORDER BY priority, name COLLATE NOCASE, id"""
         ).fetchall()
     return [_goal_out(row) for row in rows]
@@ -120,13 +120,53 @@ def update_savings_goal(goal_id: int, body: SavingsGoalUpdate):
             )
             row = db.execute(
                 """SELECT id, name, target_amount_cents, current_balance_cents,
-                          target_date, priority, weekly_target_cents, contribution_per_period_cents,
+                          target_date, priority, weekly_target_cents, contribution_per_period_cents, last_contribution_date,
                           schedule_start_date, active, created_at
                    FROM savings_goals WHERE id = ?""", (goal_id,)
             ).fetchone()
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=422, detail="Savings goal update violates a database constraint") from exc
     return _goal_out(row)
+
+
+
+@router.post("/api/savings-goals/{goal_id}/contributions", status_code=status.HTTP_201_CREATED)
+def record_savings_contribution(goal_id: int, body: SavingsContributionCreate):
+    """Record an actual savings contribution in the internal cash ledger."""
+    contribution_date = body.contribution_date or date.today()
+    if contribution_date > date.today():
+        raise HTTPException(status_code=422, detail="Actual savings contributions cannot be dated in the future.")
+    marker = f"cashflow_savings_goal_id={goal_id};"
+    with database.connect() as db:
+        goal = db.execute(
+            "SELECT id, name, current_balance_cents, last_contribution_date FROM savings_goals WHERE id = ? AND active = 1",
+            (goal_id,),
+        ).fetchone()
+        if goal is None:
+            raise HTTPException(status_code=404, detail="Active savings goal not found")
+        new_balance = int(goal["current_balance_cents"]) + body.amount_cents
+        last_date = max(
+            filter(None, (goal["last_contribution_date"], contribution_date.isoformat())),
+            default=contribution_date.isoformat(),
+        )
+        db.execute(
+            "UPDATE savings_goals SET current_balance_cents = ?, last_contribution_date = ? WHERE id = ?",
+            (new_balance, last_date, goal_id),
+        )
+        cursor = db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, description, amount_cents, notes)
+               VALUES (?, 'savings', 'expense', ?, ?, ?)""",
+            (contribution_date.isoformat(), f"Savings contribution — {goal['name']}",
+             -body.amount_cents, marker),
+        )
+        row = db.execute(
+            """SELECT id, name, target_amount_cents, current_balance_cents,
+                      target_date, priority, weekly_target_cents, contribution_per_period_cents,
+                      last_contribution_date, schedule_start_date, active, created_at
+               FROM savings_goals WHERE id = ?""", (goal_id,)
+        ).fetchone()
+    return {"goal": _goal_out(row), "transaction_id": cursor.lastrowid}
 
 
 @router.delete("/api/savings-goals/{goal_id}")
