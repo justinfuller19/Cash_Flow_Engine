@@ -57,6 +57,10 @@ class PaydayPreviewRequest(BaseModel):
     def validate_period(self):
         if self.period_end < self.period_start:
             raise ValueError("period_end must be on or after period_start")
+        if self.buffers:
+            raise ValueError(
+                "Buffer reservations are retired. Use the soft end-of-period target setting instead."
+            )
         return self
 
 
