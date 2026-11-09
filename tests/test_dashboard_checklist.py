@@ -234,7 +234,7 @@ def test_dashboard_savings_progress_uses_weekly_target_and_handles_ongoing_goals
 
     page = client.get("/")
     assert page.status_code == 200
-    assert "x.weekly_target_cents||0" in page.text
-    assert "per financial week" in page.text
+    assert "x.contribution_per_period_cents||0" in page.text
+    assert "per pay period" in page.text
     assert 'const ongoing=x.target_amount_cents===0' in page.text
     assert "x.contribution_per_period_cents" not in page.text
