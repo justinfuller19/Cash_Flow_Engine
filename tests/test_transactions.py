@@ -637,20 +637,6 @@ def test_expense_requires_confirmation_when_it_newly_underfunds_a_bill(tmp_path,
     today = date.today()
     due = today + timedelta(days=2)
     with database.connect() as db:
-        person_id = db.execute(
-            "INSERT INTO persons (name) VALUES ('Household')"
-        ).lastrowid
-        db.execute(
-            """INSERT INTO cash_balance_snapshots
-               (effective_week_start, balance_cents) VALUES (?, 100000)""",
-            (today.isoformat(),),
-        )
-        db.execute(
-            """INSERT INTO income_sources
-               (person_id, name, net_amount_cents, frequency, next_payday, active)
-               VALUES (?, 'Paycheck', 50000, 'weekly', ?, 1)""",
-            (person_id, payday.isoformat()),
-        )
         bill_id = db.execute(
             """INSERT INTO bills
                (name, amount_cents, due_day_of_month, next_due_date,
