@@ -352,3 +352,45 @@ def test_grouped_paychecks_are_not_available_for_bills_before_group_period_start
         {"bill_id": 40, "name": "Electric", "due_date": "2026-11-07", "shortfall_cents": 8000},
         {"bill_id": 41, "name": "Water", "due_date": "2026-11-08", "shortfall_cents": 6000},
     ]
+
+
+def test_transaction_over_max_spendable_warns_even_when_due_date_bills_are_covered():
+    from app.pay_period_forecast import transaction_bill_reservation_impact_from_forecast
+
+    forecast = {
+        "generated_on": "2026-11-01",
+        "current_cash_cents": 120000,
+        "max_spendable_cents": 10000,
+        "periods": [
+            {"start_date": "2026-11-01", "end_date": "2026-11-07",
+             "projected_ending_cash_cents": 85000, "income_items": [],
+             "transactions": [], "debt_events": [], "savings": [],
+             "bills": [{"bill_id": 1, "name": "P1 bill", "due_date": "2026-11-05",
+                        "amount_cents": 30000}]},
+            {"start_date": "2026-11-08", "end_date": "2026-11-14",
+             "projected_ending_cash_cents": 140000, "income_items": [],
+             "transactions": [], "debt_events": [], "savings": [],
+             "bills": [{"bill_id": 2, "name": "P2 bill", "due_date": "2026-11-10",
+                        "amount_cents": 40000}]},
+            {"start_date": "2026-11-15", "end_date": "2026-11-21",
+             "projected_ending_cash_cents": 10000, "income_items": [],
+             "transactions": [], "debt_events": [], "savings": [],
+             "bills": [{"bill_id": 3, "name": "Other", "due_date": "2026-11-20",
+                        "amount_cents": 225000}]},
+            {"start_date": "2026-11-22", "end_date": "2026-11-28",
+             "projected_ending_cash_cents": 75000, "income_items": [],
+             "transactions": [], "debt_events": [], "savings": [],
+             "bills": [{"bill_id": 4, "name": "P4 bill", "due_date": "2026-11-25",
+                        "amount_cents": 30000}]},
+        ],
+    }
+    impact = transaction_bill_reservation_impact_from_forecast(
+        forecast, 15000, "2026-11-03"
+    )
+    assert impact["requires_confirmation"] is True
+    assert impact["exceeds_max_spendable_cents"] == 5000
+    assert impact["underfunded_bills"] == [
+        {"bill_id": 3, "name": "Other", "due_date": "2026-11-20",
+         "unfunded_cents": 5000}
+    ]
+    assert impact["total_bill_shortfall_cents"] == 5000
