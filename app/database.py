@@ -737,3 +737,24 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
             """UPDATE transactions SET debt_balance_applied = 1
                WHERE linked_obligation_type = 'debt' AND transaction_type = 'expense'"""
         )
+
+    if version < 27:
+        # Version 27 supports a one-off bill amount override or cancellation
+        # without changing the recurring bill schedule.
+        db.execute(
+            """CREATE TABLE IF NOT EXISTS bill_occurrence_overrides (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bill_id INTEGER NOT NULL REFERENCES bills(id) ON DELETE CASCADE,
+                due_date TEXT NOT NULL,
+                amount_cents INTEGER CHECK(amount_cents IS NULL OR amount_cents >= 0),
+                status TEXT NOT NULL DEFAULT 'scheduled'
+                    CHECK(status IN ('scheduled', 'cancelled')),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(bill_id, due_date)
+            )"""
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_bill_occurrence_overrides_due "
+            "ON bill_occurrence_overrides(bill_id, due_date)"
+        )
