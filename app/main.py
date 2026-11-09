@@ -193,7 +193,7 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 <div class="account-links"><a href="/account">Account settings</a><a href="/logout">Log out</a></div>
 </div>
 <nav aria-label="Main navigation">
-<section class="nav-group"><span class="nav-label">Overview</span><div class="nav-links"><a href="/" aria-current="page">Dashboard</a><a href="/weekly">Weekly report</a></div></section>
+<section class="nav-group"><span class="nav-label">Overview</span><div class="nav-links"><a href="/" aria-current="page">Dashboard</a><a href="/pay-periods">Pay-period forecast</a></div></section>
 <section class="nav-group"><span class="nav-label">Plan & Budget</span><div class="nav-links"><a href="/setup">Household & income</a><a href="/bills">Bills & debt</a><a href="/savings">Savings goals</a></div></section>
 <section class="nav-group"><span class="nav-label">Track Activity</span><div class="nav-links"><a href="/checklist">Payday checklist</a><a href="/transactions">Transactions</a></div></section>
 <section class="nav-group"><span class="nav-label">Manage</span><div class="nav-links"><a href="/settings-data">Settings & data</a><a href="/docs">API docs</a></div></section>
@@ -215,7 +215,7 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 <p id="dashboard-cash-snapshot-status" class="muted" role="status">Loading cash confirmation…</p>
 </div>
 <div class="grid">
-<section class="card"><h2>Weekly cash flow</h2><div id="weekly-summary" class="muted">Loading forecast…</div><h3>Recorded spending by category</h3><ul id="weekly-category-spending" class="list"><li class="muted">Loading…</li></ul><p><a href="/weekly">Review safe surplus and allocate money →</a></p></section>
+<section class="card"><h2>Three-month pay-period forecast</h2><div id="weekly-summary" class="muted">Loading forecast…</div><h3>Recorded spending by category</h3><ul id="weekly-category-spending" class="list"><li class="muted">Loading…</li></ul><p><a href="/pay-periods">Review all upcoming pay periods and print the forecast →</a></p></section>
 <section class="card"><h2>Next paydays</h2><ul id="paydays" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Upcoming bills · 30 days</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Debt payments · 30 days</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
@@ -242,20 +242,21 @@ renderList("goals",d.savings_goals,"No active savings goals.",(li,x)=>{const ong
 
 document.getElementById("checklist-summary").textContent=d.pending_checklist_count?d.pending_checklist_count+" pending or attention-needed action(s).":"No pending checklist actions.";
 renderList("transactions",d.recent_transactions,"No transactions recorded yet.",(li,x)=>{const sign=x.amount_cents<0?"−":"";li.appendChild(el("div","item-title",x.description+" · "+sign+dollars(Math.abs(x.amount_cents))));li.appendChild(el("div","detail",x.transaction_date+" · "+x.category+(x.account_name?" · "+x.account_name:"")));});
-try{const weekly=await api("/api/cash-flow/weekly");const root=document.getElementById("weekly-summary");root.replaceChildren();
-root.appendChild(el("div","item-title",dollars(weekly.free_to_spend_cents)+" safe available surplus"));
-root.appendChild(el("div","detail","After upcoming obligations, planned savings, existing allocations, and future daily cash checkpoints."));
-root.appendChild(el("div","detail","Suggested debt snowball: "+(weekly.recommended_snowball_debt?weekly.recommended_snowball_debt.name:"Add a debt to get a recommendation")+" · Allocated so far "+dollars(weekly.planned_allocations_cents)));
-root.appendChild(el("div","detail","Starting cash "+dollars(weekly.starting_cash_cents)+" · expected income "+dollars(weekly.expected_income_cents)));
-if(weekly.starting_cash_is_stale)root.appendChild(el("div","detail",weekly.starting_cash_confirmed_at?"Warning: starting cash was last confirmed "+weekly.starting_cash_confirmed_at+". Please reconfirm it in Household & income.":"Warning: no starting-cash snapshot is confirmed yet. Set it in Household & income."));
-root.appendChild(el("div","detail","Bills still due "+dollars(weekly.bills_due_cents)+" · minimum debt payments "+dollars(weekly.minimum_debt_payments_cents)));
-root.appendChild(el("div","detail","You choose how much to allocate to debt, savings, or leave unallocated."));
-const categoryRoot=document.getElementById("weekly-category-spending");categoryRoot.replaceChildren();
+try{
+const forecast=await api("/api/cash-flow/pay-periods");const root=document.getElementById("weekly-summary");root.replaceChildren();
+root.appendChild(el("div","item-title",dollars(forecast.max_spendable_cents)+" maximum spendable across the forecast"));
+root.appendChild(el("div","detail","Spendable while keeping your target: "+dollars(forecast.spendable_while_keeping_target_cents)));
+root.appendChild(el("div","detail","Current cash "+dollars(forecast.current_cash_cents)+" · Reserved for bills, savings, and debt "+dollars(forecast.reserved_cash_cents)));
+const next=forecast.periods.find(p=>!p.is_current_period);
+if(next)root.appendChild(el("div","detail","Next pay period starts "+next.start_date+" · income "+dollars(next.income_cents)+" · bills "+dollars(next.bills_cents)+" · savings "+dollars(next.savings_cents)+" · debt "+dollars(next.debt_payments_cents)));
+if(forecast.warnings.length)root.appendChild(el("div","detail",forecast.warnings.length+" cash or target warning(s) across the next three months."));
+}catch(error){document.getElementById("weekly-summary").textContent="Pay-period forecast unavailable: "+error.message;}
+try{
+const weekly=await api("/api/cash-flow/weekly");const categoryRoot=document.getElementById("weekly-category-spending");categoryRoot.replaceChildren();
 const topCategories=weekly.category_spending.slice(0,3);
 if(!topCategories.length)categoryRoot.appendChild(el("li","muted","No recorded expenses this week."));
 else for(const item of topCategories){const li=el("li","");li.appendChild(el("div","item-title",item.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(item.amount_cents)));categoryRoot.appendChild(li);}
-if(weekly.projected_shortfall_cents>0)root.appendChild(el("div","detail","A daily cash shortfall of "+dollars(weekly.projected_shortfall_cents)+" is projected before later income arrives."));
-}catch(error){document.getElementById("weekly-summary").textContent="Weekly forecast unavailable: "+error.message;}
+}catch(error){document.getElementById("weekly-category-spending").textContent="Category summary unavailable: "+error.message;}
 }
 async function loadCashSnapshotControl(){
   const settings=await api("/api/household/settings");
