@@ -464,4 +464,33 @@ def bill_funding_shortfalls_from_forecast(forecast: Mapping) -> list[dict]:
             cash -= amount
         else:
             cash -= amount
+
+    # A period can end below zero because a non-bill reservation (for example,
+    # planned savings) is the final outflow. Bills still have priority, so
+    # expose that deficit against the final bill in the affected period rather
+    # than leaving the report with a negative ending balance and no bill warning.
+    for period in forecast.get("periods", []):
+        ending = int(period.get("projected_ending_cash_cents", 0))
+        if ending >= 0:
+            continue
+        period_bills = sorted(
+            (bill for bill in period.get("bills", [])
+             if int(bill.get("amount_cents", 0)) > 0),
+            key=lambda bill: bill["due_date"],
+        )
+        if not period_bills:
+            continue
+        last_bill = period_bills[-1]
+        existing = next((item for item in shortfalls
+                         if item["bill_id"] == last_bill["bill_id"]
+                         and item["due_date"] == last_bill["due_date"]), None)
+        if existing:
+            existing["shortfall_cents"] = max(existing["shortfall_cents"], -ending)
+        else:
+            shortfalls.append({
+                "bill_id": last_bill["bill_id"],
+                "name": last_bill["name"],
+                "due_date": last_bill["due_date"],
+                "shortfall_cents": -ending,
+            })
     return shortfalls
