@@ -37,7 +37,7 @@ def list_savings_goals():
     with database.connect() as db:
         rows = db.execute(
             """SELECT id, name, target_amount_cents, current_balance_cents,
-                      target_date, priority, weekly_target_cents, schedule_start_date, active, created_at
+                      target_date, priority, weekly_target_cents, contribution_per_period_cents, schedule_start_date, active, created_at
                FROM savings_goals ORDER BY priority, name COLLATE NOCASE, id"""
         ).fetchall()
     return [_goal_out(row) for row in rows]
@@ -60,10 +60,10 @@ def create_savings_goal(body: SavingsGoalCreate):
                 """INSERT INTO savings_goals
                    (name, target_amount_cents, current_balance_cents, target_date, priority,
                     contribution_per_period_cents, weekly_target_cents, schedule_start_date, active)
-                   VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (name, body.target_amount_cents, body.current_balance_cents,
                  body.target_date.isoformat() if body.target_date else None,
-                 body.priority, weekly_target,
+                 body.priority, body.contribution_per_period_cents, weekly_target,
                  schedule_start.isoformat(), int(body.active)),
             )
             row = db.execute(
@@ -91,7 +91,7 @@ def update_savings_goal(goal_id: int, body: SavingsGoalUpdate):
         updates["active"] = int(updates["active"])
     if not updates:
         raise HTTPException(status_code=422, detail="no fields to update")
-    allowed = {"name", "target_amount_cents", "current_balance_cents", "target_date", "priority", "weekly_target_cents", "schedule_start_date", "active"}
+    allowed = {"name", "target_amount_cents", "current_balance_cents", "target_date", "priority", "weekly_target_cents", "contribution_per_period_cents", "schedule_start_date", "active"}
     if not set(updates) <= allowed:
         raise HTTPException(status_code=422, detail="unsupported field")
     try:
