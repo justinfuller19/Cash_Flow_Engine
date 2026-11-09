@@ -512,7 +512,7 @@ def test_v20_migration_adds_bill_match_queue_without_changing_transactions(
         assert db.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'bill_payment_match_suggestions'"
         ).fetchone()[0] == 1
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 21
+        assert db.execute("PRAGMA user_version").fetchone()[0] == database.SCHEMA_VERSION
 
 
 def test_bill_edit_reconsiders_previously_dismissed_payment_suggestion(tmp_path, monkeypatch):
