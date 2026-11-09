@@ -107,7 +107,8 @@ def transaction_reservation_impact(transaction_amount_cents: int, available_cash
             "total_bill_shortfall_cents": sum(x["unfunded_cents"] for x in impacted)}
 
 def plan_savings_contributions(goals: Sequence[Mapping], period_starts: Sequence[str],
-                               actual_contributions: Mapping[tuple[int, str], int] | None = None) -> list[dict]:
+                               actual_contributions: Mapping[tuple[int, str], int] | None = None,
+                               completed_periods: set[tuple[int, str]] | None = None) -> list[dict]:
     """Plan dated and ongoing savings contributions across pay periods.
 
     Dated goals divide the remaining target over the remaining eligible periods
@@ -117,6 +118,7 @@ def plan_savings_contributions(goals: Sequence[Mapping], period_starts: Sequence
     their fixed per-period amount.
     """
     actual_contributions = actual_contributions or {}
+    completed_periods = completed_periods or set()
     results = []
     for goal in goals:
         goal_id = goal.get("id")
@@ -138,14 +140,15 @@ def plan_savings_contributions(goals: Sequence[Mapping], period_starts: Sequence
             if isinstance(actual, bool) or not isinstance(actual, int) or actual < 0:
                 raise ValueError("actual contributions must be non-negative integer cents")
             remaining = max(0, remaining - actual)
+            completed = (goal_id, period_start) in completed_periods
             if deadline:
-                if period_start > deadline or remaining == 0:
+                if period_start > deadline or remaining == 0 or completed:
                     planned = 0
                 else:
                     periods_left = sum(1 for start in period_starts[index:] if start <= deadline)
                     planned = (remaining + periods_left - 1) // periods_left if periods_left else 0
             else:
-                planned = max(0, ongoing - actual)
+                planned = 0 if completed else max(0, ongoing - actual)
             goal_periods.append({
                 "period_start": period_start,
                 "actual_contribution_cents": actual,
