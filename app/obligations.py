@@ -149,7 +149,7 @@ def create_debt(body: DebtCreate):
                     apr_percent, active, next_due_date)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (name, body.balance_cents, body.minimum_payment_cents, due_day,
-                 body.apr_percent, int(body.active), body.next_due_date.isoformat()),
+                 body.apr_percent, int(body.active), body.next_due_date.isoformat(),\n                 body.interest_date.isoformat() if body.interest_date else None),
             )
             row = db.execute(
                 """SELECT id, name, balance_cents, minimum_payment_cents, apr_percent,
@@ -175,7 +175,7 @@ def update_debt(debt_id: int, body: DebtUpdate):
     if not updates:
         raise HTTPException(status_code=422, detail="no fields to update")
     allowed = {"name", "balance_cents", "minimum_payment_cents", "apr_percent",
-               "next_due_date", "due_day_of_month", "active"}
+               "next_due_date", "interest_date", "due_day_of_month", "active"}
     if not set(updates) <= allowed:
         raise HTTPException(status_code=422, detail="unsupported field")
     try:
@@ -266,7 +266,7 @@ function addToggle(item,endpoint,active,label){const b=el("button","toggle",acti
 function render(list,records,kind){list.replaceChildren();if(!records.length){list.appendChild(el("li","muted","No "+kind+" saved yet."));return;}
 for(const r of records){const li=el("li");li.appendChild(el("div","title",r.name+" · "+dollars(kind==="bills"?r.amount_cents:r.balance_cents)));
 const detail=kind==="bills"?r.category+" · "+r.frequency+" · due "+(r.next_due_date||"not set")+(r.autopay?" · autopay":""):
-"Minimum "+dollars(r.minimum_payment_cents)+" · "+r.apr_percent+"% APR · due "+(r.next_due_date||"not set");
+"Minimum "+dollars(r.minimum_payment_cents)+" · "+r.apr_percent+"% APR · interest "+(r.interest_date||"not set")+" · payment due "+(r.next_due_date||"not set");
 li.appendChild(el("div","detail",detail+(r.active?"":" · inactive")));
 const edit=el("button","toggle",kind==="bills"?"Edit bill":"Edit debt");edit.type="button";
 edit.addEventListener("click",async()=>{
@@ -297,6 +297,6 @@ const remove=el("button","toggle","Delete "+(kind==="bills"?"bill":"debt"));remo
 async function refresh(){const [b,d]=await Promise.all([api("/api/bills"),api("/api/debts")]);render(document.getElementById("bills"),b,"bills");render(document.getElementById("debts"),d,"debts");}
 function bindForm(id,url,convert,success){const form=document.getElementById(id);form.addEventListener("submit",async(e)=>{e.preventDefault();const button=form.querySelector("button");button.disabled=true;try{await api(url,{method:"POST",body:JSON.stringify(convert(form))});form.reset();await refresh();message(success);}catch(err){message(err.message,true);}finally{button.disabled=false;}});}
 bindForm("bill-form","/api/bills",f=>({name:f.elements.name.value.trim(),amount_cents:cents(f.elements.amount.value),next_due_date:f.elements.next_due_date.value,frequency:f.elements.frequency.value,category:f.elements.category.value,flexible_window_days:Number(f.elements.flexible_window_days.value),autopay:f.elements.autopay.checked}),"Bill saved.");
-bindForm("debt-form","/api/debts",f=>({name:f.elements.name.value.trim(),balance_cents:cents(f.elements.balance.value),minimum_payment_cents:cents(f.elements.minimum.value),apr_percent:Number(f.elements.apr_percent.value),next_due_date:f.elements.next_due_date.value}),"Debt saved.");
+bindForm("debt-form","/api/debts",f=>({name:f.elements.name.value.trim(),balance_cents:cents(f.elements.balance.value),minimum_payment_cents:cents(f.elements.minimum.value),apr_percent:Number(f.elements.apr_percent.value),next_due_date:f.elements.next_due_date.value,interest_date:f.elements.interest_date.value||null}),"Debt saved.");
 refresh().catch(e=>message("Could not load saved records: "+e.message,true));
 </script></body></html>"""
