@@ -188,13 +188,19 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
     ).fetchall()]
 
     def transaction_matches(transaction: dict, link_type: str, link_id: int,
-                            scheduled_day: date, window_days: int) -> bool:
+                            scheduled_day: date, window_days: int,
+                            early_window_days: int | None = None) -> bool:
         if transaction.get("linked_obligation_type") != link_type:
             return False
         if transaction.get("linked_obligation_id") != link_id:
             return False
         transaction_day = _as_date(transaction["transaction_date"])
-        return transaction_day is not None and abs((transaction_day - scheduled_day).days) <= window_days
+        if transaction_day is None:
+            return False
+        delta = (transaction_day - scheduled_day).days
+        if early_window_days is not None:
+            return -early_window_days <= delta <= window_days
+        return abs(delta) <= window_days
 
     income_by_date: dict[date, list[dict]] = {}
     for item in income_occurrences:
@@ -320,7 +326,8 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
             flexible_days = int(bill.get("flexible_window_days") or 0)
             paid = any(
                 tx["transaction_type"] == "expense"
-                and transaction_matches(tx, "bill", bill["id"], due_date, flexible_days)
+                and transaction_matches(tx, "bill", bill["id"], due_date, flexible_days,
+                                     early_window_days=max(7, flexible_days))
                 for tx in bill_match_transactions
             )
             if paid:
@@ -640,6 +647,7 @@ def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
             ).fetchone()
             if pending_match:
                 continue
+            early_window = max(7, flex)
             candidates = db.execute(
                 """SELECT id, transaction_date, description, amount_cents, category,
                           linked_obligation_type, linked_obligation_id
@@ -647,7 +655,7 @@ def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
                    WHERE transaction_type = 'expense'
                      AND transaction_date BETWEEN ? AND ?
                    ORDER BY ABS(julianday(transaction_date) - julianday(?)), id""",
-                ((due_date - timedelta(days=flex)).isoformat(),
+                ((due_date - timedelta(days=early_window)).isoformat(),
                  (due_date + timedelta(days=flex)).isoformat(), due_date.isoformat()),
             ).fetchall()
             bill_name = bill["name"].strip().lower()
