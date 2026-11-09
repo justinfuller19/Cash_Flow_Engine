@@ -96,6 +96,7 @@ def test_undated_general_savings_uses_weekly_amount_and_carries_missed_weeks(tmp
         "name": "General savings",
         "current_balance_cents": 0,
         "weekly_target_cents": 2500,
+        "contribution_per_period_cents": 2500,
         "priority": 1,
     })
     assert created.status_code == 201, created.text
