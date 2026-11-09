@@ -241,7 +241,7 @@ button:disabled{opacity:.55}.toggle{background:#475569;margin:4px 0}.status{padd
 <label for="bill-amount">Expected amount ($)</label><input id="bill-amount" name="amount" type="number" min="0" step="0.01" required>
 <label for="bill-date">Next due date</label><input id="bill-date" name="next_due_date" type="date" required>
 <label for="bill-frequency">Recurrence</label><select id="bill-frequency" name="frequency">
-<option value="weekly">Weekly</option><option value="biweekly">Every two weeks</option><option value="semimonthly">1st and 15th</option><option value="twice_monthly_last">15th and last calendar day</option><option value="first_third_friday">1st and 3rd Friday</option><option value="last_business_day">Last business day</option><option value="monthly" selected>Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option><option value="irregular">One-time / irregular</option></select>
+<option value="weekly">Weekly</option><option value="biweekly">Every two weeks</option><option value="semimonthly">1st and 15th</option><option value="twice_monthly_last">15th and last calendar day</option><option value="first_third_friday">1st and 3rd Friday</option><option value="last_business_day">Last business day</option><option value="monthly" selected>Monthly</option><option value="every_two_months">Every two months</option><option value="quarterly">Quarterly</option><option value="every_four_months">Every four months</option><option value="every_six_months">Every six months</option><option value="yearly">Yearly</option><option value="irregular">One-time / irregular</option></select>
 <label for="bill-category">Category</label><select id="bill-category" name="category">
 <option value="housing">Housing</option><option value="utilities">Utilities</option><option value="transportation">Transportation</option><option value="insurance">Insurance</option><option value="subscriptions">Subscriptions</option><option value="food">Food</option><option value="other" selected>Other</option></select>
 <label for="bill-window">Flexible window (days)</label><input id="bill-window" name="flexible_window_days" type="number" min="0" max="31" step="1" value="0" required>
@@ -280,7 +280,7 @@ if(kind==="bills"){
 const name=prompt("Bill name:",r.name);if(name===null)return;
 const amount=prompt("Amount in dollars:",(r.amount_cents/100).toFixed(2));if(amount===null)return;
 const due=prompt("Next due date YYYY-MM-DD:",r.next_due_date||"");if(due===null)return;
-const frequency=prompt("Frequency (weekly, biweekly, monthly, quarterly, yearly, irregular):",r.frequency);if(frequency===null)return;
+const frequency=prompt("Frequency (weekly, biweekly, monthly, every_two_months, quarterly, every_four_months, every_six_months, yearly, irregular):",r.frequency);if(frequency===null)return;
 const category=prompt("Category:",r.category);if(category===null)return;
 const window=prompt("Flexible window in days:",String(r.flexible_window_days));if(window===null)return;
 const autopayText=prompt("Autopay true or false:",String(r.autopay));if(autopayText===null)return;
