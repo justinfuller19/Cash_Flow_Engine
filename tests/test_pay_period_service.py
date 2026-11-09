@@ -230,3 +230,30 @@ def test_early_linked_bill_payment_releases_reservation_without_double_subtracti
         item["bill_id"] == bill_id and item["due_date"] == "2026-11-15"
         for period in report["periods"] for item in period["bills"]
     )
+
+def test_unlinked_recorded_paycheck_replaces_estimate_and_keeps_group_period_assignment():
+    client = _client()
+    with database.connect() as db:
+        person_id = db.execute(
+            "INSERT INTO persons (name) VALUES ('Household')"
+        ).lastrowid
+        for name, payday in (("Friday pay", "2026-11-13"), ("Sunday pay", "2026-11-15")):
+            db.execute(
+                """INSERT INTO income_sources
+                   (person_id, name, net_amount_cents, frequency, next_payday, active)
+                   VALUES (?, ?, 10000, 'weekly', ?, 1)""",
+                (person_id, name, payday),
+            )
+        db.execute(
+            """INSERT INTO transactions
+               (transaction_date, category, transaction_type, description, amount_cents)
+               VALUES ('2026-11-13', 'paychecks', 'income', 'Friday paycheck received', 10000)"""
+        )
+
+    response = client.get("/api/cash-flow/pay-periods", params={"as_of_date": "2026-11-08"})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    grouped = next(p for p in report["periods"] if p["start_date"] == "2026-11-15")
+    assert grouped["income_cents"] == 20000
+    assert [item["name"] for item in grouped["income_items"]] == ["Sunday pay"]
+    assert [item["description"] for item in grouped["transactions"]] == ["Friday paycheck received"]
