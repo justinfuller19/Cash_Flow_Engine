@@ -270,7 +270,8 @@ def test_transaction_warning_compares_recurring_bill_occurrences_individually():
         forecast, 30000, "2026-11-09"
     )
     assert impact["underfunded_bills"] == [
-        {"name": "Rent", "due_date": "2026-11-11", "unfunded_cents": 10000}
+        {"name": "Rent", "due_date": "2026-11-11", "unfunded_cents": 10000},
+        {"name": "Rent", "due_date": "2026-12-11", "unfunded_cents": 20000},
     ]
 
 def test_negative_opening_cash_is_preserved_and_warned():
