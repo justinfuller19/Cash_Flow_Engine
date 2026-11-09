@@ -257,6 +257,7 @@ def project_debt_schedule(debts: Sequence[Mapping], periods: Sequence[Mapping[st
         balance = balances.get(debt_id, 0)
         if balance <= 0:
             continue
+        is_actual_payment = event_type == "actual_payment"
         if event_type == "interest":
             basis_points = int(float(debt.get("apr_percent", 0)) * 100 + 0.5)
             denominator = 120000
@@ -265,10 +266,10 @@ def project_debt_schedule(debts: Sequence[Mapping], periods: Sequence[Mapping[st
             amount = interest
         else:
             payment_amount = (
-                actual_payment["amount_cents"] if event_type == "actual_payment"
+                actual_payment["amount_cents"] if is_actual_payment
                 else debt.get("planned_payment_cents", 0) or debt.get("minimum_payment_cents", 0)
             )
-            amount = payment_amount if event_type == "actual_payment" else min(balance, payment_amount)
+            amount = payment_amount if is_actual_payment else min(balance, payment_amount)
             balances[debt_id] = max(0, balance - payment_amount)
             event_type = "payment"
         owning = next((p for start, end, p in parsed_periods if start <= day <= end), None)
@@ -276,10 +277,11 @@ def project_debt_schedule(debts: Sequence[Mapping], periods: Sequence[Mapping[st
             continue
         bucket = period_totals[owning.get("start_date")]
         key = "estimated_interest_cents" if event_type == "interest" else "debt_payments_cents"
-        bucket[key] += amount
+        if not is_actual_payment:
+            bucket[key] += amount
         event = {"debt_id": debt_id, "debt_name": debt.get("name", "Debt"),
-                 "date": day.isoformat(), "type": event_type, "amount_cents": amount,
-                 "balance_after_cents": balances[debt_id]}
+                 "date": day.isoformat(), "type": event_type, "actual": is_actual_payment,
+                 "amount_cents": amount, "balance_after_cents": balances[debt_id]}
         bucket["debt_events"].append(event)
         debt_events.append(event)
 
