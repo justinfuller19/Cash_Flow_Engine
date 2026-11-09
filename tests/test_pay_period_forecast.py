@@ -348,7 +348,7 @@ def test_grouped_paychecks_are_not_available_for_bills_before_group_period_start
             },
         ],
     }
-    assert bill_funding_shortfalls_from_forecast(forecast) == [{
-        "bill_id": 40, "name": "Electric", "due_date": "2026-11-07",
-        "shortfall_cents": 8000,
-    }]
+    assert bill_funding_shortfalls_from_forecast(forecast) == [
+        {"bill_id": 40, "name": "Electric", "due_date": "2026-11-07", "shortfall_cents": 8000},
+        {"bill_id": 41, "name": "Water", "due_date": "2026-11-08", "shortfall_cents": 6000},
+    ]
