@@ -206,17 +206,29 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
             continue
         for item in items:
             source_name = item["name"].strip().lower()
-            matched = any(
-                transaction_matches(tx, "income", item["income_source_id"], payday, 2)
-                or (
+            matched = False
+            for tx in future_transactions:
+                if transaction_matches(tx, "income", item["income_source_id"], payday, 2):
+                    matched = True
+                    break
+                description = (tx.get("description") or "").lower()
+                tx_day = _as_date(tx["transaction_date"])
+                if (
                     tx.get("linked_obligation_type") is None
                     and abs(int(tx["amount_cents"])) == item["amount_cents"]
-                    and abs((_as_date(tx["transaction_date"]) - payday).days) <= 2
-                    and ("paycheck" in (tx.get("description") or "").lower()
-                         or source_name in (tx.get("description") or "").lower())
-                )
-                for tx in future_transactions
-            )
+                    and tx_day is not None and abs((tx_day - payday).days) <= 2
+                    and (
+                        source_name in description
+                        or ("paycheck" in description and sum(
+                            1 for candidate in income_occurrences
+                            if candidate["date"] > today
+                            and candidate["amount_cents"] == item["amount_cents"]
+                            and abs((candidate["date"] - tx_day).days) <= 2
+                        ) == 1)
+                    )
+                ):
+                    matched = True
+                    break
             if not matched:
                 detail = {**item, "date": payday.isoformat()}
                 period["income_items"].append(detail)
@@ -237,7 +249,15 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
                      and transaction.get("linked_obligation_id") == item["income_source_id"])
                     or (transaction.get("linked_obligation_type") is None
                         and abs(int(transaction["amount_cents"])) == item["amount_cents"]
-                        and ("paycheck" in description or item["name"].strip().lower() in description))
+                        and (
+                            item["name"].strip().lower() in description
+                            or ("paycheck" in description and sum(
+                                1 for candidate in income_occurrences
+                                if candidate["date"] > today
+                                and candidate["amount_cents"] == item["amount_cents"]
+                                and abs((candidate["date"] - day).days) <= 2
+                            ) == 1)
+                        ))
                 )
             ), None)
             if match:
