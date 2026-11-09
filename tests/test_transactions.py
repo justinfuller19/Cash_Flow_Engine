@@ -669,7 +669,14 @@ def test_expense_requires_confirmation_when_it_newly_underfunds_a_bill(tmp_path,
     debug_impact = transaction_bill_reservation_impact_from_forecast(
         debug_forecast, 30000, today.isoformat()
     )
-    assert debug_impact["requires_confirmation"] is True, {"impact": debug_impact, "periods": debug_forecast["periods"]}
+    assert debug_impact["requires_confirmation"] is True, {
+        "impact": debug_impact,
+        "generated_on": debug_forecast["generated_on"],
+        "cash": debug_forecast["current_cash_cents"],
+        "bills": [(p["start_date"], p["end_date"], p["bills"]) for p in debug_forecast["periods"] if p["bills"]],
+        "income": [(p["start_date"], p["income_items"]) for p in debug_forecast["periods"] if p["income_items"]],
+        "transaction_date": today.isoformat(),
+    }
 
     payload = {
         "transaction_date": today.isoformat(),
