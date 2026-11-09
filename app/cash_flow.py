@@ -233,7 +233,9 @@ details{margin-top:10px}summary{cursor:pointer;font-weight:650;color:#0e7490}ul.
     "<div class='period-grid'><div><span>Cash carried in</span><strong>"+dollars(p.starting_cash_cents)+"</strong></div><div><span>Income</span><strong>"+dollars(p.income_cents)+"</strong></div><div><span>Bills</span><strong>"+dollars(p.bills_cents)+"</strong></div><div><span>Savings</span><strong>"+dollars(p.savings_cents)+"</strong></div><div><span>Debt payments</span><strong>"+dollars(p.debt_payments_cents)+"</strong></div><div><span>Other expenses</span><strong>"+dollars(p.other_expenses_cents)+"</strong></div><div><span>Projected ending cash</span><strong>"+dollars(p.projected_ending_cash_cents)+"</strong></div><div><span>Carry above target</span><strong>"+dollars(p.carry_out_above_target_cents)+"</strong></div></div>"+
     "<details><summary>Scheduled income</summary>"+income+"</details><details><summary>Bills</summary>"+bills+"</details><details><summary>Savings contributions</summary>"+savings+"</details><details><summary>Debt interest and payments</summary>"+debt+"</details><details><summary>Recorded future transactions</summary>"+transactions+"</details></article>";
   }).join("");
-  $("status").textContent=report.target_maintainable?"Forecast loaded. The end-of-period target is maintainable across the forecast.":"Forecast loaded. Review the carry-over and cash warnings below.";
+  const posted=report.auto_posted;
+  const postedNote=posted&&(posted.posted_paychecks||posted.posted_bills)?" Automatically recorded "+posted.posted_paychecks+" paycheck(s) and "+posted.posted_bills+" bill payment(s) in the internal ledger.":"";
+  $("status").textContent=(report.target_maintainable?"Forecast loaded. The end-of-period target is maintainable across the forecast.":"Forecast loaded. Review the carry-over and cash warnings below.")+postedNote;
   $("status").classList.toggle("error",!report.target_maintainable);
  }
  async function load(){
@@ -254,9 +256,13 @@ def pay_period_cash_flow(as_of_date: date | None = Query(default=None)):
     """Build the rolling three-calendar-month forecast from saved household records."""
     try:
         with database.connect() as db:
+            auto_posted = None
             if as_of_date is None:
-                post_due_scheduled_transactions(db)
-            return build_pay_period_forecast(db, as_of_date)
+                auto_posted = post_due_scheduled_transactions(db)
+            report = build_pay_period_forecast(db, as_of_date)
+            if auto_posted is not None:
+                report["auto_posted"] = auto_posted
+            return report
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
