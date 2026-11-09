@@ -85,3 +85,43 @@ def test_transaction_warning_excludes_preexisting_bill_shortfalls():
     assert new_impact["underfunded_bills"] == [
         {"name": "Rent", "due_date": "2026-11-10", "unfunded_cents": 5000},
     ]
+
+def test_deadline_savings_is_prorated_over_remaining_pay_periods():
+    from app.pay_period_forecast import plan_savings_contributions
+
+    result = plan_savings_contributions(
+        [{"id": 7, "name": "Vacation", "target_amount_cents": 100000,
+          "current_balance_cents": 0, "target_date": "2026-11-15"}],
+        ["2026-11-01", "2026-11-08", "2026-11-15"],
+    )[0]
+    assert [p["planned_contribution_cents"] for p in result["periods"]] == [
+        33334, 33333, 33333
+    ]
+    assert result["remaining_target_cents"] == 0
+
+
+def test_missed_savings_contribution_carries_forward_to_fewer_periods():
+    from app.pay_period_forecast import plan_savings_contributions
+
+    result = plan_savings_contributions(
+        [{"id": 8, "target_amount_cents": 100000, "current_balance_cents": 0,
+          "target_date": "2026-11-15"}],
+        ["2026-11-08", "2026-11-15"],
+    )[0]
+    assert [p["planned_contribution_cents"] for p in result["periods"]] == [
+        50000, 50000
+    ]
+
+
+def test_ongoing_savings_uses_fixed_per_period_amount_and_subtracts_actual():
+    from app.pay_period_forecast import plan_savings_contributions
+
+    result = plan_savings_contributions(
+        [{"id": 9, "name": "General savings", "target_amount_cents": 0,
+          "current_balance_cents": 0, "ongoing_per_period_cents": 5000}],
+        ["2026-11-01", "2026-11-08"],
+        actual_contributions={(9, "2026-11-01"): 2000},
+    )[0]
+    assert [p["planned_contribution_cents"] for p in result["periods"]] == [
+        3000, 5000
+    ]
