@@ -105,3 +105,59 @@ def transaction_reservation_impact(transaction_amount_cents: int, available_cash
             "remaining_cash_after_transaction_cents": max(0, available_cash_cents - transaction_amount_cents),
             "underfunded_bills": impacted,
             "total_bill_shortfall_cents": sum(x["unfunded_cents"] for x in impacted)}
+
+def plan_savings_contributions(goals: Sequence[Mapping], period_starts: Sequence[str],
+                               actual_contributions: Mapping[tuple[int, str], int] | None = None) -> list[dict]:
+    """Plan dated and ongoing savings contributions across pay periods.
+
+    Dated goals divide the remaining target over the remaining eligible periods
+    using ceiling division. Actual contributions reduce the remaining amount;
+    a missed period has no actual contribution, so a later call naturally
+    spreads the unpaid amount over fewer remaining periods. Ongoing goals use
+    their fixed per-period amount.
+    """
+    actual_contributions = actual_contributions or {}
+    results = []
+    for goal in goals:
+        goal_id = goal.get("id")
+        target = goal.get("target_amount_cents", 0)
+        saved = goal.get("current_balance_cents", 0)
+        ongoing = goal.get("ongoing_per_period_cents", 0)
+        deadline = goal.get("target_date")
+        if hasattr(deadline, "isoformat"):
+            deadline = deadline.isoformat()
+        for field, value in (("target_amount_cents", target),
+                             ("current_balance_cents", saved),
+                             ("ongoing_per_period_cents", ongoing)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{field} must be a non-negative integer")
+        remaining = max(0, target - saved)
+        goal_periods = []
+        for index, period_start in enumerate(period_starts):
+            actual = actual_contributions.get((goal_id, period_start), 0)
+            if isinstance(actual, bool) or not isinstance(actual, int) or actual < 0:
+                raise ValueError("actual contributions must be non-negative integer cents")
+            remaining = max(0, remaining - actual)
+            if deadline:
+                if period_start > deadline or remaining == 0:
+                    planned = 0
+                else:
+                    periods_left = sum(1 for start in period_starts[index:] if start <= deadline)
+                    planned = (remaining + periods_left - 1) // periods_left if periods_left else 0
+            else:
+                planned = max(0, ongoing - actual)
+            goal_periods.append({
+                "period_start": period_start,
+                "actual_contribution_cents": actual,
+                "planned_contribution_cents": planned,
+                "remaining_after_projected_contribution_cents": max(0, remaining - planned),
+            })
+            remaining = max(0, remaining - planned)
+        results.append({
+            "goal_id": goal_id,
+            "name": goal.get("name", "Savings goal"),
+            "periods": goal_periods,
+            "remaining_target_cents": remaining,
+            "deadline_shortfall_cents": remaining if deadline else 0,
+        })
+    return results
