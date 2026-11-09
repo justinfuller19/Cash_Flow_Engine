@@ -192,6 +192,7 @@ details{margin-top:10px}summary{cursor:pointer;font-weight:650;color:#0e7490}ul.
 </style></head><body><main>
 <header><div><h1>Three-Month Pay-Period Forecast</h1><p class="muted" id="generated">Preparing report…</p></div>
 <div class="actions"><button class="secondary" id="refresh" type="button">Refresh forecast</button><button id="print" type="button">Print / Save PDF</button></div></header>
+<p class="muted">Use the bill controls in each period to change or skip one due date only. To change the recurring amount for all future occurrences, edit the bill in <a href="/bills">Bills</a>.</p>
 <div id="status" role="status" aria-live="polite">Loading saved household schedules and transactions…</div>
 <section class="metrics" id="metrics"></section>
 <ul id="warnings"></ul>
