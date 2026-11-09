@@ -12,7 +12,7 @@ class PatchModel(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def reject_explicit_nulls(cls, value: Any) -> Any:
-        if isinstance(value, dict) and any(item is None for item in value.values()):
+        if isinstance(value, dict) and any(item is None for key, item in value.items() if key != "interest_date"):
             raise ValueError("PATCH fields cannot be null")
         return value
 
