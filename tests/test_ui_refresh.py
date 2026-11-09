@@ -60,27 +60,26 @@ def test_auth_page_without_head_gets_styles_but_no_navigation():
     assert 'class="cfe-global-nav"' not in markup
 
 
-def test_home_page_gets_action_first_ui_and_cash_floor_explanation():
-    html = '<html><head></head><body><nav aria-label="Main navigation">old nav</nav><form id="dashboard-cash-snapshot-form"></form><div id="metrics"></div><div id="weekly-summary"></div></body></html>'
+def test_home_page_gets_action_first_ui_and_pay_period_explanation():
+    html = '<html><head></head><body><nav aria-label="Main navigation">old nav</nav><form id="dashboard-cash-snapshot-form"></form><div id="metrics"></div><div id="pay-period-summary"></div></body></html>'
     refreshed = enhance_html(html)
     assert 'id="cfe-ui-interactions"' in refreshed
     assert "actions.id='cfe-home-actions'" in refreshed
-    assert 'Safe to spend this week' in refreshed
-    assert 'there is no mandatory household cash floor' in refreshed.lower()
+    assert 'maximum spendable' in refreshed.lower()
+    assert 'the target itself is not reserved' in refreshed.lower()
     assert '/api/dashboard' not in refreshed
     assert 'free_to_spend_cents' not in refreshed
 
 
-def test_dashboard_metric_labels_are_pinned_to_the_script_hooks():
+def test_pay_period_dashboard_metric_labels_are_pinned_to_the_script_hooks():
     # The script currently discovers these metrics by their existing labels.
     # Keep this regression test so a dashboard label change is noticed during review.
     from app.ui_refresh import INTERACTION_SCRIPT
 
-    assert "includes('safe to spend')" in INTERACTION_SCRIPT
-    assert "includes('actions needing attention')" in INTERACTION_SCRIPT
-    assert "Safe to spend this week" in INTERACTION_SCRIPT
-    assert "Checklist actions left" in INTERACTION_SCRIPT
-    assert "Projected cash shortfall" in INTERACTION_SCRIPT
+    assert "includes('maximum spendable')" in INTERACTION_SCRIPT
+    assert "includes('pay-period warnings')" in INTERACTION_SCRIPT
+    assert "Maximum spendable" not in INTERACTION_SCRIPT
+    assert "Pay-period warnings need review" in INTERACTION_SCRIPT
 
 
 def test_future_forecast_gap_has_a_visible_warning_and_forecast_link():
@@ -88,8 +87,8 @@ def test_future_forecast_gap_has_a_visible_warning_and_forecast_link():
 
     assert 'cfe-forecast-warning' in GLOBAL_STYLES
     assert "id='cfe-forecast-warning'" in INTERACTION_SCRIPT
-    assert "Future cash-flow gap detected" in INTERACTION_SCRIPT
-    assert "href='/weekly'" in INTERACTION_SCRIPT
+    assert "Pay-period warnings need review" in INTERACTION_SCRIPT
+    assert "href='/pay-periods'" in INTERACTION_SCRIPT
     assert "numeric<=0" in INTERACTION_SCRIPT
 
 
