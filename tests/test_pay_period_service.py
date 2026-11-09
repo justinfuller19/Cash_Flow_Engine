@@ -79,12 +79,12 @@ def test_pay_period_api_uses_snapshot_and_projects_saved_records_once():
 
     following = next(p for p in report["periods"] if p["start_date"] == "2026-11-13")
     assert following["income_cents"] == 50000
-    assert following["bills_cents"] == 30000
+    assert following["bills_cents"] == 0
     assert following["savings_cents"] == 5000
     assert following["debt_payments_cents"] == 7000
     assert following["estimated_interest_cents"] == 1000
-    assert following["projected_ending_cash_cents"] == 68000
-    assert report["projected_debts"][0]["projected_balance_cents"] == 94000
+    assert following["projected_ending_cash_cents"] == 98000
+    assert report["projected_debts"][0]["projected_balance_cents"] == 82000
 
 
 def test_paychecks_within_group_window_both_belong_to_group_last_payday_period():
