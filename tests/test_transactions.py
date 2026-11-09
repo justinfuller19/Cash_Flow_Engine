@@ -665,7 +665,8 @@ def test_expense_requires_confirmation_when_it_newly_underfunds_a_bill(tmp_path,
         debug_forecast, 30000, today.isoformat()
     )
     assert debug_impact["underfunded_bills"] == [
-        {"name": "Rent", "due_date": due.isoformat(), "unfunded_cents": 10000}
+        {"name": "Rent", "due_date": due.isoformat(), "unfunded_cents": 10000},
+        {"name": "Rent", "due_date": (due.replace(day=1) + timedelta(days=32)).replace(day=due.day).isoformat(), "unfunded_cents": 20000},
     ]
 
     payload = {
