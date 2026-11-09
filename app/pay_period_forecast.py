@@ -366,13 +366,13 @@ def bill_funding_shortfalls_from_forecast(forecast: Mapping) -> list[dict]:
     events = []
     for period in forecast.get("periods", []):
         for item in period.get("income_items", []):
-            events.append((date.fromisoformat(item["date"]), 3, "income",
+            events.append((date.fromisoformat(item["date"]), 0, "income",
                            int(item["amount_cents"]), None))
         for item in period.get("transactions", []):
             day = date.fromisoformat(item["date"])
             amount = int(item["amount_cents"])
             if item["type"] == "income":
-                events.append((day, 3, "income", amount, None))
+                events.append((day, 0, "income", amount, None))
             elif item["type"] == "expense":
                 events.append((day, 1, "expense", amount, None))
         for item in period.get("debt_events", []):
