@@ -217,13 +217,14 @@ def test_checklist_skips_zero_balance_active_debt(tmp_path, monkeypatch):
     )
 
 
-def test_dashboard_savings_progress_uses_weekly_target_and_handles_ongoing_goals(tmp_path, monkeypatch):
+def test_dashboard_savings_progress_uses_per_period_contributions_and_handles_ongoing_goals(tmp_path, monkeypatch):
     client, _, _ = seed_planned_household(tmp_path, monkeypatch)
     with database.connect() as db:
         db.execute(
             """INSERT INTO savings_goals
-               (name, target_amount_cents, current_balance_cents, weekly_target_cents, active)
-               VALUES ('Savings account', 0, 0, 0, 1)"""
+               (name, target_amount_cents, current_balance_cents, weekly_target_cents,
+                contribution_per_period_cents, active)
+               VALUES ('Savings account', 0, 0, 0, 3000, 1)"""
         )
 
     data = client.get("/api/dashboard").json()
@@ -231,10 +232,11 @@ def test_dashboard_savings_progress_uses_weekly_target_and_handles_ongoing_goals
     assert goals["Emergency fund"]["weekly_target_cents"] == 10000
     assert goals["Savings account"]["target_amount_cents"] == 0
     assert goals["Savings account"]["weekly_target_cents"] == 0
+    assert goals["Savings account"]["contribution_per_period_cents"] == 3000
 
     page = client.get("/")
     assert page.status_code == 200
     assert "x.contribution_per_period_cents||0" in page.text
     assert "per pay period" in page.text
     assert 'const ongoing=x.target_amount_cents===0' in page.text
-    assert "x.contribution_per_period_cents" not in page.text
+    assert "x.weekly_target_cents||0" not in page.text
