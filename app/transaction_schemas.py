@@ -15,6 +15,7 @@ class TransactionCreate(BaseModel):
     amount_cents: int
     account_name: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=1000)
+    confirm_reserved_bill_impact: bool = False
 
     @model_validator(mode="after")
     def validate_amount_sign(self):
