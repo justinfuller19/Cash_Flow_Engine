@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATABASE_PATH = PROJECT_ROOT / "data" / "cashflow.db"
 
 #: Current schema version. Bump when adding a migration to _apply_migrations().
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 
 def base_database_path() -> Path:
@@ -198,6 +198,8 @@ def initialize_database() -> None:
                     CHECK(starting_cash_cents >= 0),
                 financial_week_start TEXT NOT NULL DEFAULT 'Friday'
                     CHECK(financial_week_start IN ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')),
+                paycheck_group_window_days INTEGER NOT NULL DEFAULT 2
+                    CHECK(paycheck_group_window_days BETWEEN 0 AND 14),
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -671,3 +673,14 @@ def _apply_migrations(db: sqlite3.Connection) -> None:
             "ON bill_payment_match_suggestions(status, transaction_id)"
         )
 
+
+
+    if version < 22:
+        # Version 22 adds the household-configurable paycheck grouping window.
+        # Existing households receive the agreed two-day default.
+        settings_columns = {row["name"] for row in db.execute("PRAGMA table_info(household_settings)")}
+        if "paycheck_group_window_days" not in settings_columns:
+            db.execute(
+                "ALTER TABLE household_settings ADD COLUMN paycheck_group_window_days "
+                "INTEGER NOT NULL DEFAULT 2 CHECK(paycheck_group_window_days BETWEEN 0 AND 14)"
+            )
