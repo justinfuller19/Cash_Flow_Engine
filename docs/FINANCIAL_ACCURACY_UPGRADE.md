@@ -1,7 +1,11 @@
 # Cash Flow Engine — Financial Accuracy & Forecast Reliability Upgrade
 
-**Status:** Planned  
+**Status:** Historical weekly/buffer phases retained for reference; current work follows docs/PAY_PERIOD_FORECAST_SPEC.md  
 **Purpose:** Track implementation progress for this upgrade. Update the checkboxes and status as code, tests, and documentation are completed. A checkbox may be marked complete only when the change is present in the PR branch and supported by tests. An open PR is not part of `main` until merged.
+
+## Current owner-approved direction (2026-11-08)
+
+The weekly mandatory-buffer model described in the historical phases below is superseded. The active product specification is docs/PAY_PERIOD_FORECAST_SPEC.md: rolling three-month pay periods, a configurable fixed-anchor paycheck grouping window (2 days by default), and a spendable soft end-of-period target. Do not mark historical buffer semantics as current behavior or reintroduce a mandatory buffer.
 
 ## Goal
 
@@ -281,3 +285,13 @@ Record meaningful implementation updates here. Each entry should include date, p
 - [ ] Run the full Python 3.11/3.12/3.13 CI matrix and inspect results before merge/deployment.
 
 The API-only simulation findings did not establish a browser-rendering regression. This change does not alter the production database schema.
+
+
+## Current implementation progress — pay-period forecast
+
+- [x] Phase 1 foundation: schema v22 setting `paycheck_group_window_days` (default 2), validated household settings API, Settings page, deterministic grouping helper, and fixed-anchor/boundary tests. Implemented on `feature/pay-period-calendar-foundation`; CI and review pending.
+- [ ] Phase 2: connect generated paycheck groups to a rolling three-month pay-period calendar and recurring bill assignment.
+- [ ] Phase 3: forward cash projection and backward carry-over target calculation.
+- [ ] Phase 4: savings and debt chronology.
+- [ ] Phase 5: internal ledger posting, transaction safeguards, and reconciliation.
+- [ ] Phase 6: dashboard, printable report, and Pi compatibility verification.
