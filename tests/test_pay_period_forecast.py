@@ -57,10 +57,9 @@ def test_transaction_warning_names_underfunded_bills():
     ])
     assert result["requires_confirmation"]
     assert result["underfunded_bills"] == [
-        {"name": "Rent", "due_date": "2026-11-10", "unfunded_cents": 12000},
-        {"name": "Electric", "due_date": "2026-11-12", "unfunded_cents": 8000},
+        {"name": "Rent", "due_date": "2026-11-10", "unfunded_cents": 10000},
     ]
-    assert result["total_bill_shortfall_cents"] == 20000
+    assert result["total_bill_shortfall_cents"] == 10000
 
 
 def test_transaction_that_preserves_bill_reservations_needs_no_confirmation():
@@ -70,3 +69,19 @@ def test_transaction_that_preserves_bill_reservations_needs_no_confirmation():
     ])
     assert not result["requires_confirmation"]
     assert result["underfunded_bills"] == []
+
+
+def test_transaction_warning_excludes_preexisting_bill_shortfalls():
+    bills = [
+        {"name": "Rent", "due_date": "2026-11-10", "amount_cents": 12000, "paid_cents": 0},
+        {"name": "Electric", "due_date": "2026-11-12", "amount_cents": 8000, "paid_cents": 0},
+    ]
+    no_new_impact = transaction_reservation_impact(0, 10000, bills)
+    assert no_new_impact["requires_confirmation"] is False
+    assert no_new_impact["total_bill_shortfall_cents"] == 0
+
+    new_impact = transaction_reservation_impact(5000, 10000, bills)
+    assert new_impact["requires_confirmation"] is True
+    assert new_impact["underfunded_bills"] == [
+        {"name": "Rent", "due_date": "2026-11-10", "unfunded_cents": 5000},
+    ]
