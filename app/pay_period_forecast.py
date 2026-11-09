@@ -163,7 +163,7 @@ def plan_savings_contributions(goals: Sequence[Mapping], period_starts: Sequence
     return results
 
 def project_debt_schedule(debts: Sequence[Mapping], periods: Sequence[Mapping[str, str]],
-                          as_of_date: str) -> dict:
+                          as_of_date: str, actual_payments: Sequence[Mapping] = ()) -> dict:
     """Project monthly interest and planned payments chronologically.
 
     Interest is posted before a payment when both fall on the same date.
@@ -207,6 +207,16 @@ def project_debt_schedule(debts: Sequence[Mapping], periods: Sequence[Mapping[st
         return dates
 
     events = []
+    actual_by_debt: dict[int, list[Mapping]] = {}
+    for payment in actual_payments:
+        debt_id = payment.get("debt_id")
+        day = date.fromisoformat(payment["date"])
+        amount = payment.get("amount_cents")
+        if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
+            raise ValueError("actual payment amounts must be positive integer cents")
+        if as_of <= day <= horizon_end:
+            actual_by_debt.setdefault(debt_id, []).append(payment)
+
     for debt in debts:
         debt_id = debt.get("id")
         balance = debt.get("balance_cents", 0)
@@ -221,12 +231,29 @@ def project_debt_schedule(debts: Sequence[Mapping], periods: Sequence[Mapping[st
             raise ValueError("apr_percent must be non-negative")
         for day in monthly_dates(debt.get("interest_date")):
             events.append((day, 0, debt_id, debt, "interest"))
-        for day in monthly_dates(debt.get("next_due_date")):
-            events.append((day, 1, debt_id, debt, "payment"))
+        scheduled_payment_dates = monthly_dates(debt.get("next_due_date"))
+        actuals = sorted(actual_by_debt.get(debt_id, []), key=lambda item: item["date"])
+        used_actual_ids = set()
+        for day in scheduled_payment_dates:
+            matching = next((item for item in actuals
+                             if item.get("id") not in used_actual_ids
+                             and abs((date.fromisoformat(item["date"]) - day).days) <= 7), None)
+            if matching:
+                used_actual_ids.add(matching.get("id"))
+                events.append((date.fromisoformat(matching["date"]), 1, debt_id, debt,
+                               "actual_payment", matching))
+            else:
+                events.append((day, 1, debt_id, debt, "payment", None))
+        for item in actuals:
+            if item.get("id") not in used_actual_ids:
+                events.append((date.fromisoformat(item["date"]), 1, debt_id, debt,
+                               "actual_payment", item))
 
     balances = {debt.get("id"): debt.get("balance_cents", 0) for debt in debts}
     debt_events = []
-    for day, _, debt_id, debt, event_type in sorted(events, key=lambda event: (event[0], event[1], event[2])):
+    for event_item in sorted(events, key=lambda event: (event[0], event[1], event[2])):
+        day, _, debt_id, debt, event_type = event_item[:5]
+        actual_payment = event_item[5] if len(event_item) > 5 else None
         balance = balances.get(debt_id, 0)
         if balance <= 0:
             continue
@@ -237,9 +264,13 @@ def project_debt_schedule(debts: Sequence[Mapping], periods: Sequence[Mapping[st
             balances[debt_id] = balance + interest
             amount = interest
         else:
-            payment_amount = debt.get("planned_payment_cents", 0) or debt.get("minimum_payment_cents", 0)
-            amount = min(balance, payment_amount)
-            balances[debt_id] = balance - amount
+            payment_amount = (
+                actual_payment["amount_cents"] if event_type == "actual_payment"
+                else debt.get("planned_payment_cents", 0) or debt.get("minimum_payment_cents", 0)
+            )
+            amount = payment_amount if event_type == "actual_payment" else min(balance, payment_amount)
+            balances[debt_id] = max(0, balance - payment_amount)
+            event_type = "payment"
         owning = next((p for start, end, p in parsed_periods if start <= day <= end), None)
         if owning is None:
             continue
