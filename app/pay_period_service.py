@@ -238,6 +238,16 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
         }
         period["transaction_items"].append(detail)
 
+    bill_match_transactions = [dict(row) for row in db.execute(
+        """SELECT id, transaction_date, transaction_type, linked_obligation_type,
+                  linked_obligation_id, category, description, amount_cents
+           FROM transactions
+           WHERE transaction_date >= ? AND transaction_date <= ?
+             AND transaction_type = 'expense'
+           ORDER BY transaction_date, id""",
+        ((today - timedelta(days=31)).isoformat(), horizon_end.isoformat()),
+    ).fetchall()]
+
     bills = [dict(row) for row in db.execute(
         """SELECT id, name, amount_cents, due_day_of_month, next_due_date,
                   flexible_window_days, category, frequency, autopay, active
@@ -258,7 +268,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
             paid = any(
                 tx["transaction_type"] == "expense"
                 and transaction_matches(tx, "bill", bill["id"], due_date, flexible_days)
-                for tx in future_transactions
+                for tx in bill_match_transactions
             )
             if paid:
                 continue
