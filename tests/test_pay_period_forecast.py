@@ -323,3 +323,32 @@ def test_payday_income_funds_a_bill_due_on_the_same_period_start_date():
         }],
     }
     assert bill_funding_shortfalls_from_forecast(forecast) == []
+
+def test_grouped_paychecks_are_not_available_for_bills_before_group_period_start():
+    from app.pay_period_forecast import bill_funding_shortfalls_from_forecast
+
+    forecast = {
+        "current_cash_cents": 0,
+        "periods": [
+            {
+                "start_date": "2026-11-01", "end_date": "2026-11-07",
+                "income_items": [], "transactions": [], "debt_events": [], "savings": [],
+                "bills": [{"bill_id": 40, "name": "Electric", "due_date": "2026-11-07",
+                           "amount_cents": 8000}],
+            },
+            {
+                "start_date": "2026-11-08", "end_date": "2026-11-30",
+                "income_items": [
+                    {"date": "2026-11-06", "period_start_date": "2026-11-08", "amount_cents": 5000},
+                    {"date": "2026-11-08", "period_start_date": "2026-11-08", "amount_cents": 5000},
+                ],
+                "transactions": [], "debt_events": [], "savings": [],
+                "bills": [{"bill_id": 41, "name": "Water", "due_date": "2026-11-08",
+                           "amount_cents": 8000}],
+            },
+        ],
+    }
+    assert bill_funding_shortfalls_from_forecast(forecast) == [{
+        "bill_id": 40, "name": "Electric", "due_date": "2026-11-07",
+        "shortfall_cents": 8000,
+    }]
