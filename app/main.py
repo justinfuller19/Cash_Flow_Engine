@@ -486,7 +486,7 @@ function renderIncome(incomes) {
     addSmallButton(item, "Temporary amount override", async () => {
       const startDate = prompt("Override start date (YYYY-MM-DD):");
       if (!startDate) return;
-      const endDate = prompt("Override end date (YYYY-MM-DD, inclusive):", startDate);
+      const endDate = prompt("Override end date (YYYY-MM-DD, inclusive; use the same date for one payday):", startDate);
       if (!endDate) return;
       const amount = prompt("Temporary net amount per paycheck in dollars:", (income.net_amount_cents / 100).toFixed(2));
       if (amount === null) return;
