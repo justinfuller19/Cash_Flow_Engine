@@ -11,6 +11,7 @@ from .pay_period_forecast import (
     calculate_pay_periods,
     plan_savings_contributions,
     project_debt_schedule,
+    bill_funding_shortfalls_from_forecast,
 )
 from .pay_periods import group_paychecks, period_for_due_date
 
@@ -397,7 +398,7 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
             "is_current_period": calendar_period["is_current_period"],
         })
 
-    return {
+    result = {
         "generated_on": today.isoformat(),
         "horizon_end": horizon_end.isoformat(),
         "current_cash_cents": starting_cash,
@@ -406,11 +407,20 @@ def build_pay_period_forecast(db, today: date | None = None) -> dict:
         "max_spendable_cents": projection["max_spendable_cents"],
         "spendable_while_keeping_target_cents": projection["spendable_while_keeping_target_cents"],
         "target_maintainable": projection["target_maintainable"],
-        "warnings": projection["warnings"],
+        "warnings": list(projection["warnings"]),
         "periods": response_periods,
         "projected_debts": debt_periods.get("debts", []),
         "savings_goals": savings,
     }
+    bill_shortfalls = bill_funding_shortfalls_from_forecast(result)
+    result["bill_shortfalls"] = bill_shortfalls
+    result["warnings"].extend({
+        "type": "bill_underfunded",
+        "start_date": item["due_date"],
+        "name": item["name"],
+        "shortfall_cents": item["shortfall_cents"],
+    } for item in bill_shortfalls)
+    return result
 
 def post_due_scheduled_transactions(db, today: date | None = None) -> dict:
     """Idempotently post recent due paychecks and bills to the internal ledger.
