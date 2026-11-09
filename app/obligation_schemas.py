@@ -55,6 +55,19 @@ class BillOut(BaseModel):
     created_at: str
 
 
+
+
+class BillOccurrenceOverride(BaseModel):
+    amount_cents: int | None = Field(default=None, ge=0)
+    cancelled: bool = False
+
+    @model_validator(mode="after")
+    def validate_occurrence_override(self):
+        if not self.cancelled and self.amount_cents is None:
+            raise ValueError("Set an amount or mark the occurrence cancelled")
+        return self
+
+
 class DebtCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     balance_cents: int = Field(ge=0)
