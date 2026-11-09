@@ -190,6 +190,23 @@ def occurrences_around(anchor: date, frequency: str, start: date, end: date) -> 
         else:
             cursor = anchor
         return occurrences_between(cursor, frequency, start, end)
+    if frequency in {"quarterly", "yearly"}:
+        interval = 3 if frequency == "quarterly" else 12
+        dates = []
+        cursor = date(anchor.year, anchor.month, 1)
+        start_month = date(start.year, start.month, 1)
+        while cursor > start_month:
+            month_index = cursor.year * 12 + cursor.month - 1 - interval
+            year, month0 = divmod(month_index, 12)
+            cursor = date(year, month0 + 1, 1)
+        while cursor <= end:
+            candidate = date(cursor.year, cursor.month, min(anchor.day, monthrange(cursor.year, cursor.month)[1]))
+            if start <= candidate <= end:
+                dates.append(candidate)
+            month_index = cursor.year * 12 + cursor.month - 1 + interval
+            year, month0 = divmod(month_index, 12)
+            cursor = date(year, month0 + 1, 1)
+        return dates
     if frequency == "monthly":
         dates = []
         cursor = date(start.year, start.month, 1)
