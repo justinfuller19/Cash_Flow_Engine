@@ -182,8 +182,8 @@ def test_recorded_savings_contribution_updates_goal_and_is_reversed_when_transac
     assert contribution.json()["goal"]["last_contribution_date"] == date.today().isoformat()
 
     transaction_id = contribution.json()["transaction_id"]
-    transaction = client.get("/api/transactions").json()
-    assert any(item["id"] == transaction_id for item in transaction["transactions"])
+    transactions = client.get("/api/transactions").json()
+    assert any(item["id"] == transaction_id for item in transactions)
 
     deleted = client.delete(f"/api/transactions/{transaction_id}")
     assert deleted.status_code == 200, deleted.text
