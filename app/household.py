@@ -27,7 +27,7 @@ def _current_financial_week_start(db, today: date | None = None) -> date:
 
 def _read_settings(db) -> dict:
     row = db.execute(
-        "SELECT starting_cash_cents, financial_week_start, paycheck_group_window_days, updated_at "
+        "SELECT starting_cash_cents, financial_week_start, paycheck_group_window_days, end_of_period_target_cents, updated_at "
         "FROM household_settings WHERE id = 1"
     ).fetchone()
     if row is None:
@@ -154,7 +154,7 @@ def pay_period_settings_page():
 <p class="muted">Choose how close together household paychecks must be to belong to one pay group. The default is 2 calendar days.</p>
 <section class="card">
 <form id="pay-period-settings-form">
-<label for="paycheck-group-window">Group paychecks within (calendar days)</label>
+<label for="end-of-period-target">End-of-period cash target ($)</label>\n<input id="end-of-period-target" name="end_of_period_target_cents" type="number" min="0" step="0.01" required>\n<label for="paycheck-group-window">Group paychecks within (calendar days)</label>
 <input id="paycheck-group-window" name="paycheck_group_window_days" type="number" min="0" max="14" step="1" required>
 <p class="muted">Each paycheck is compared with the first paycheck in its group, not the previous paycheck. This prevents a chain of paydays from stretching a group. A group’s pay period starts on its last payday; the next period starts on the next group’s last payday.</p>
 <button type="submit">Save setting</button>
@@ -162,9 +162,9 @@ def pay_period_settings_page():
 <p id="pay-period-settings-status" class="muted" role="status">Loading setting…</p>
 </section></main>
 <script>
-const field=document.getElementById("paycheck-group-window");
+const field=document.getElementById("paycheck-group-window");\nconst targetField=document.getElementById("end-of-period-target");
 const status=document.getElementById("pay-period-settings-status");
-async function loadSetting(){const r=await fetch("/api/household/settings");const d=await r.json();if(!r.ok)throw Error(d.detail||"Could not load settings.");field.value=d.paycheck_group_window_days??2;status.textContent="Current grouping window: "+field.value+" day(s).";}
-document.getElementById("pay-period-settings-form").addEventListener("submit",async e=>{e.preventDefault();const r=await fetch("/api/household/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({paycheck_group_window_days:Number(field.value)})});const d=await r.json();if(!r.ok){status.textContent=d.detail||"Could not save setting.";return;}field.value=d.paycheck_group_window_days;status.textContent="Saved. Paychecks within "+d.paycheck_group_window_days+" calendar day(s) of the first payday are grouped together.";});
+async function loadSetting(){const r=await fetch("/api/household/settings");const d=await r.json();if(!r.ok)throw Error(d.detail||"Could not load settings.");field.value=d.paycheck_group_window_days??2;targetField.value=((d.end_of_period_target_cents??0)/100).toFixed(2);status.textContent="Current grouping window: "+field.value+" day(s).";}
+document.getElementById("pay-period-settings-form").addEventListener("submit",async e=>{e.preventDefault();const r=await fetch("/api/household/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({paycheck_group_window_days:Number(field.value),end_of_period_target_cents:Math.round(Number(targetField.value)*100)})});const d=await r.json();if(!r.ok){status.textContent=d.detail||"Could not save setting.";return;}field.value=d.paycheck_group_window_days;targetField.value=(d.end_of_period_target_cents/100).toFixed(2);status.textContent="Saved. Paychecks within "+d.paycheck_group_window_days+" calendar day(s) of the first payday are grouped together.";});
 loadSetting().catch(e=>status.textContent=e.message);
 </script></body></html>"""
