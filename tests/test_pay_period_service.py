@@ -1,5 +1,5 @@
 """Integration tests for the saved-record rolling pay-period forecast."""
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -420,9 +420,9 @@ def test_legacy_preview_rejects_retired_buffer_reservations():
 def test_owner_150_dollar_purchase_requires_confirmation_and_reports_p3_bill_shortfall():
     client = _client()
     today = date.today()
-    first_future_payday = today + __import__("datetime").timedelta(days=4)
-    second_future_payday = today + __import__("datetime").timedelta(days=11)
-    third_future_payday = today + __import__("datetime").timedelta(days=18)
+    first_future_payday = today + timedelta(days=4)
+    second_future_payday = today + timedelta(days=11)
+    third_future_payday = today + timedelta(days=18)
     with database.connect() as db:
         db.execute(
             """UPDATE household_settings
@@ -444,10 +444,10 @@ def test_owner_150_dollar_purchase_requires_confirmation_and_reports_p3_bill_sho
             (person_id, first_future_payday.isoformat(), third_future_payday.isoformat()),
         )
         for name, due_date, amount in (
-            ("First period bills", today + __import__("datetime").timedelta(days=1), 30000),
-            ("Second period bills", first_future_payday + __import__("datetime").timedelta(days=1), 40000),
-            ("Other", second_future_payday + __import__("datetime").timedelta(days=1), 225000),
-            ("Fourth period bills", third_future_payday + __import__("datetime").timedelta(days=1), 30000),
+            ("First period bills", today + timedelta(days=1), 30000),
+            ("Second period bills", first_future_payday + timedelta(days=1), 40000),
+            ("Other", second_future_payday + timedelta(days=1), 225000),
+            ("Fourth period bills", third_future_payday + timedelta(days=1), 30000),
         ):
             db.execute(
                 """INSERT INTO bills
@@ -483,7 +483,7 @@ def test_owner_150_dollar_purchase_requires_confirmation_and_reports_p3_bill_sho
     assert detail["exceeds_max_spendable_cents"] == 5000
     assert detail["underfunded_bills"] == [{
         "name": "Other",
-        "due_date": (second_future_payday + __import__("datetime").timedelta(days=1)).isoformat(),
+        "due_date": (second_future_payday + timedelta(days=1)).isoformat(),
         "unfunded_cents": 5000,
     }]
 
@@ -505,6 +505,6 @@ def test_owner_150_dollar_purchase_requires_confirmation_and_reports_p3_bill_sho
             bill["bill_id"] for bill in third["bills"] if bill["name"] == "Other"
         ),
         "name": "Other",
-        "due_date": (second_future_payday + __import__("datetime").timedelta(days=1)).isoformat(),
+        "due_date": (second_future_payday + timedelta(days=1)).isoformat(),
         "shortfall_cents": 5000,
     }]
