@@ -42,7 +42,7 @@ For target T and periods ordered from current to future:
 ## Transactions and internal posting
 
 - Every recorded expense reduces cash, including credit-card purchases; the user separately updates the card balance.
-- If a transaction would consume reserved bill cash, warn and require confirmation. On confirmation, identify the exact bills and dates that become underfunded.
+- If a transaction would consume reserved bill cash, warn and require confirmation. On confirmation, identify the exact bills and dates that become underfunded. When a confirmed cash baseline exists, also warn if a transaction exceeds max spendable or pushes a later period below zero, even when the final shortfall would otherwise fall on a savings reservation rather than a bill due-date event. Attribute that excess to the last bill in the first affected period so the user sees a concrete bill/date and shortfall; do not apply this max-spendable trigger before the household has confirmed a cash baseline.
 - Scheduled bills may be auto-posted to the internal ledger on the due date; scheduled paychecks may be auto-received on payday. These entries must be editable and undoable. This is not a bank payment or bank deposit.
 - Early bill payments release the reservation immediately but remain assigned to the original due-date period. Never subtract both the early transaction and the scheduled bill.
 - Actual records, expected activity, and projections must remain distinguishable.
