@@ -9,13 +9,13 @@ Before planning or implementing a feature in this repository, read **[docs/PROJE
 3. Treat the roadmaps as living plans, not proof of current implementation. Update milestone checkboxes/status only when supported by the actual code and tests. Mark a task complete only when the relevant implementation and tests are present in the PR branch; distinguish merged work from open PR work.
 4. Keep the allocation engine pure and deterministic. Keep HTTP/UI, persistence, and forecasting concerns outside the core allocation rules.
 5. Represent money as integer cents. Do not use floating-point arithmetic for financial calculations.
-6. Preserve the documented allocation order and household-wide buffer semantics. The buffer is one protected minimum cash floor: fund required bills and debt minimums first, protect the buffer next, then fund planned savings and discretionary debt payoff only from cash above the buffer. In multi-week forecasts, safe-to-spend is limited by the lowest projected weekly ending cash minus the one buffer target. Never reserve the same dollars twice. If the current implementation or docs disagree, inspect the code and tests and resolve the discrepancy explicitly rather than propagating contradictory rules.
+6. Follow the current owner-approved financial specification. The former mandatory household buffer is retired; do not restore it. The new end-of-pay-period target is a soft goal, is not reserved, and remains spendable. Reserve bills, savings, and planned debt payments exactly once; use the backward carry-over calculation in docs/PAY_PERIOD_FORECAST_SPEC.md to account for later shortfalls. If older code/docs conflict with that specification, the current specification takes precedence.
 7. Make shortfalls and assumptions visible. Do not silently over-allocate cash or imply forecasts are guaranteed.
-8. Do not implement real transfers or automatic bill payments unless the user explicitly requests and approves a separately scoped design.
+8. Never initiate external bank transfers or payments. The owner-approved specification does request internal automatic ledger posting for scheduled paychecks and bills; those entries must remain editable/undoable and must not be represented as actual bank activity.
 9. Add or update tests for each behavior change, run the relevant tests when possible, and report exactly what was and was not run. Never claim tests passed without running them.
 10. Keep real household financial data, database files, credentials, and secrets out of version control.
 11. Prefer small, reviewable pull requests and avoid unrelated refactors. Update README/documentation when setup, API behavior, or user workflows change.
-12. If the requested work conflicts with the roadmap or reveals that the roadmap is stale, explain the conflict and propose an update rather than silently choosing a direction.
+12. The owner-approved pay-period specification supersedes older weekly/buffer assumptions in the historical roadmap. Keep the roadmap and upgrade log aligned with docs/PAY_PERIOD_FORECAST_SPEC.md.
 13. Do not merge pull requests or deploy to the Raspberry Pi without explicit approval.
 
 ## Before starting a task
