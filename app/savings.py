@@ -149,13 +149,42 @@ def record_savings_contribution(goal_id: int, body: SavingsContributionCreate):
             from .pay_period_service import build_pay_period_forecast
 
             forecast = build_pay_period_forecast(db, date.today())
-            for period in forecast["periods"]:
+            removed_planned_cents = 0
+            current_period_index = None
+            for index, period in enumerate(forecast["periods"]):
                 if period["start_date"] <= contribution_date.isoformat() <= period["end_date"]:
-                    period["savings"] = [
-                        item for item in period.get("savings", [])
-                        if item.get("goal_id") != goal_id
-                    ]
+                    current_period_index = index
+                    retained = []
+                    for item in period.get("savings", []):
+                        if item.get("goal_id") == goal_id:
+                            removed_planned_cents += int(item.get("amount_cents", 0))
+                        else:
+                            retained.append(item)
+                    period["savings"] = retained
+                    period["savings_cents"] = max(
+                        0, int(period.get("savings_cents", 0)) - removed_planned_cents
+                    )
+                    period["outflow_cents"] = max(
+                        0, int(period.get("outflow_cents", 0)) - removed_planned_cents
+                    )
+                    period["projected_ending_cash_cents"] = (
+                        int(period.get("projected_ending_cash_cents", 0)) + removed_planned_cents
+                    )
                     break
+            if current_period_index is not None and removed_planned_cents:
+                for period in forecast["periods"][current_period_index + 1:]:
+                    period["starting_cash_cents"] = int(period.get("starting_cash_cents", 0)) + removed_planned_cents
+                    period["projected_ending_cash_cents"] = (
+                        int(period.get("projected_ending_cash_cents", 0)) + removed_planned_cents
+                    )
+                forecast["max_spendable_cents"] = max(
+                    0, min(int(period.get("projected_ending_cash_cents", 0))
+                           for period in forecast["periods"])
+                )
+                forecast["spendable_while_keeping_target_cents"] = max(
+                    0, forecast["max_spendable_cents"]
+                    - int(forecast.get("end_of_period_target_cents", 0))
+                )
             impact = transaction_bill_reservation_impact_from_forecast(
                 forecast, body.amount_cents, contribution_date.isoformat()
             )
