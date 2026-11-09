@@ -147,7 +147,7 @@ def occurrences_between(anchor: date, frequency: str, start: date, end: date) ->
         return [anchor] if start <= anchor <= end else []
     if frequency not in {
         "weekly", "biweekly", "semimonthly", "twice_monthly_last",
-        "first_third_friday", "last_business_day", "monthly", "quarterly",
+        "first_third_friday", "last_business_day", "monthly", "quarterly", "every_three_months",
         "every_two_months", "every_four_months", "every_six_months", "yearly",
     }:
         raise ValueError(f"Unsupported recurrence frequency: {frequency}")
