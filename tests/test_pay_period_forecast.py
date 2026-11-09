@@ -401,3 +401,28 @@ def test_transaction_over_max_spendable_warns_even_when_due_date_bills_are_cover
         {"name": "Other", "due_date": "2026-11-20", "unfunded_cents": 5000}
     ]
     assert impact["total_bill_shortfall_cents"] == 5000
+
+
+def test_negative_period_end_attributes_savings_deficit_to_last_bill():
+    from app.pay_period_forecast import bill_funding_shortfalls_from_forecast
+
+    forecast = {
+        "current_cash_cents": 225000,
+        "periods": [{
+            "start_date": "2026-11-15",
+            "end_date": "2026-11-21",
+            "projected_ending_cash_cents": -5000,
+            "income_items": [],
+            "transactions": [],
+            "debt_events": [],
+            "savings": [{"amount_cents": 5000}],
+            "bills": [{
+                "bill_id": 3, "name": "Other", "due_date": "2026-11-20",
+                "amount_cents": 225000,
+            }],
+        }],
+    }
+    assert bill_funding_shortfalls_from_forecast(forecast) == [{
+        "bill_id": 3, "name": "Other", "due_date": "2026-11-20",
+        "shortfall_cents": 5000,
+    }]
