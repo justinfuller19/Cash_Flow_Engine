@@ -82,3 +82,38 @@ def test_pay_period_settings_page_is_available(tmp_path, monkeypatch):
     assert "Pay Period Settings" in response.text
     assert "first paycheck in its group" in response.text
 
+def test_calendar_includes_current_and_future_periods_with_correct_boundaries():
+    from app.pay_periods import build_pay_period_calendar, period_for_due_date
+
+    periods = build_pay_period_calendar(
+        [
+            date(2026, 10, 30), date(2026, 11, 1),
+            date(2026, 11, 13), date(2026, 11, 18),
+            date(2026, 11, 27),
+        ],
+        today=date(2026, 11, 10),
+        horizon_end=date(2026, 11, 30),
+        window_days=2,
+    )
+    assert len(periods) == 4
+    assert periods[0]["is_current_period"] is True
+    assert periods[0]["period_start"] == date(2026, 11, 1)
+    assert periods[0]["period_end"] == date(2026, 11, 12)
+    assert periods[0]["unreceived_paycheck_dates"] == ()
+    assert periods[1]["period_start"] == date(2026, 11, 13)
+    assert periods[1]["period_end"] == date(2026, 11, 17)
+    assert period_for_due_date(date(2026, 11, 12), periods) is periods[0]
+    assert period_for_due_date(date(2026, 11, 13), periods) is periods[1]
+
+
+def test_calendar_requires_paycheck_group_containing_today():
+    from app.pay_periods import build_pay_period_calendar
+
+    try:
+        build_pay_period_calendar(
+            [date(2026, 11, 13)], date(2026, 11, 10), date(2026, 12, 1)
+        )
+    except ValueError as exc:
+        assert "include the group containing today" in str(exc)
+    else:
+        raise AssertionError("Expected missing current paycheck group to be rejected")
