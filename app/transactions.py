@@ -9,6 +9,8 @@ from fastapi.responses import HTMLResponse
 from . import database
 from .transaction_schemas import TransactionCreate, TransactionOut, TransactionUpdate
 from .forecast import occurrences_between
+from .pay_period_forecast import transaction_bill_reservation_impact_from_forecast
+from .pay_period_service import build_pay_period_forecast
 
 router = APIRouter()
 
@@ -544,6 +546,7 @@ def list_transactions(
 @router.post("/api/transactions", response_model=TransactionOut, status_code=status.HTTP_201_CREATED)
 def create_transaction(body: TransactionCreate):
     values = _clean(body.model_dump())
+    confirm_reserved_bill_impact = values.pop("confirm_reserved_bill_impact", False)
     transaction_type = values["transaction_type"] or (
         "income" if values["category"] in {
             "income", "paycheck", "paychecks", "side income", "reimbursements", "other income"
@@ -560,6 +563,24 @@ def create_transaction(body: TransactionCreate):
         with database.connect() as db:
             _validate_category(db, values["category"], transaction_type)
             _validate_link(db, transaction_type, values["linked_obligation_type"], values["linked_obligation_id"])
+            if (
+                transaction_type == "expense"
+                and values["linked_obligation_type"] not in {"bill", "debt"}
+                and date.fromisoformat(values["transaction_date"]) >= date.today()
+                and not confirm_reserved_bill_impact
+            ):
+                forecast = build_pay_period_forecast(db, date.today())
+                impact = transaction_bill_reservation_impact_from_forecast(
+                    forecast, abs(values["amount_cents"]), values["transaction_date"]
+                )
+                if impact["requires_confirmation"]:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "message": "This expense would make one or more scheduled bills underfunded. Confirm to record it anyway.",
+                            **impact,
+                        },
+                    )
             cursor = db.execute(
                 """INSERT INTO transactions
                    (transaction_date, category, transaction_type, linked_obligation_type, linked_obligation_id, description, amount_cents, account_name, notes)
