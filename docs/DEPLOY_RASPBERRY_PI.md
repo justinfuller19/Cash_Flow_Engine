@@ -53,7 +53,7 @@ CASHFLOW_ALLOW_LAN=1
 # CASHFLOW_USERNAME=household
 # CASHFLOW_PASSWORD=replace-with-a-long-random-secret
 #
-# Optional SMTP email reports/reminders. Set the three required values together.
+# Optional SMTP email reminders. Set the three required values together.
 # CASHFLOW_SMTP_HOST=smtp.example.com
 # CASHFLOW_SMTP_PORT=587
 # CASHFLOW_SMTP_USERNAME=your-smtp-username
@@ -78,14 +78,11 @@ sudo cp /opt/cashflow-engine/deploy/cashflow-engine-backup.service /etc/systemd/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-backup.timer /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-email-reminders.service /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-email-reminders.timer /etc/systemd/system/
-sudo cp /opt/cashflow-engine/deploy/cashflow-engine-weekly-report.service /etc/systemd/system/
-sudo cp /opt/cashflow-engine/deploy/cashflow-engine-weekly-report.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now avahi-daemon
 sudo systemctl enable --now cashflow-engine.service
 sudo systemctl enable --now cashflow-engine-backup.timer
 sudo systemctl enable --now cashflow-engine-email-reminders.timer
-sudo systemctl enable --now cashflow-engine-weekly-report.timer
 ```
 
 Check status and logs:
@@ -99,19 +96,19 @@ curl http://127.0.0.1/health
 
 From another device on the same Wi-Fi, open `http://<pi-hostname>.local` (replace `<pi-hostname>` with the result of running `hostname` on the Pi). No `:8000` is needed: nginx listens on port 80 and forwards requests internally to the app on `127.0.0.1:8000`. Avahi advertises the Pi hostname through local mDNS. If `.local` name resolution is not supported by a device or router, use the Pi's DHCP-reserved name or IP address. Nginx permits only private IPv4/IPv6 network ranges and denies other addresses. The app's household login remains required. The app itself is bound to loopback and cannot be reached directly from another device on port 8000.
 
-## 5. Configure optional email reports and reminders
+## 5. Configure optional email reminders
 
 Email is disabled unless SMTP settings and at least one recipient are configured in `/etc/cashflow-engine.env`. The application does not store SMTP credentials in the database. Port 587 uses STARTTLS; port 465 uses implicit TLS. Keep the environment file root-owned with mode `600`.
 
 Set `CASHFLOW_SMTP_HOST`, `CASHFLOW_SMTP_FROM`, and `CASHFLOW_EMAIL_TO`; optionally set `CASHFLOW_SMTP_PORT` (default 587), both `CASHFLOW_SMTP_USERNAME` and `CASHFLOW_SMTP_PASSWORD`, and `CASHFLOW_REMINDER_DAYS` (1–6, default 3).
 
-The daily timer runs at 08:00 local server time and sends due-date reminders and shortfall/buffer alerts when needed. A bill/debt reminder is sent once per scheduled item and due date unless its details change. A shortfall alert is sent when the state changes, with a repeat at most once every seven days while the same warning persists. The weekly timer runs Sunday at 19:00 local server time and emails the coming Monday–Sunday forecast once per week.
+The daily timer runs at 08:00 local server time and sends due-date reminders and projected shortfall alerts when needed. A bill/debt reminder is sent once per scheduled item and due date unless its details change. A shortfall alert is sent when the state changes, with a repeat at most once every seven days while the same warning persists. Email reminders point users to the current three-month pay-period forecast.
 
 Check the configured server timezone before enabling the timers. Test the runner without sending mail:
 
 ```bash
 sudo -u cashflow env CASHFLOW_DB_PATH=/var/lib/cashflow-engine/cashflow.db CASHFLOW_BACKUP_DIR=/var/backups/cashflow-engine /opt/cashflow-engine/.venv/bin/python /opt/cashflow-engine/scripts/send_email_reports.py --mode daily --dry-run
-sudo systemctl status cashflow-engine-email-reminders.timer cashflow-engine-weekly-report.timer
+sudo systemctl status cashflow-engine-email-reminders.timer
 sudo journalctl -u cashflow-engine-email-reminders.service -n 50 --no-pager
 ```
 

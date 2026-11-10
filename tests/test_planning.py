@@ -1,14 +1,10 @@
-"""Tests for recurrence forecasting and persisted payday planning."""
+"""Tests for recurrence forecasting and retired payday-plan compatibility."""
 from datetime import date
 
 from fastapi.testclient import TestClient
 
 from app import database
 from app.forecast import occurrences_between
-from app.engine import (
-    Bill, BufferReservation, CreditCard, PaydayRequest, SavingsGoal,
-    generate_payday_plan,
-)
 from app.main import app
 
 
@@ -39,107 +35,19 @@ def test_irregular_income_is_not_extrapolated():
     ) == []
 
 
-def test_generate_plan_uses_saved_household_records_and_saves_history(tmp_path, monkeypatch):
-    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "planner.db"))
+def test_legacy_plan_generation_endpoints_return_gone(tmp_path, monkeypatch):
+    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "retired-plans.db"))
     database.initialize_database()
     client = TestClient(app)
 
-    person = client.post("/api/people", json={"name": "Member"}).json()
-    client.post(
-        "/api/income-sources",
-        json={
-            "person_id": person["id"],
-            "name": "Paycheck",
-            "net_amount_cents": 100000,
-            "frequency": "weekly",
-            "next_payday": "2026-11-21",
-        },
-    )
-    client.post(
-        "/api/bills",
-        json={
-            "name": "Electric",
-            "amount_cents": 25000,
-            "next_due_date": "2026-11-23",
-            "frequency": "monthly",
-            "category": "utilities",
-        },
-    )
-    client.post(
-        "/api/debts",
-        json={
-            "name": "Card",
-            "balance_cents": 80000,
-            "minimum_payment_cents": 5000,
-            "apr_percent": 24.9,
-            "next_due_date": "2026-11-22",
-        },
-    )
-    client.post(
-        "/api/savings-goals",
-        json={
-            "name": "Emergency fund",
-            "target_amount_cents": 100000,
-            "current_balance_cents": 0,
-            "weekly_target_cents": 10000,
-            "priority": 1,
-        },
-    )
+    assert client.post("/api/plan/preview", json={}).status_code == 410
+    assert client.post("/api/plans/generate", json={}).status_code == 410
 
-    response = client.post(
-        "/api/plans/generate",
-        json={
-            "plan_date": "2026-11-20",
-            "period_start": "2026-11-20",
-            "period_end": "2026-11-26",
-            "starting_cash_cents": 50000,
-            "debt_strategy": "avalanche",
-        },
-    )
-    assert response.status_code == 201, response.text
-    plan = response.json()
-    assert plan["income_cents"] == 100000
-    assert plan["total_available_cents"] == 150000
-    assert plan["unallocated_cents"] == 35000
-    assert plan["unfunded_cents"] == 0
-    assert plan["is_fully_funded"] is True
-    assert [item["category"] for item in plan["items"]] == [
-        "bill", "debt_minimum", "savings", "debt_extra"
-    ]
-    assert plan["items"][2]["requested_cents"] == 10000
-
-    history = client.get("/api/plans")
-    assert history.status_code == 200
-    assert history.json()[0]["id"] == plan["id"]
-    detail = client.get(f"/api/plans/{plan['id']}")
-    assert detail.status_code == 200
-    assert len(detail.json()["items"]) == 4
-    assert client.get("/api/plans/9999").status_code == 404
+    # Existing saved plans remain readable for historical reference.
+    assert client.get("/api/plans").status_code == 200
 
 
-def test_plan_validation_and_planner_page(tmp_path, monkeypatch):
-    monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "planner-validation.db"))
-    database.initialize_database()
-    client = TestClient(app)
-    response = client.post(
-        "/api/plans/generate",
-        json={
-            "plan_date": "2026-11-20",
-            "period_start": "2026-11-27",
-            "period_end": "2026-11-20",
-            "starting_cash_cents": 0,
-        },
-    )
-    assert response.status_code == 422
-    page = client.get("/planner", follow_redirects=False)
-    assert page.status_code == 307
-    assert page.headers["location"] == "/checklist"
-    checklist = client.get("/checklist")
-    assert checklist.status_code == 200
-    assert "generated automatically" in checklist.text
-
-
-def test_schema_v4_adds_contributions_and_plan_totals(tmp_path, monkeypatch):
+def test_schema_v4_keeps_historical_plan_records(tmp_path, monkeypatch):
     monkeypatch.setenv("CASHFLOW_DB_PATH", str(tmp_path / "schema-v4.db"))
     database.initialize_database()
     with database.connect() as db:
@@ -152,55 +60,11 @@ def test_schema_v4_adds_contributions_and_plan_totals(tmp_path, monkeypatch):
     assert version == database.SCHEMA_VERSION
 
 
-def test_required_obligations_and_savings_are_funded_without_buffer():
-    """Bills and debt minimums retain priority without a mandatory buffer."""
-    plan = generate_payday_plan(
-        PaydayRequest(
-            plan_date=date(2026, 11, 20),
-            period_start=date(2026, 11, 20),
-            period_end=date(2026, 11, 26),
-            starting_cash_cents=50000,
-            bills=[Bill(name="Rent", amount_cents=45000, due_date=date(2026, 11, 22))],
-            credit_cards=[
-                CreditCard(
-                    name="Card",
-                    balance_cents=30000,
-                    minimum_payment_cents=10000,
-                    due_date=date(2026, 11, 23),
-                    apr_percent=24.9,
-                )
-            ],
-            savings_goals=[
-                SavingsGoal(
-                    name="Emergency fund",
-                    target_amount_cents=100000,
-                    current_balance_cents=0,
-                    remaining_periods=1,
-                    contribution_per_period_cents=5000,
-                )
-            ],
-        )
-    )
-
-    assert [item.category for item in plan.items] == [
-        "bill", "debt_minimum", "savings"
-    ]
-    bill, minimum, savings = plan.items
-    assert (bill.funded_cents, bill.unfunded_cents) == (45000, 0)
-    assert (minimum.funded_cents, minimum.unfunded_cents) == (5000, 5000)
-    assert (savings.funded_cents, savings.unfunded_cents) == (0, 5000)
-    assert plan.allocated_cents == 50000
-    assert plan.unallocated_cents == 0
-    assert plan.unfunded_cents == 10000
-    assert plan.total_available_cents == plan.allocated_cents + plan.unallocated_cents
-
-
-def test_old_planner_redirects_to_automatic_checklist():
+def test_old_planner_url_redirects_to_current_checklist():
     client = TestClient(app)
     response = client.get("/planner", follow_redirects=False)
     assert response.status_code == 307
     assert response.headers["location"] == "/checklist"
     checklist = client.get("/checklist")
     assert checklist.status_code == 200
-    assert 'id="checklist-pagination"' in checklist.text
     assert "generated automatically" in checklist.text

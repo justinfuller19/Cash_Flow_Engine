@@ -24,6 +24,9 @@ The current state of the repository and merged code is authoritative. Check open
 
 ## Milestones
 
+> **Historical sections:** Milestones 1–11 below document earlier iterations and are retained for project history. Their weekly/buffer/payday-allocation assumptions are not active requirements. The current product state and authoritative rules are recorded in the pay-period forecast section at the end of this document.
+
+
 ### Milestone 1 — Core allocation engine
 **Goal:** Keep the financial rules deterministic, testable, and independent of HTTP/UI code.
 
@@ -244,7 +247,7 @@ The independent 91-day simulation identified reconciliation edge cases addressed
 
 ## New milestone — Pay-period forecast (owner-approved, 2026-11-08)
 
-The owner-approved redesign is implemented in PR #54 on `feature/pay-period-calendar-foundation`. The earlier weekly/buffer milestones and the initial unchecked status below are historical; the integrated pay-period forecast is now the active implementation on this PR branch, not yet merged to `main`.
+The owner-approved redesign was implemented in PR #54 and merged to `main`. The earlier weekly/buffer milestones and their initial unchecked status are historical; the integrated pay-period forecast is the active implementation.
 
 - [x] Define configurable fixed-anchor paycheck grouping (default 2 calendar days) and period boundaries.
 - [x] Generate the rolling three-month pay-period calendar from saved income schedules.
@@ -252,9 +255,25 @@ The owner-approved redesign is implemented in PR #54 on `feature/pay-period-cale
 - [x] Implement integer-cent forward cash projection and backward carry-over requirements with a soft end-of-period target.
 - [x] Integrate recurring bills, paycheck and bill overrides, savings deadlines and ongoing contributions, and chronological debt interest/payments.
 - [x] Integrate editable/idempotent internal ledger posting, transaction confirmation safeguards, and reconciliation.
-- [x] Replace the active dashboard forecast summary with pay-period metrics and provide the printable three-month report at `/pay-periods`; retain `/weekly` as a clearly labeled legacy report.
+- [x] Replace the active dashboard forecast summary with pay-period metrics and provide the printable three-month report at `/pay-periods`; redirect `/weekly` bookmarks to the current report.
+- [x] Retire the weekly safe-surplus allocation workflow and single-payday plan generation/preview APIs; preserve historical records and recorded-savings reconciliation without letting old planned allocations reserve forecast cash.
+- [x] Remove the old Sunday weekly forecast email and its systemd timer; keep daily due-date and shortfall reminders.
 - [x] Add regression coverage for paycheck grouping, bill assignment, cash reconciliation, savings and debt behavior, transaction safeguards, and the owner-provided $150 purchase scenario.
 - [ ] Verify Raspberry Pi deployment compatibility, resource use, existing-database migrations, and the updater path.
-- [ ] Complete owner-side review of the forecast and printable report before merge/deployment.
+- [x] Complete owner review and merge the pay-period forecast.
+- [ ] Verify Raspberry Pi deployment compatibility, resource use, existing-database migrations, and the updater path before deployment.
 
-PR #54 remains a draft. Its branch contains the integrated implementation and regression tests; the remaining unchecked items are deployment and owner verification, not missing forecast features. Do not merge or deploy without explicit owner approval.
+PR #54 is merged. No Raspberry Pi deployment has been performed. Do not deploy until the Pi compatibility, migration, updater, and resource checks are complete and the owner explicitly approves deployment.
+
+## Current product state — legacy workflow cleanup
+
+The pay-period forecast supersedes the old weekly/buffer planning model. The following old user-facing workflows are retired:
+
+- `/weekly` redirects to `/pay-periods`.
+- Safe-surplus allocation endpoints return HTTP 410; the legacy table remains for recorded-savings reconciliation; old planned rows no longer reduce spendable cash.
+- Single-payday plan generation and preview endpoints return HTTP 410. Saved plan history remains readable and deletable.
+- The pure single-payday allocation engine and its unused schemas/tests have been removed.
+- The Sunday weekly email forecast and systemd units are removed. The updater disables and removes those units on existing Raspberry Pi installations.
+- The weekly calculation API remains only for internal checklist/reminder compatibility; it is not a user-facing report or a source of truth.
+
+The shared theme is now light-only regardless of the device's dark-mode preference. The former dark palette has been removed, and the dashboard header and accent colors use a brighter teal/green palette.

@@ -86,32 +86,11 @@ def test_migration_preserves_legacy_buffer_column_from_active_person_buffers(tmp
         assert version == database.SCHEMA_VERSION
 
 
-def test_generated_plan_does_not_reserve_a_household_buffer(tmp_path, monkeypatch):
+def test_legacy_plan_generation_is_retired(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
-    person = client.post("/api/people", json={"name": "Member"}).json()
-    client.post(
-        "/api/income-sources",
-        json={
-            "person_id": person["id"],
-            "name": "Paycheck",
-            "net_amount_cents": 100000,
-            "frequency": "weekly",
-            "next_payday": "2026-11-21",
-        },
-    )
-    plan = client.post(
-        "/api/plans/generate",
-        json={
-            "plan_date": "2026-11-21",
-            "period_start": "2026-11-21",
-            "period_end": "2026-11-27",
-            "starting_cash_cents": 50000,
-            "debt_strategy": "avalanche",
-        },
-    ).json()
-
-    assert all(item["category"] != "buffer" for item in plan["items"])
-    assert plan["unallocated_cents"] == 150000
+    response = client.post("/api/plans/generate", json={})
+    assert response.status_code == 410
+    assert "Single-payday allocation plans were retired" in response.text
 
 
 def test_dashboard_reports_daily_cash_forecast(tmp_path, monkeypatch):
@@ -383,10 +362,9 @@ def test_suggested_cash_balance_uses_only_transactions_before_current_week(tmp_p
     assert settings["starting_cash_cents"] == 100000
 
 
-def test_weekly_report_exposes_cash_confirmation_control(tmp_path, monkeypatch):
+def test_legacy_weekly_report_redirects_to_pay_period_forecast(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
-    response = client.get("/weekly")
-    assert response.status_code == 200
-    assert 'id="weekly-cash-form"' in response.text
-    assert 'id="weekly-cash-use-estimate"' in response.text
-    assert "Use estimated balance (not saved)" in response.text
+    response = client.get("/weekly", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/pay-periods"
+    assert client.get("/pay-periods").status_code == 200

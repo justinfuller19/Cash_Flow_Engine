@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Send optional CashFlow Engine weekly reports, due reminders, and shortfall alerts."""
+"""Send optional CashFlow Engine due-date reminders and shortfall alerts."""
 from __future__ import annotations
 
 import argparse
@@ -66,65 +66,6 @@ def _money(cents: int) -> str:
     sign = "-" if cents < 0 else ""
     cents = abs(cents)
     return f"{sign}${cents // 100:,}.{cents % 100:02d}"
-
-
-def _weekly_period(today: date) -> tuple[date, date]:
-    # The Sunday-evening report looks ahead to the next Monday-Sunday week.
-    start = today + timedelta(days=7 - today.weekday())
-    return start, start + timedelta(days=6)
-
-
-def build_weekly_email(today: date) -> tuple[str, str, str, str]:
-    start, end = _weekly_period(today)
-    report = weekly_cash_flow(start_date=start, end_date=end)
-    key = f"weekly:{start.isoformat()}"
-    subject = f"CashFlow Engine weekly report: {start.isoformat()}–{end.isoformat()}"
-    lines = [
-        f"Household cash-flow forecast: {start.isoformat()} through {end.isoformat()}",
-        "",
-        f"Starting household cash: {_money(report['starting_cash_cents'])}",
-        f"Expected income: {_money(report['expected_income_cents'])}",
-        f"Recorded income in period: {_money(report['recorded_income_cents'])}",
-        f"Bills still due: {_money(report['bills_due_cents'])}",
-        f"Minimum debt payments still due: {_money(report['minimum_debt_payments_cents'])}",
-        f"Recorded expenses: {_money(report['transaction_expenses_cents'])}",
-        f"Projected cash after obligations: {_money(report['projected_cash_before_buffer_cents'])}",
-        f"Lowest projected daily cash: {_money(report['lowest_projected_cash_cents'])}",
-        f"Planned savings: {_money(report['planned_savings_cents'])}",
-        f"Savings funded in forecast: {_money(report['funded_savings_cents'])}",
-        f"Safe to spend after future obligations and planned savings: {_money(report['free_to_spend_cents'])}",
-        f"Extra debt payoff capacity: {_money(report['extra_debt_payoff_capacity_cents'])}",
-        "",
-    ]
-    if report["projected_shortfall_cents"]:
-        lines.append(f"WARNING: projected shortfall of {_money(report['projected_shortfall_cents'])}.")
-    shortfall_days = [
-        day for day in report.get("daily_forecast", [])
-        if day["projected_shortfall_cents"] > 0
-    ]
-    for week in report.get("future_forecast", []):
-        shortfall_days.extend(
-            day for day in week.get("daily_forecast", [])
-            if day["projected_shortfall_cents"] > 0
-        )
-    if shortfall_days:
-        lines.append("Projected cash shortfall dates: " + ", ".join(day["date"] for day in shortfall_days))
-    lines.extend(["", "Bills due:"])
-    due_bills = [item for item in report["bills"] if item["status"] == "due"]
-    lines.extend(
-        [f"- {item['due_date']}: {item['name']} — {_money(item['amount_cents'])}" for item in due_bills]
-        or ["- No uncovered bills due."]
-    )
-    lines.append("")
-    lines.append("Minimum debt payments due:")
-    due_debts = [item for item in report["minimum_debt_payments"] if item["status"] == "due"]
-    lines.extend(
-        [f"- {item['due_date']}: {item['name']} — {_money(item['amount_cents'])}" for item in due_debts]
-        or ["- No uncovered minimum debt payments due."]
-    )
-    lines.extend(["", "This is a forecast, not a bank balance or payment instruction. Transfers are excluded from household income and spending."])
-    body = "\n".join(lines)
-    return key, _hash(body), subject, body
 
 
 def _notification_row(key: str):
@@ -216,7 +157,7 @@ def build_daily_digest(today: date, reminder_days: int = 3) -> tuple[str, list[t
             f"Projected cash after obligations: {_money(report['projected_cash_before_buffer_cents'])}",
             "",
         ])
-    lines.append("Review the weekly report in CashFlow Engine before making financial decisions.")
+    lines.append("Review the three-month pay-period forecast in CashFlow Engine before making financial decisions.")
     return "\n".join(lines), log_items
 
 
@@ -244,20 +185,15 @@ def send_email(config: EmailConfig, subject: str, body: str) -> None:
 
 
 def run_once(mode: str, today: date, config: EmailConfig | None, dry_run: bool = False) -> bool:
-    if mode == "weekly":
-        key, payload_hash, subject, body = build_weekly_email(today)
-        if _notification_row(key):
-            print(f"Weekly report already sent for {key.split(':', 1)[1]}.")
-            return False
-        notifications = [(key, payload_hash)]
-    else:
-        body, notifications = build_daily_digest(
-            today, int(os.environ.get("CASHFLOW_REMINDER_DAYS", "3"))
-        )
-        if not notifications:
-            print("No new reminders or shortfall alerts.")
-            return False
-        subject = f"CashFlow Engine reminders and alerts: {today.isoformat()}"
+    if mode != "daily":
+        raise ValueError("Only daily due-date and shortfall reminders are supported.")
+    body, notifications = build_daily_digest(
+        today, int(os.environ.get("CASHFLOW_REMINDER_DAYS", "3"))
+    )
+    if not notifications:
+        print("No new reminders or shortfall alerts.")
+        return False
+    subject = f"CashFlow Engine reminders and alerts: {today.isoformat()}"
 
     if dry_run:
         print(f"Subject: {subject}\n\n{body}")
@@ -290,7 +226,7 @@ def _registered_households() -> list[dict]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("daily", "weekly"), default="daily")
+    parser.add_argument("--mode", choices=("daily",), default="daily")
     parser.add_argument("--date", type=date.fromisoformat, help="Override the local date for testing")
     parser.add_argument("--dry-run", action="store_true", help="Print the message without sending or logging it")
     args = parser.parse_args()

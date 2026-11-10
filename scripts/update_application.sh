@@ -101,6 +101,11 @@ fi
 
 write_status "running" "Applying the service configuration for trusted home-network access."
 install -o root -g root -m 644 "$INSTALL_DIR/deploy/cashflow-engine.service" "$SERVICE_UNIT_FILE"
+# Retire the pre-pay-period Sunday weekly email report on existing installations.
+systemctl disable --now cashflow-engine-weekly-report.timer >/dev/null 2>&1 || true
+systemctl stop cashflow-engine-weekly-report.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/cashflow-engine-weekly-report.service
+rm -f /etc/systemd/system/cashflow-engine-weekly-report.timer
 systemctl daemon-reload
 # Preserve all existing settings and explicit choices. Add LAN mode only when
 # the setting has never been configured, so the household login replaces the

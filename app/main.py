@@ -6,16 +6,11 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, Response
 
 from . import database
-from .engine import (
-    Bill, BufferReservation, CreditCard, Income, PaydayRequest, SavingsGoal,
-    generate_payday_plan,
-)
 from .household_schemas import (
     IncomeAmountOverrideCreate, IncomeAmountOverrideOut,
     IncomeSourceCreate, IncomeSourceOut, IncomeSourceUpdate,
     PersonCreate, PersonOut, PersonUpdate,
 )
-from .schemas import PaydayPlanOut, PaydayPreviewRequest
 from .obligations import router as obligations_router
 from .savings import router as savings_router
 from .planning import router as planning_router
@@ -162,12 +157,12 @@ def home():
 body{margin:0;padding:24px 14px 48px}main{max-width:1100px;margin:auto}
 h1{margin:0 0 8px;color:#155e75}h2{font-size:1.12rem;margin:0 0 12px}
 p{line-height:1.5}.muted{color:#5b6678}a{color:#0e7490;font-weight:650;text-decoration:none}
-.app-header{background:#0f3d4a;color:#f8fafc;padding:22px max(18px,calc((100% - 1100px)/2));margin:-24px -14px 28px;box-shadow:0 8px 24px #0f3d4a20}
+.app-header{background:linear-gradient(135deg,#e8f6f3,#f7fbfa);color:#173642;padding:22px max(18px,calc((100% - 1100px)/2));margin:-24px -14px 28px;box-shadow:0 8px 24px #173d440d;border-bottom:1px solid #dcebe8}
 .brand-row{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
-.brand{margin:0;color:#fff;font-size:1.55rem;letter-spacing:-.035em}
-.brand-subtitle{margin:5px 0 0;color:#c5dce2;font-size:.94rem}
+.brand{margin:0;color:#173f48;font-size:1.55rem;letter-spacing:-.035em}
+.brand-subtitle{margin:5px 0 0;color:#5b747a;font-size:.94rem}
 .account-links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.account-links a{color:#f8fafc;padding:8px 11px;border:1px solid #5b8791;border-radius:8px;font-size:.9rem}
+.account-links a{color:#205d63;padding:8px 11px;border:1px solid #b5d4d1;border-radius:8px;font-size:.9rem}
 nav{max-width:1100px;margin:22px auto 0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .nav-group{min-width:0;padding:12px;background:#174b59;border:1px solid #316775;border-radius:12px}
 .nav-label{display:block;color:#b7d3da;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.09em;margin:0 0 8px}
@@ -215,7 +210,7 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 <p id="dashboard-cash-snapshot-status" class="muted" role="status">Loading cash confirmation…</p>
 </div>
 <div class="grid">
-<section class="card"><h2>Three-month pay-period forecast</h2><div id="pay-period-summary" class="muted">Loading forecast…</div><h3>Recorded spending by category</h3><ul id="weekly-category-spending" class="list"><li class="muted">Loading…</li></ul><p><a href="/pay-periods">Review all upcoming pay periods and print the forecast →</a></p></section>
+<section class="card"><h2>Three-month pay-period forecast</h2><div id="pay-period-summary" class="muted">Loading forecast…</div><p><a href="/pay-periods">Review all upcoming pay periods and print the forecast →</a></p></section>
 <section class="card"><h2>Next paydays</h2><ul id="paydays" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Upcoming bills · 30 days</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Debt payments · 30 days</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
@@ -257,12 +252,6 @@ const next=payPeriodForecast.periods.find(p=>!p.is_current_period);
 if(next)root.appendChild(el("div","detail","Next pay period starts "+next.start_date+" · income "+dollars(next.income_cents)+" · bills "+dollars(next.bills_cents)+" · savings "+dollars(next.savings_cents)+" · debt "+dollars(next.debt_payments_cents)));
 if(payPeriodForecast.warnings.length)root.appendChild(el("div","detail",payPeriodForecast.warnings.length+" cash or target warning(s) across the next three months."));
 }else{root.textContent="Pay-period forecast unavailable.";}
-try{
-const weekly=await api("/api/cash-flow/weekly");const categoryRoot=document.getElementById("weekly-category-spending");categoryRoot.replaceChildren();
-const topCategories=weekly.category_spending.slice(0,3);
-if(!topCategories.length)categoryRoot.appendChild(el("li","muted","No recorded expenses this week."));
-else for(const item of topCategories){const li=el("li","");li.appendChild(el("div","item-title",item.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(item.amount_cents)));categoryRoot.appendChild(li);}
-}catch(error){document.getElementById("weekly-category-spending").textContent="Category summary unavailable: "+error.message;}
 }
 async function loadCashSnapshotControl(){
   const settings=await api("/api/household/settings");
@@ -343,7 +332,7 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <form id="settings-form">
 <label for="settings-cash">Cash on hand at week start ($)</label><input id="settings-cash" name="starting_cash" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
 <label for="settings-cash-week">Effective financial week starts</label><input id="settings-cash-week" name="starting_cash_effective_week" type="date" required>
-<p class="muted">Choose the first day of the financial week. Confirmed snapshots are saved with their effective date so older weekly reports can use the matching balance. Confirm again if the balance is more than 10 days old.</p>
+<p class="muted">Choose the first day of the financial week. Confirmed snapshots are saved with their effective date so the forecast can reconcile the correct starting cash balance. Confirm again if the balance is more than 10 days old.</p>
 <button type="submit">Save household settings</button></form>
 </section>
 <section class="card"><h2>Household members</h2><p class="muted">Add the people in your household. Income sources are linked to a member below.</p>
@@ -862,37 +851,10 @@ def delete_income_source(income_id: int):
     return {"deleted": True, "id": income_id}
 
 
-@app.post("/api/plan/preview", response_model=PaydayPlanOut)
-def preview_plan(body: PaydayPreviewRequest):
-    try:
-        request = PaydayRequest(
-            plan_date=body.plan_date,
-            period_start=body.period_start,
-            period_end=body.period_end,
-            starting_cash_cents=body.starting_cash_cents,
-            incomes=[Income(**item.model_dump()) for item in body.incomes],
-            buffers=[BufferReservation(**item.model_dump()) for item in body.buffers],
-            bills=[Bill(**item.model_dump()) for item in body.bills],
-            credit_cards=[CreditCard(**item.model_dump()) for item in body.credit_cards],
-            savings_goals=[SavingsGoal(**item.model_dump()) for item in body.savings_goals],
-            debt_strategy=body.debt_strategy,
-        )
-        plan = generate_payday_plan(request)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    return PaydayPlanOut(
-        plan_date=plan.plan_date,
-        period_start=plan.period_start,
-        period_end=plan.period_end,
-        starting_cash_cents=plan.starting_cash_cents,
-        income_cents=plan.income_cents,
-        total_available_cents=plan.total_available_cents,
-        items=[item.__dict__ for item in plan.items],
-        allocated_cents=plan.allocated_cents,
-        unallocated_cents=plan.unallocated_cents,
-        unfunded_cents=plan.unfunded_cents,
-        target_card=plan.target_card,
-        debt_strategy=plan.debt_strategy,
-        is_fully_funded=plan.is_fully_funded,
+@app.post("/api/plan/preview")
+def retired_plan_preview():
+    """Reject previews from the retired single-payday allocation engine."""
+    raise HTTPException(
+        status_code=410,
+        detail="Single-payday allocation previews were retired. Use the rolling three-month pay-period forecast.",
     )

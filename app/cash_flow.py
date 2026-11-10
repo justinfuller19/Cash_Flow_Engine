@@ -1,10 +1,9 @@
-"""Weekly household cash-flow forecast from saved schedules and transactions."""
+"""Legacy weekly calculation retained for internal checklist/reminder compatibility."""
 from calendar import monthrange
 from datetime import date, timedelta
 
-from fastapi import APIRouter, HTTPException, Query, status
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from . import database
 from .household import CASH_SNAPSHOT_STALE_DAYS
@@ -499,32 +498,8 @@ def weekly_cash_flow(
     report["future_obligation_reservation_cents"] = future_obligation_reservation
     # Legacy response alias retained for clients upgrading from the buffer model.
     report["future_buffer_reservation_cents"] = future_obligation_reservation
-    with database.connect() as db:
-        allocations = db.execute(
-            """SELECT id, allocation_date, allocation_type, amount_cents,
-                      target_debt_id, savings_goal_id, description, status,
-                      actual_amount_cents, transaction_id
-               FROM surplus_allocations
-               WHERE status = 'planned'
-                 AND allocation_type <> 'buffer'
-                 AND allocation_date >= ?
-               ORDER BY allocation_date, id""",
-            (start.isoformat(),),
-        ).fetchall()
-        allocated_cents = sum(row["amount_cents"] for row in allocations)
-        debt_target = db.execute(
-            """SELECT id, name, balance_cents FROM credit_cards
-               WHERE active = 1 AND balance_cents > 0
-               ORDER BY balance_cents ASC, id ASC LIMIT 1"""
-        ).fetchone()
-    safe_before_allocations = safe_to_spend
-    allocation_shortfall = max(0, allocated_cents - safe_before_allocations)
-    safe_to_spend = max(0, safe_to_spend - allocated_cents)
-    report["safe_surplus_before_allocations_cents"] = safe_before_allocations
-    report["allocation_shortfall_cents"] = allocation_shortfall
-    report["planned_allocations_cents"] = allocated_cents
-    report["surplus_allocations"] = [dict(row) for row in allocations]
-    report["recommended_snowball_debt"] = dict(debt_target) if debt_target else None
+    # The legacy surplus-allocation workflow is retired. Old planned rows remain
+    # in SQLite for history, but no longer reserve cash or reduce forecast capacity.
     report["free_to_spend_cents"] = safe_to_spend
     report["extra_debt_payoff_capacity_cents"] = safe_to_spend
     report["forecast_weeks"] = forecast_weeks
@@ -541,7 +516,6 @@ def weekly_cash_flow(
     report["buffer_shortfall_cents"] = 0
     report["buffer_replenishment_cents"] = 0
     report["buffer_target_cents"] = 0
-    report["safe_to_spend_before_allocations_cents"] = safe_before_allocations
     report["future_forecast"] = future_forecast
     report["notes"].append(
         "Safe-to-spend is the lowest projected daily cash balance across "
@@ -849,14 +823,39 @@ def _weekly_cash_flow_for_window(
                FROM savings_goals WHERE active = 1
                ORDER BY priority, name COLLATE NOCASE, id"""
         ).fetchall()
-        savings_history = db.execute(
-            """SELECT a.savings_goal_id, t.transaction_date, COALESCE(a.actual_amount_cents, 0) AS amount_cents
-               FROM surplus_allocations a
-               JOIN transactions t ON t.id = a.transaction_id
-               WHERE a.allocation_type = 'savings' AND a.status = 'recorded'
-                 AND a.savings_goal_id IS NOT NULL
-               ORDER BY t.transaction_date, a.id"""
+        savings_history = [
+            dict(row) for row in db.execute(
+                """SELECT a.savings_goal_id, t.transaction_date,
+                          COALESCE(a.actual_amount_cents, 0) AS amount_cents
+                   FROM surplus_allocations a
+                   JOIN transactions t ON t.id = a.transaction_id
+                   WHERE a.allocation_type = 'savings' AND a.status = 'recorded'
+                     AND a.savings_goal_id IS NOT NULL
+                   ORDER BY t.transaction_date, a.id"""
+            ).fetchall()
+        ]
+        # New savings contributions are recorded directly in the transaction
+        # ledger. Read their explicit goal marker so the retained legacy weekly
+        # checklist/reminder calculation sees the same actual contribution.
+        direct_contributions = db.execute(
+            """SELECT transaction_date, notes, ABS(amount_cents) AS amount_cents
+               FROM transactions
+               WHERE transaction_type = 'expense'
+                 AND notes LIKE 'cashflow_savings_goal_id=%;%'
+               ORDER BY transaction_date, id"""
         ).fetchall()
+        for contribution in direct_contributions:
+            notes = contribution["notes"] or ""
+            marker = "cashflow_savings_goal_id="
+            try:
+                goal_id = int(notes.split(marker, 1)[1].split(";", 1)[0])
+            except (IndexError, ValueError):
+                continue
+            savings_history.append({
+                "savings_goal_id": goal_id,
+                "transaction_date": contribution["transaction_date"],
+                "amount_cents": contribution["amount_cents"],
+            })
 
     # Recorded cash movements are counted by transaction type, never by category
     # or sign alone. Transfers between household accounts are cash-neutral.
@@ -1063,412 +1062,25 @@ def _weekly_cash_flow_for_window(
     }
 
 
-class SurplusAllocationCreate(BaseModel):
-    allocation_type: str = Field(pattern=r"^(debt|savings|unallocated)$")
-    amount_cents: int = Field(gt=0)
-    allocation_date: date = Field(default_factory=date.today)
-    target_debt_id: int | None = Field(default=None, gt=0)
-    savings_goal_id: int | None = Field(default=None, gt=0)
-    description: str = Field(default="", max_length=200)
+@router.api_route("/api/surplus-allocations", methods=["GET", "POST"])
+def retired_surplus_allocations():
+    """Reject the retired safe-surplus allocation workflow."""
+    raise HTTPException(
+        status_code=410,
+        detail="Safe-surplus allocations were retired. Use the rolling pay-period forecast and record actual payments or savings contributions directly.",
+    )
 
 
-class DebtPaymentRecord(BaseModel):
-    actual_amount_cents: int = Field(gt=0)
-    transaction_date: date = Field(default_factory=date.today)
-    description: str = Field(default="Debt payment recorded", max_length=200)
+@router.post("/api/surplus-allocations/{allocation_id}/{action}")
+def retired_surplus_allocation_action(allocation_id: int, action: str):
+    """Reject legacy allocation actions while preserving old records for history."""
+    raise HTTPException(
+        status_code=410,
+        detail="Safe-surplus allocations were retired. Record actual payments or savings contributions from their current management pages.",
+    )
 
 
-@router.get("/api/surplus-allocations")
-def list_surplus_allocations():
-    with database.connect() as db:
-        rows = db.execute(
-            """SELECT a.id, a.allocation_date, a.allocation_type, a.amount_cents,
-                      a.target_debt_id, c.name AS target_debt_name,
-                      a.savings_goal_id, g.name AS savings_goal_name,
-                      a.description, a.status, a.actual_amount_cents, a.transaction_id
-               FROM surplus_allocations a
-               LEFT JOIN credit_cards c ON c.id = a.target_debt_id
-               LEFT JOIN savings_goals g ON g.id = a.savings_goal_id
-               ORDER BY CASE a.status WHEN 'planned' THEN 0 ELSE 1 END, a.allocation_date DESC, a.id DESC
-               LIMIT 100"""
-        ).fetchall()
-    return [dict(row) for row in rows]
-
-
-@router.post("/api/surplus-allocations", status_code=status.HTTP_201_CREATED)
-def create_surplus_allocation(body: SurplusAllocationCreate):
-    target_debt_id = body.target_debt_id
-    if body.allocation_type == "debt" and target_debt_id is None:
-        with database.connect() as db:
-            target = db.execute(
-                "SELECT id FROM credit_cards WHERE active = 1 AND balance_cents > 0 ORDER BY balance_cents ASC, id ASC LIMIT 1"
-            ).fetchone()
-        if target is None:
-            raise HTTPException(status_code=422, detail="Add an active debt before allocating a snowball payment")
-        target_debt_id = target["id"]
-    if body.allocation_type != "debt" and target_debt_id is not None:
-        raise HTTPException(status_code=422, detail="A debt target is only valid for debt allocations")
-    if body.allocation_type == "savings" and body.savings_goal_id is None:
-        raise HTTPException(status_code=422, detail="Choose a savings goal for this allocation")
-    if body.allocation_type != "savings" and body.savings_goal_id is not None:
-        raise HTTPException(status_code=422, detail="A savings goal is only valid for savings allocations")
-
-    # Planned allocations are already deducted from this look-ahead forecast.
-    report = weekly_cash_flow(start_date=None, end_date=None, forecast_weeks=13)
-    if body.amount_cents > report["free_to_spend_cents"]:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Allocation exceeds safe available surplus ({report['free_to_spend_cents']} cents). Refresh the forecast and choose a smaller amount.",
-        )
-    with database.connect() as db:
-        if target_debt_id is not None and db.execute(
-            "SELECT id FROM credit_cards WHERE id = ? AND active = 1", (target_debt_id,)
-        ).fetchone() is None:
-            raise HTTPException(status_code=422, detail="Selected debt is not active")
-        if body.savings_goal_id is not None and db.execute(
-            "SELECT id FROM savings_goals WHERE id = ? AND active = 1", (body.savings_goal_id,)
-        ).fetchone() is None:
-            raise HTTPException(status_code=422, detail="Selected savings goal is not active")
-        cursor = db.execute(
-            """INSERT INTO surplus_allocations
-               (allocation_date, allocation_type, amount_cents, target_debt_id,
-                savings_goal_id, description)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (body.allocation_date.isoformat(), body.allocation_type, body.amount_cents,
-             target_debt_id, body.savings_goal_id, body.description.strip()),
-        )
-        row = db.execute(
-            "SELECT * FROM surplus_allocations WHERE id = ?", (cursor.lastrowid,)
-        ).fetchone()
-    return dict(row)
-
-
-@router.post("/api/surplus-allocations/{allocation_id}/record-debt-payment")
-def record_allocated_debt_payment(allocation_id: int, body: DebtPaymentRecord):
-    with database.connect() as db:
-        allocation = db.execute(
-            """SELECT * FROM surplus_allocations
-               WHERE id = ? AND allocation_type = 'debt' AND status = 'planned'""",
-            (allocation_id,),
-        ).fetchone()
-        if allocation is None:
-            raise HTTPException(status_code=404, detail="Planned debt allocation not found")
-        if body.actual_amount_cents > allocation["amount_cents"]:
-            raise HTTPException(status_code=422, detail="Actual payment cannot exceed the allocated amount. Refresh the forecast and create a new allocation for any additional payment.")
-        debt = db.execute(
-            "SELECT id, name, balance_cents FROM credit_cards WHERE id = ?",
-            (allocation["target_debt_id"],),
-        ).fetchone()
-        if debt is None:
-            raise HTTPException(status_code=404, detail="Target debt no longer exists")
-        cursor = db.execute(
-            """INSERT INTO transactions
-               (transaction_date, category, transaction_type,
-                linked_obligation_type, linked_obligation_id,
-                description, amount_cents, notes)
-               VALUES (?, 'debt payment', 'expense', 'debt', ?, ?, ?, ?)""",
-            (body.transaction_date.isoformat(), debt["id"],
-             body.description.strip() or ("Extra payment toward " + debt["name"]),
-             body.actual_amount_cents,
-             "Extra debt snowball payment for " + debt["name"] +
-             "; recorded from surplus allocation #" + str(allocation_id) +
-             ". Linked to this debt for traceability; excluded from minimum-payment matching."),
-        )
-        transaction_id = cursor.lastrowid
-        db.execute(
-            "UPDATE credit_cards SET balance_cents = MAX(0, balance_cents - ?) WHERE id = ?",
-            (body.actual_amount_cents, debt["id"]),
-        )
-        db.execute(
-            """UPDATE surplus_allocations
-               SET status = 'recorded', actual_amount_cents = ?, transaction_id = ?
-               WHERE id = ?""",
-            (body.actual_amount_cents, transaction_id, allocation_id),
-        )
-    return {"allocation_id": allocation_id, "transaction_id": transaction_id,
-            "actual_amount_cents": body.actual_amount_cents, "status": "recorded"}
-
-
-@router.post("/api/surplus-allocations/{allocation_id}/record-savings-contribution")
-def record_allocated_savings_contribution(allocation_id: int, body: DebtPaymentRecord):
-    with database.connect() as db:
-        allocation = db.execute(
-            """SELECT * FROM surplus_allocations
-               WHERE id = ? AND allocation_type = 'savings' AND status = 'planned'""",
-            (allocation_id,),
-        ).fetchone()
-        if allocation is None:
-            raise HTTPException(status_code=404, detail="Planned savings allocation not found")
-        if body.actual_amount_cents > allocation["amount_cents"]:
-            raise HTTPException(status_code=422, detail="Actual contribution cannot exceed the allocated amount.")
-        goal = db.execute(
-            "SELECT id, name FROM savings_goals WHERE id = ? AND active = 1",
-            (allocation["savings_goal_id"],),
-        ).fetchone()
-        if goal is None:
-            raise HTTPException(status_code=404, detail="Target savings goal is no longer active")
-        cursor = db.execute(
-            """INSERT INTO transactions
-               (transaction_date, category, transaction_type, description, amount_cents, notes)
-               VALUES (?, 'savings contribution', 'expense', ?, ?, ?)""",
-            (body.transaction_date.isoformat(),
-             body.description.strip() or ("Contribution to " + goal["name"]),
-             body.actual_amount_cents,
-             "Recorded from surplus allocation #" + str(allocation_id)),
-        )
-        transaction_id = cursor.lastrowid
-        db.execute(
-            "UPDATE savings_goals SET current_balance_cents = current_balance_cents + ? WHERE id = ?",
-            (body.actual_amount_cents, goal["id"]),
-        )
-        db.execute(
-            """UPDATE surplus_allocations
-               SET status = 'recorded', actual_amount_cents = ?, transaction_id = ?
-               WHERE id = ?""",
-            (body.actual_amount_cents, transaction_id, allocation_id),
-        )
-    return {"allocation_id": allocation_id, "transaction_id": transaction_id,
-            "actual_amount_cents": body.actual_amount_cents, "status": "recorded"}
-
-
-@router.post("/api/surplus-allocations/{allocation_id}/cancel")
-def cancel_surplus_allocation(allocation_id: int):
-    with database.connect() as db:
-        cursor = db.execute(
-            "UPDATE surplus_allocations SET status = 'cancelled' WHERE id = ? AND status = 'planned'",
-            (allocation_id,),
-        )
-        if cursor.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Planned allocation not found")
-    return {"id": allocation_id, "status": "cancelled"}
-
-
-@router.get("/weekly", response_class=HTMLResponse)
+@router.get("/weekly")
 def weekly_report_page():
-    return """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Weekly Cash Flow · CashFlow Engine</title>
-<style>
-:root{font-family:system-ui,sans-serif;color:#172033;background:#f3f6fa}*{box-sizing:border-box}
-body{margin:0;padding:24px 14px 48px}main{max-width:1150px;margin:auto}a{color:#0e7490;font-weight:650;text-decoration:none}
-h1{color:#155e75;margin:8px 0}h2{font-size:1.1rem;margin:0 0 12px}.muted{color:#5c687a;line-height:1.5}
-.toolbar,.card{background:white;padding:20px;border-radius:15px;box-shadow:0 8px 28px #172b4d0d;margin-top:16px}
-.toolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap}.field{flex:1;min-width:150px}
-label{display:block;font-size:.9rem;font-weight:650;margin-bottom:5px}input,select{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
-button{border:0;border-radius:8px;padding:10px 14px;background:#0e7490;color:white;font-weight:700;cursor:pointer}
-.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;margin-top:16px}
-.metric{background:white;padding:15px;border-radius:12px;box-shadow:0 5px 18px #172b4d0a;min-width:0}
-.metric span{display:block;color:#5c687a;font-size:.88rem}.metric strong{display:block;font-size:1.25rem;color:#155e75;margin-top:5px;overflow-wrap:anywhere}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:16px}
-.list{padding:0;list-style:none;margin:0}.list li{padding:12px 0;border-top:1px solid #e2e8f0;overflow-wrap:anywhere}
-.list li:first-child{border-top:0}.item-title{font-weight:700}.detail{font-size:.9rem;color:#5c687a;margin-top:4px}
-.status{padding:12px;border-radius:9px;background:#e0f2fe;color:#075985;margin-top:16px}.warning{background:#fff7ed;color:#9a3412}.error{background:#fee2e2;color:#991b1b}.status[hidden]{display:none}
-</style></head><body><main><a href="/">← Dashboard</a><h1>Weekly Cash Flow</h1>
-<p class="muted">Review what is expected, what is already recorded, and what remains after upcoming obligations and planned savings. Forecasts are estimates and never move money.</p>
-<div class="toolbar"><div class="field"><label for="week-start">Start of financial week</label><select id="week-start"><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option selected>Friday</option><option>Saturday</option><option>Sunday</option></select></div><button id="save-week-start" type="button">Save week start</button><div class="field"><label for="start">Start date</label><input id="start" type="date" required></div>
-<div class="field"><label for="end">End date</label><input id="end" type="date" required></div><label><input id="estimate-interest" type="checkbox"> Estimate future debt interest</label><button id="refresh" type="button">Update report</button></div>
-<div id="status" class="status" role="status" aria-live="polite" hidden></div>
-<div id="metrics" class="metrics"></div>
-<section class="card"><h2>Daily cash checkpoints</h2><p class="muted">Each day shows the lowest cash position after that day’s scheduled outflows and before later income. Same-day timing is treated conservatively.</p><ul id="daily-checkpoints" class="list"><li class="muted">Loading daily cash…</li></ul></section>
-<section class="card"><h2>Confirm starting cash</h2>
-<p class="muted">Confirm the household cash balance at the start of the current financial week. An estimate is based only on recorded transactions since the previous snapshot; verify it against actual cash. Confirming a balance does not change or delete transactions.</p>
-<p id="weekly-cash-estimate" class="muted" role="status">Checking whether an estimate is available…</p>
-<button id="weekly-cash-use-estimate" type="button" hidden>Use estimated balance (not saved)</button>
-<form id="weekly-cash-form" class="toolbar">
-<div class="field"><label for="weekly-cash-amount">Cash on hand ($)</label><input id="weekly-cash-amount" type="number" min="0" step="0.01" required></div>
-<div class="field"><label for="weekly-cash-week">Effective week starts</label><input id="weekly-cash-week" type="date" required></div>
-<button type="submit">Confirm cash balance</button>
-</form>
-<p id="weekly-cash-status" class="muted" role="status">Loading cash confirmation…</p>
-</section>
-<section class="card"><h2>Allocate safe available money</h2>
-<p class="muted">The forecast reports the amount left after dated obligations and planned savings across the forecast horizon. You decide where it goes; planned allocations reduce what remains available. The default debt suggestion follows the snowball method.</p>
-<p id="snowball-suggestion" class="muted">Loading debt recommendation…</p>
-<form id="allocation-form" class="toolbar">
-<div class="field"><label for="allocation-type">Use money for</label><select id="allocation-type"><option value="debt">Extra debt payment (snowball)</option><option value="savings">Savings goal</option><option value="unallocated">Leave unallocated</option></select></div>
-<div class="field"><label for="allocation-amount">Amount ($)</label><input id="allocation-amount" type="number" min="0.01" step="0.01" required></div>
-<div class="field" id="debt-field"><label for="allocation-debt">Debt target</label><select id="allocation-debt"></select></div>
-<div class="field" id="savings-field" hidden><label for="allocation-savings">Savings goal</label><select id="allocation-savings"></select></div>
-<div class="field"><label for="allocation-description">Note (optional)</label><input id="allocation-description" maxlength="200" placeholder="What is this for?"></div>
-<button type="submit">Save allocation</button></form>
-<h2 style="margin-top:20px">Your allocations</h2><ul id="allocations" class="list"><li class="muted">Loading allocations…</li></ul>
-</section>
-<div class="grid">
-<section class="card"><h2>Expected income</h2><ul id="income" class="list"><li class="muted">Loading…</li></ul></section>
-<section class="card"><h2>Bills due</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
-<section class="card"><h2>Minimum debt payments</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
-<section class="card"><h2>Recorded transactions</h2><ul id="transactions" class="list"><li class="muted">Loading…</li></ul></section>
-<section class="card"><h2>Possible unmatched payments</h2><p class="muted">These are review suggestions only. A transaction is never linked to a bill or debt unless you confirm the match. Suggestions explain the amount, date, and description evidence.</p><ul id="possible-payments" class="list"><li class="muted">Checking for possible matches…</li></ul></section>
-<section class="card"><h2>Spending by category</h2><ul id="category-spending" class="list"><li class="muted">Loading…</li></ul></section>
-<section class="card"><h2>Planned savings</h2><div id="savings" class="muted">Loading…</div></section>
-<section class="card"><h2>Upcoming weeks & daily cash forecast</h2><ul id="future-forecast" class="list"><li class="muted">Loading future forecast…</li></ul></section>
-<section class="card"><h2>Forecast assumptions</h2><ul id="notes" class="list"></ul></section>
-</div></main>
-<script>
-const statusBox=document.getElementById("status");
-function dollars(cents){const sign=cents<0?"−":"";return sign+new Intl.NumberFormat(undefined,{style:"currency",currency:"USD"}).format(Math.abs(cents)/100);}
-function el(tag,cls,txt){const n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n;}
-async function api(url){const r=await fetch(url);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"Could not load the weekly forecast.");return d;}
-async function post(url,body){const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"Could not save the allocation.");return d;}
-function message(text,kind=""){statusBox.textContent=text;statusBox.className="status"+(kind?" "+kind:"");statusBox.hidden=false;}
-function renderList(id,items,empty,make){const root=document.getElementById(id);root.replaceChildren();if(!items.length){root.appendChild(el("li","muted",empty));return;}for(const item of items){const li=el("li","");make(li,item);root.appendChild(li);}}
-function metric(root,label,value){const card=el("div","metric");card.appendChild(el("span","",label));card.appendChild(el("strong","",value));root.appendChild(card);}
-
-async function loadPossiblePaymentMatches(){
- const root=document.getElementById("possible-payments");
- try{
-  const [debts,bills]=await Promise.all([api("/api/debt-payment-suggestions"),api("/api/bill-payment-suggestions")]);
-  const items=[
-   ...debts.map(x=>({...x,obligation_type:"debt",obligation_id:x.debt_id,obligation_name:x.debt_name,confirm_url:"/api/debt-payment-suggestions/"+x.id+"/confirm",dismiss_url:"/api/debt-payment-suggestions/"+x.id+"/dismiss"})),
-   ...bills.map(x=>({...x,obligation_type:"bill",obligation_id:x.bill_id,obligation_name:x.bill_name,confirm_url:"/api/bill-payment-suggestions/"+x.id+"/confirm",dismiss_url:"/api/bill-payment-suggestions/"+x.id+"/dismiss"}))
-  ].sort((a,b)=>(a.transaction_date||"").localeCompare(b.transaction_date||""));
-  root.replaceChildren();
-  if(!items.length){root.appendChild(el("li","muted","No possible unmatched bill or debt payments need review."));return;}
-  for(const item of items){
-   const li=el("li","");
-   li.appendChild(el("div","item-title","Could this payment cover "+item.obligation_name+"?"));
-   li.appendChild(el("div","detail",item.description+" · "+dollars(item.amount_cents)+" · "+item.transaction_date+" · "+item.obligation_type+" due "+item.due_date));
-   li.appendChild(el("div","detail",item.reason));
-   const confirm=el("button","","Confirm match");confirm.type="button";
-   confirm.addEventListener("click",async()=>{confirm.disabled=true;try{await post(item.confirm_url,{});message("Transaction linked to "+item.obligation_name+".");await load();}catch(e){message(e.message,"error");confirm.disabled=false;}});
-   li.appendChild(confirm);
-   const dismiss=el("button","secondary","Dismiss");dismiss.type="button";dismiss.style.marginLeft="8px";
-   dismiss.addEventListener("click",async()=>{dismiss.disabled=true;try{await post(item.dismiss_url,{});message("Suggestion dismissed; it will stay hidden unless the transaction data changes.");await loadPossiblePaymentMatches();}catch(e){message(e.message,"error");dismiss.disabled=false;}});
-   li.appendChild(dismiss);
-   root.appendChild(li);
-  }
- }catch(error){root.replaceChildren(el("li","muted","Could not load possible payment matches: "+error.message));}
-}
-async function load(){const start=document.getElementById("start").value;const end=document.getElementById("end").value;
-if(!start||!end)throw Error("Choose both report dates.");
-const estimateInterest=document.getElementById("estimate-interest").checked;
-const report=await api("/api/cash-flow/weekly?start_date="+encodeURIComponent(start)+"&end_date="+encodeURIComponent(end)+"&estimate_interest="+String(estimateInterest));
-const metrics=document.getElementById("metrics");metrics.replaceChildren();
-for(const [label,value] of [
-["Starting cash",report.starting_cash_cents],["Expected income",report.expected_income_cents],
-["Recorded income",report.recorded_income_cents],["Bills still due",report.bills_due_cents],
-["Minimum debt payments",report.minimum_debt_payments_cents],["Recorded expenses",report.transaction_expenses_cents],
-...(report.estimated_interest_enabled?[["Estimated future debt interest",report.estimated_debt_interest_cents]]:[]),
-["Projected cash after obligations",report.projected_cash_before_buffer_cents],["Lowest daily cash balance",report.lowest_projected_cash_cents],["Planned savings",report.planned_savings_cents],
-["Savings funded",report.funded_savings_cents],
-["Reserved for future obligations",report.future_obligation_reservation_cents],
-["Safe available surplus",report.free_to_spend_cents],
-["Already allocated",report.planned_allocations_cents],
-["Still available to allocate",report.free_to_spend_cents]
-])metric(metrics,label,dollars(value));
-if(report.projected_shortfall_cents>0)message("Projected shortfall: "+dollars(report.projected_shortfall_cents)+". Required obligations exceed projected cash.","warning");
-
-else if(report.allocation_shortfall_cents>0)message("Your planned allocations now exceed safe available surplus by "+dollars(report.allocation_shortfall_cents)+". Review or cancel planned allocations before making more payments.","warning");
-else if(report.future_obligation_reservation_cents>0)message(dollars(report.future_obligation_reservation_cents)+" is reserved for upcoming obligations before they come due.","warning");
-else if(report.savings_shortfall_cents>0)message("Required obligations are covered, but planned savings are short by "+dollars(report.savings_shortfall_cents)+".","warning");
-else {statusBox.hidden=true;}
-renderList("income",report.expected_income,"No scheduled income remains expected in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date));});
-const billRows=report.bills.map(x=>({...x,kind:"bill"}));
-renderList("bills",billRows,"No bills due in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.due_date+" · "+x.status+(x.transaction_date?" · recorded "+x.transaction_date:"")));});
-renderList("debts",report.minimum_debt_payments,"No minimum debt payments due in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.name+" · "+dollars(x.amount_cents)+" remaining"));const detail=[x.due_date,x.status];if(x.qualifying_payments_cents)detail.push(dollars(x.paid_toward_minimum_cents)+" toward minimum");if(x.extra_payment_cents)detail.push(dollars(x.extra_payment_cents)+" extra");if(x.transaction_dates&&x.transaction_dates.length)detail.push("recorded "+x.transaction_dates.join(", "));li.appendChild(el("div","detail",detail.join(" · ")));});
-renderList("transactions",report.transactions,"No transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.description+" · "+dollars(x.amount_cents)));li.appendChild(el("div","detail",x.date+" · "+x.type+" · "+x.category+(x.linked_obligation_type?" · linked "+x.linked_obligation_type:"")));});
-await loadPossiblePaymentMatches();
-renderList("category-spending",report.category_spending,"No expense transactions recorded in this window.",(li,x)=>{li.appendChild(el("div","item-title",x.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(x.amount_cents)));});
-const savings=document.getElementById("savings");savings.replaceChildren();savings.appendChild(el("p","", "Planned: "+dollars(report.planned_savings_cents)));savings.appendChild(el("p","", "Funded after obligations: "+dollars(report.funded_savings_cents)));savings.appendChild(el("p","", "Not covered by this forecast: "+dollars(report.savings_shortfall_cents)));savings.appendChild(el("p","muted","Contributions are estimated from active savings goals and distinct scheduled payday dates."));
-renderList("daily-checkpoints",report.daily_forecast,"No daily cash checkpoints available.",(li,day)=>{li.appendChild(el("div","item-title",day.date+" · lowest "+dollars(day.lowest_cash_cents)+" · ending "+dollars(day.ending_cash_cents)));li.appendChild(el("div","detail","Income "+dollars(day.income_cents)+" · outflows "+dollars(day.outflows_cents)));if(day.projected_shortfall_cents>0)li.appendChild(el("div","detail","Projected shortfall "+dollars(day.projected_shortfall_cents)));});
-renderList("notes",report.notes,"No additional assumptions.",(li,note)=>li.appendChild(el("div","detail",note)));
-const recommendation=report.recommended_snowball_debt;
-document.getElementById("snowball-suggestion").textContent=recommendation
- ? "Suggested snowball target: "+recommendation.name+" ("+dollars(recommendation.balance_cents)+" remaining). This is a suggestion only; you choose the allocation."
- : "Add an active debt to receive a snowball recommendation.";
-const debtSelect=document.getElementById("allocation-debt");
-const goalSelect=document.getElementById("allocation-savings");
-const [debts,goals,allocations]=await Promise.all([
- api("/api/debts"),api("/api/savings-goals"),api("/api/surplus-allocations")
-]);
-debtSelect.replaceChildren();for(const debt of debts.filter(x=>x.active&&x.balance_cents>0)){const option=el("option","",debt.name+" — "+dollars(debt.balance_cents));option.value=debt.id;debtSelect.appendChild(option);}
-if(recommendation)debtSelect.value=String(recommendation.id);
-goalSelect.replaceChildren();for(const goal of goals.filter(x=>x.active)){const option=el("option","",goal.name);option.value=goal.id;goalSelect.appendChild(option);}
-const typeSelect=document.getElementById("allocation-type");
-function updateAllocationFields(){document.getElementById("debt-field").hidden=typeSelect.value!=="debt";document.getElementById("savings-field").hidden=typeSelect.value!=="savings";}
-typeSelect.onchange=updateAllocationFields;updateAllocationFields();
-renderList("allocations",allocations.filter(a=>a.allocation_type!=="buffer"&&(a.status!=="planned"||a.allocation_date>=report.start_date)),"No allocations yet. Choose an amount above to reserve part of your safe surplus.",(li,a)=>{
- const label={debt:"Debt snowball",savings:"Savings goal",unallocated:"Leave unallocated"}[a.allocation_type]||a.allocation_type;
- li.appendChild(el("div","item-title",label+" · "+dollars(a.amount_cents)+" · "+a.status));
- li.appendChild(el("div","detail",(a.target_debt_name||a.savings_goal_name||a.description||"No note")+" · "+a.allocation_date+(a.actual_amount_cents!==null&&a.actual_amount_cents!==undefined?" · actually paid "+dollars(a.actual_amount_cents):"")));
- if(a.status==="planned"){
-   const actions=el("div","toolbar","");
-   if(a.allocation_type==="debt"){
-     const record=el("button","","Record actual debt payment");record.type="button";
-     record.onclick=async()=>{const input=prompt("Enter the actual payment in dollars (up to "+(a.amount_cents/100).toFixed(2)+"):",(a.amount_cents/100).toFixed(2));if(input===null)return;const amount=Math.round(Number(input)*100);if(!Number.isFinite(amount)||amount<=0){message("Enter a valid positive payment amount.","error");return;}try{await post("/api/surplus-allocations/"+a.id+"/record-debt-payment",{actual_amount_cents:amount,transaction_date:iso(new Date()),description:"Extra debt snowball payment"});message("Actual debt payment recorded. The debt balance and forecast have been updated.");await load();}catch(e){message(e.message,"error");}};
-     actions.appendChild(record);
-   }
-   if(a.allocation_type==="savings"){
-     const record=el("button","","Record actual savings contribution");record.type="button";
-     record.onclick=async()=>{const input=prompt("Enter the actual contribution in dollars (up to "+(a.amount_cents/100).toFixed(2)+"):",(a.amount_cents/100).toFixed(2));if(input===null)return;const amount=Math.round(Number(input)*100);if(!Number.isFinite(amount)||amount<=0){message("Enter a valid positive contribution amount.","error");return;}try{await post("/api/surplus-allocations/"+a.id+"/record-savings-contribution",{actual_amount_cents:amount,transaction_date:iso(new Date()),description:"Savings goal contribution"});message("Savings contribution recorded. The goal balance and forecast have been updated.");await load();}catch(e){message(e.message,"error");}};
-     actions.appendChild(record);
-   }
-   const cancel=el("button","","Cancel allocation");cancel.type="button";cancel.onclick=async()=>{try{await post("/api/surplus-allocations/"+a.id+"/cancel",{});message("Allocation cancelled and surplus released.");await load();}catch(e){message(e.message,"error");}};
-   actions.appendChild(cancel);li.appendChild(actions);
- }
-});
-renderList("future-forecast",report.future_forecast,"No future weeks included in this forecast.",(li,x)=>{
-  li.appendChild(el("div","item-title",x.start_date+" to "+x.end_date+" · ending cash "+dollars(x.projected_ending_cash_cents)));
-  li.appendChild(el("div","detail","Starting cash "+dollars(x.starting_cash_cents)+" · income "+dollars(x.expected_income_cents+x.recorded_income_cents)+" · bills "+dollars(x.bills_due_cents)+" · minimum debt "+dollars(x.minimum_debt_payments_cents)));
-  li.appendChild(el("div","detail","Savings target "+dollars(x.planned_savings_cents)+" · safely funded "+dollars(x.funded_savings_cents)+" · arrears carried "+dollars(x.savings_arrears_cents)));
-  if(x.savings_shortfall_cents>0)li.appendChild(el("div","detail","Savings target not currently affordable: "+dollars(x.savings_shortfall_cents)));
-  if(x.lowest_projected_cash_cents<0)li.appendChild(el("div","detail","Lowest daily cash: "+dollars(x.lowest_projected_cash_cents)+" · shortfall "+dollars(x.projected_shortfall_cents)));
-  if(x.daily_forecast&&x.daily_forecast.some(day=>day.projected_shortfall_cents>0))li.appendChild(el("div","detail","Daily cash shortfall detected on "+x.daily_forecast.filter(day=>day.projected_shortfall_cents>0).map(day=>day.date).join(", ")));
-  if(report.estimated_interest_enabled){
-    li.appendChild(el("div","detail","Estimated debt interest this week: "+dollars(x.estimated_debt_interest_cents)));
-    for(const debt of x.projected_debt_balances||[])li.appendChild(el("div","detail",debt.debt_name+" projected balance: "+dollars(debt.projected_balance_cents)));
-  }
-}); 
-}
-function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
-function alignToWeekStart(dayName){const index={Monday:0,Tuesday:1,Wednesday:2,Thursday:3,Friday:4,Saturday:5,Sunday:6}[dayName]??4;const today=new Date();today.setHours(12,0,0,0);today.setDate(today.getDate()-((today.getDay()+6-index)%7));document.getElementById("start").value=iso(today);const end=new Date(today);end.setDate(end.getDate()+6);document.getElementById("end").value=iso(end);}
-async function initializeWeekSettings(){const settings=await api("/api/household/settings");const select=document.getElementById("week-start");select.value=settings.financial_week_start||"Friday";alignToWeekStart(select.value);await loadWeeklyCashControl(settings);}
-
-async function loadWeeklyCashControl(existingSettings){
- const settings=existingSettings||await api("/api/household/settings");
- const start=document.getElementById("start").value;
- const weekInput=document.getElementById("weekly-cash-week");
- const amountInput=document.getElementById("weekly-cash-amount");
- const estimate=document.getElementById("weekly-cash-estimate");
- const useEstimate=document.getElementById("weekly-cash-use-estimate");
- weekInput.value=start;
- weekInput.max=start;
- amountInput.value=settings.starting_cash_effective_week===start?(settings.starting_cash_cents/100).toFixed(2):"";
- if(settings.suggested_cash_balance_cents!==null&&settings.suggested_cash_balance_cents!==undefined&&settings.suggested_cash_effective_week===start){
-  estimate.textContent="Estimated opening balance for "+start+": "+dollars(settings.suggested_cash_balance_cents)+" based on "+settings.suggested_cash_transaction_count+" recorded transaction(s) since the confirmed snapshot dated "+settings.suggested_cash_based_on_effective_week+". This is not a confirmed balance; compare it with actual cash.";
-  useEstimate.hidden=false;
-  useEstimate.onclick=()=>{if(weekInput.value!==settings.suggested_cash_effective_week){message("This estimate only applies to the current financial week.","error");return;}amountInput.value=(settings.suggested_cash_balance_cents/100).toFixed(2);message("Estimate copied into the form only. Verify actual cash, then choose Confirm cash balance to save it.");};
- }else{
-  estimate.textContent=settings.starting_cash_effective_week===start?"A confirmed snapshot already exists for this week. Transactions recorded during this week remain separate forecast activity.":"No estimate is available for this week. Confirm the actual opening balance if known.";
-  useEstimate.hidden=true;
-  useEstimate.onclick=null;
- }
- const status=document.getElementById("weekly-cash-status");
- status.textContent=settings.starting_cash_confirmed_at?"Last confirmed "+settings.starting_cash_confirmed_at+" · effective week "+settings.starting_cash_effective_week+(settings.starting_cash_is_stale?" · OUT OF DATE — please reconfirm.":"."):"No confirmed cash snapshot is available yet.";
-}
-
-document.getElementById("weekly-cash-form").addEventListener("submit",async event=>{
- event.preventDefault();
- const form=event.currentTarget;
- const button=form.querySelector("button[type=submit]");
- const status=document.getElementById("weekly-cash-status");
- button.disabled=true;
- try{
-  const amount=Number(document.getElementById("weekly-cash-amount").value);
-  const effectiveWeek=document.getElementById("weekly-cash-week").value;
-  if(!Number.isFinite(amount)||amount<0)throw Error("Enter a cash balance of zero or more.");
-  const response=await fetch("/api/household/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({starting_cash_cents:Math.round((amount+Number.EPSILON)*100),starting_cash_effective_week:effectiveWeek})});
-  const data=await response.json().catch(()=>({}));
-  if(!response.ok)throw Error(data.detail||"Could not confirm the cash balance.");
-  status.textContent="Cash balance confirmed for the week starting "+data.starting_cash_effective_week+".";
-  await load();
-  await loadWeeklyCashControl();
- }catch(error){status.textContent=error.message;message(error.message,"error");}
- finally{button.disabled=false;}
-});
-document.getElementById("week-start").addEventListener("change",()=>alignToWeekStart(document.getElementById("week-start").value));
-document.getElementById("save-week-start").addEventListener("click",async()=>{try{const value=document.getElementById("week-start").value;const response=await fetch("/api/household/settings",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({financial_week_start:value})});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.detail||"Could not save week start.");alignToWeekStart(value);message("Financial week start saved as "+value+".");await load();await loadWeeklyCashControl();}catch(e){message(e.message,"error");}});
-document.getElementById("allocation-form").addEventListener("submit",async event=>{event.preventDefault();try{const type=document.getElementById("allocation-type").value;const amount=Math.round(Number(document.getElementById("allocation-amount").value)*100);if(!Number.isFinite(amount)||amount<=0)throw Error("Enter a valid positive amount.");const body={allocation_type:type,amount_cents:amount,allocation_date:iso(new Date()),description:document.getElementById("allocation-description").value};if(type==="debt")body.target_debt_id=Number(document.getElementById("allocation-debt").value);if(type==="savings")body.savings_goal_id=Number(document.getElementById("allocation-savings").value);await post("/api/surplus-allocations",body);document.getElementById("allocation-amount").value="";document.getElementById("allocation-description").value="";message("Allocation saved. The remaining safe surplus has been recalculated.");await load();}catch(e){message(e.message,"error");}});
-document.getElementById("refresh").addEventListener("click",()=>load().catch(e=>message(e.message,"error")));
-initializeWeekSettings().then(load).catch(e=>message(e.message,"error"));
-</script></body></html>"""
+    """Send legacy weekly-report bookmarks to the current pay-period forecast."""
+    return RedirectResponse(url="/pay-periods", status_code=307)
