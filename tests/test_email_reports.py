@@ -1,4 +1,4 @@
-"""Tests for optional SMTP reports, due reminders, and shortfall alert deduplication."""
+"""Tests for optional SMTP due reminders and shortfall alert deduplication."""
 from datetime import date, timedelta
 
 import pytest
