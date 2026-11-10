@@ -516,7 +516,6 @@ def weekly_cash_flow(
     report["buffer_shortfall_cents"] = 0
     report["buffer_replenishment_cents"] = 0
     report["buffer_target_cents"] = 0
-    report["safe_to_spend_before_allocations_cents"] = safe_before_allocations
     report["future_forecast"] = future_forecast
     report["notes"].append(
         "Safe-to-spend is the lowest projected daily cash balance across "
