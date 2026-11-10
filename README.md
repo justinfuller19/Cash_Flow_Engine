@@ -17,7 +17,7 @@ A lightweight, self-hosted household cash-flow manager designed to run on Raspbe
 - Manual transaction ledger with typed income, expense, and transfer entries, user-managed categories, safe category renaming/deletion, and optional links to scheduled income, bills, and debt payments for reconciliation.
 - Dedicated `/pay-periods` report for the rolling three-month forecast, including pay-period income, bills, savings, debt payments, projected ending cash, carry-over, warnings, and a printable PDF layout. The former `/weekly` page redirects here.
 - No separate safe-surplus allocation workflow: the forecast calculates spendable cash directly, and actual expenses, debt payments, and savings contributions are recorded in their respective workflows.
-- Record actual debt payments and savings contributions directly in the ledger and update the corresponding debt or savings balance. Historical surplus-allocation rows remain in SQLite for compatibility but no longer reserve cash or affect forecasts.
+- Record actual debt payments and savings contributions directly in the ledger and update the corresponding debt or savings balance. The legacy allocation table remains as internal bookkeeping for recorded savings-contribution history; old planned allocations no longer reserve cash or affect forecasts.
 - Settings & Data page with a downloadable database backup and a typed, backup-first Clear All Data workflow that preserves the application schema and category definitions.
 - Optional SMTP email delivery for upcoming bill/debt reminders and projected cash shortfall alerts.
 - Shared household login accounts with scrypt password hashes, expiring opaque sessions, and a separate SQLite database file per household.
