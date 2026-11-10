@@ -96,7 +96,7 @@ curl http://127.0.0.1/health
 
 From another device on the same Wi-Fi, open `http://<pi-hostname>.local` (replace `<pi-hostname>` with the result of running `hostname` on the Pi). No `:8000` is needed: nginx listens on port 80 and forwards requests internally to the app on `127.0.0.1:8000`. Avahi advertises the Pi hostname through local mDNS. If `.local` name resolution is not supported by a device or router, use the Pi's DHCP-reserved name or IP address. Nginx permits only private IPv4/IPv6 network ranges and denies other addresses. The app's household login remains required. The app itself is bound to loopback and cannot be reached directly from another device on port 8000.
 
-## 5. Configure optional email reports and reminders
+## 5. Configure optional email reminders
 
 Email is disabled unless SMTP settings and at least one recipient are configured in `/etc/cashflow-engine.env`. The application does not store SMTP credentials in the database. Port 587 uses STARTTLS; port 465 uses implicit TLS. Keep the environment file root-owned with mode `600`.
 
