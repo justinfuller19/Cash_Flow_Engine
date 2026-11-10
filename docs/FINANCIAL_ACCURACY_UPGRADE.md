@@ -315,7 +315,7 @@ Historical weekly/buffer phases above remain for project history only. The pay-p
 ## Post-merge legacy workflow cleanup
 
 - [x] Redirect the old `/weekly` report to the rolling three-month `/pay-periods` report.
-- [x] Retire safe-surplus allocation endpoints with HTTP 410; historical rows no longer reserve cash.
+- [x] Retire safe-surplus allocation endpoints with HTTP 410; legacy recorded-savings rows remain for reconciliation; old planned allocations no longer reserve cash.
 - [x] Retire the single-payday preview and generation endpoints with HTTP 410 while preserving read-only access to saved plan history.
 - [x] Remove the unused pure payday allocation engine and its tests.
 - [x] Remove the Sunday weekly email report and systemd units; disable/remove those units during the next application update on existing Pi installations.
