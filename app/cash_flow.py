@@ -823,14 +823,39 @@ def _weekly_cash_flow_for_window(
                FROM savings_goals WHERE active = 1
                ORDER BY priority, name COLLATE NOCASE, id"""
         ).fetchall()
-        savings_history = db.execute(
-            """SELECT a.savings_goal_id, t.transaction_date, COALESCE(a.actual_amount_cents, 0) AS amount_cents
-               FROM surplus_allocations a
-               JOIN transactions t ON t.id = a.transaction_id
-               WHERE a.allocation_type = 'savings' AND a.status = 'recorded'
-                 AND a.savings_goal_id IS NOT NULL
-               ORDER BY t.transaction_date, a.id"""
+        savings_history = [
+            dict(row) for row in db.execute(
+                """SELECT a.savings_goal_id, t.transaction_date,
+                          COALESCE(a.actual_amount_cents, 0) AS amount_cents
+                   FROM surplus_allocations a
+                   JOIN transactions t ON t.id = a.transaction_id
+                   WHERE a.allocation_type = 'savings' AND a.status = 'recorded'
+                     AND a.savings_goal_id IS NOT NULL
+                   ORDER BY t.transaction_date, a.id"""
+            ).fetchall()
+        ]
+        # New savings contributions are recorded directly in the transaction
+        # ledger. Read their explicit goal marker so the retained legacy weekly
+        # checklist/reminder calculation sees the same actual contribution.
+        direct_contributions = db.execute(
+            """SELECT transaction_date, notes, ABS(amount_cents) AS amount_cents
+               FROM transactions
+               WHERE transaction_type = 'expense'
+                 AND notes LIKE 'cashflow_savings_goal_id=%;%'
+               ORDER BY transaction_date, id"""
         ).fetchall()
+        for contribution in direct_contributions:
+            notes = contribution["notes"] or ""
+            marker = "cashflow_savings_goal_id="
+            try:
+                goal_id = int(notes.split(marker, 1)[1].split(";", 1)[0])
+            except (IndexError, ValueError):
+                continue
+            savings_history.append({
+                "savings_goal_id": goal_id,
+                "transaction_date": contribution["transaction_date"],
+                "amount_cents": contribution["amount_cents"],
+            })
 
     # Recorded cash movements are counted by transaction type, never by category
     # or sign alone. Transfers between household accounts are cash-neutral.
