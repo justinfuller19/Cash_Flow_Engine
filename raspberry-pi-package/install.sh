@@ -109,7 +109,6 @@ for unit in \
   cashflow-engine-backup.service \
   cashflow-engine-backup.timer \
   cashflow-engine-email-reminders.service \
-  cashflow-engine-email-reminders.timer \
   cashflow-engine-email-reminders.timer; do
   [[ -f "$INSTALL_DIR/deploy/$unit" ]] || die "Required service file is missing: deploy/$unit"
   install -o root -g root -m 644 "$INSTALL_DIR/deploy/$unit" "/etc/systemd/system/$unit"
