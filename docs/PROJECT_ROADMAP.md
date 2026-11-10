@@ -256,7 +256,7 @@ The owner-approved redesign was implemented in PR #54 and merged to `main`. The 
 - [x] Integrate recurring bills, paycheck and bill overrides, savings deadlines and ongoing contributions, and chronological debt interest/payments.
 - [x] Integrate editable/idempotent internal ledger posting, transaction confirmation safeguards, and reconciliation.
 - [x] Replace the active dashboard forecast summary with pay-period metrics and provide the printable three-month report at `/pay-periods`; redirect `/weekly` bookmarks to the current report.
-- [x] Retire the weekly safe-surplus allocation workflow and single-payday plan generation/preview APIs; preserve historical records without letting old allocations reserve forecast cash.
+- [x] Retire the weekly safe-surplus allocation workflow and single-payday plan generation/preview APIs; preserve historical records and recorded-savings reconciliation without letting old planned allocations reserve forecast cash.
 - [x] Remove the old Sunday weekly forecast email and its systemd timer; keep daily due-date and shortfall reminders.
 - [x] Add regression coverage for paycheck grouping, bill assignment, cash reconciliation, savings and debt behavior, transaction safeguards, and the owner-provided $150 purchase scenario.
 - [ ] Verify Raspberry Pi deployment compatibility, resource use, existing-database migrations, and the updater path.
@@ -270,7 +270,7 @@ PR #54 is merged. No Raspberry Pi deployment has been performed. Do not deploy u
 The pay-period forecast supersedes the old weekly/buffer planning model. The following old user-facing workflows are retired:
 
 - `/weekly` redirects to `/pay-periods`.
-- Safe-surplus allocation endpoints return HTTP 410; old allocation rows are retained only for history and compatibility and no longer reduce spendable cash.
+- Safe-surplus allocation endpoints return HTTP 410; the legacy table remains for recorded-savings reconciliation; old planned rows no longer reduce spendable cash.
 - Single-payday plan generation and preview endpoints return HTTP 410. Saved plan history remains readable and deletable.
 - The pure single-payday allocation engine and its unused schemas/tests have been removed.
 - The Sunday weekly email forecast and systemd units are removed. The updater disables and removes those units on existing Raspberry Pi installations.
