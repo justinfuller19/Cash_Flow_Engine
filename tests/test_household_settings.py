@@ -388,5 +388,4 @@ def test_legacy_weekly_report_redirects_to_pay_period_forecast(tmp_path, monkeyp
     response = client.get("/weekly", follow_redirects=False)
     assert response.status_code == 307
     assert response.headers["location"] == "/pay-periods"
-    dashboard = client.get("/")
-    assert 'id="dashboard-cash-snapshot-form"' in dashboard.text
+    assert client.get("/pay-periods").status_code == 200
