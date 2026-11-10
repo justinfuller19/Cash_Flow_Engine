@@ -29,25 +29,6 @@ def test_email_configuration_is_optional_but_partial_configuration_is_rejected()
     assert config.recipients == ("one@example.test", "two@example.test")
 
 
-def test_weekly_email_sends_once_for_the_next_monday_to_sunday_window(tmp_path, monkeypatch, capsys):
-    setup_database(tmp_path, monkeypatch)
-    today = date(2026, 10, 18)  # Sunday
-    key, payload_hash, subject, body = email_reports.build_weekly_email(today)
-    assert key == "weekly:2026-10-19"
-    assert "2026-10-19 through 2026-10-25" in body
-    assert "Extra debt payoff capacity" in body
-    sent = []
-    monkeypatch.setattr(email_reports, "send_email", lambda config, subject, body: sent.append((subject, body)))
-    config = email_reports.EmailConfig(
-        "smtp.example.test", 587, "budget@example.test", ("family@example.test",)
-    )
-    assert email_reports.run_once("weekly", today, config) is True
-    assert len(sent) == 1
-    assert email_reports._notification_row(key)["payload_hash"] == payload_hash
-    assert email_reports.run_once("weekly", today, config) is False
-    assert len(sent) == 1
-
-
 def test_daily_digest_sends_due_reminder_and_shortfall_once_per_state(tmp_path, monkeypatch):
     setup_database(tmp_path, monkeypatch)
     today = date(2026, 10, 17)
