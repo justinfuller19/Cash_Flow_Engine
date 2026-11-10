@@ -1,6 +1,5 @@
 """Persisted payday planning from the saved household setup."""
-from fastapi import APIRouter, HTTPException, status
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 
 from . import database
