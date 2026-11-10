@@ -1,7 +1,7 @@
 # Pay-Period Forecast Specification
 
 **Owner-approved:** 2026-11-08  
-**Status:** Authoritative product direction for the next forecast implementation. This supersedes the legacy weekly mandatory-buffer model.
+**Status:** Authoritative current product specification. This supersedes the legacy weekly mandatory-buffer model.
 
 ## Paycheck grouping and period boundaries
 
