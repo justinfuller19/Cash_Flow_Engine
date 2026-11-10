@@ -157,3 +157,20 @@ def test_non_dashboard_pages_get_shared_brand_header():
 
     assert 'class="cfe-site-brand"' in refreshed
     assert 'src="/brand/logo.svg"' in refreshed
+
+def test_shared_theme_stays_light_even_when_device_prefers_dark_mode():
+    from app.ui_refresh import GLOBAL_STYLES
+
+    assert "prefers-color-scheme:dark" not in GLOBAL_STYLES
+    assert "color-scheme:light" in GLOBAL_STYLES
+    assert "background:#f9fcfc" in GLOBAL_STYLES
+    assert "#edf8f5" in GLOBAL_STYLES
+
+
+def test_global_navigation_no_longer_exposes_legacy_weekly_workflow():
+    from app.ui_refresh import GLOBAL_NAV, INTERACTION_SCRIPT
+
+    assert 'href="/pay-periods"' in GLOBAL_NAV
+    assert 'href="/weekly"' not in GLOBAL_NAV
+    assert 'href="/weekly"' not in INTERACTION_SCRIPT
+
