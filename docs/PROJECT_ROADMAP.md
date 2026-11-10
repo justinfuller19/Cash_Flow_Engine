@@ -24,6 +24,9 @@ The current state of the repository and merged code is authoritative. Check open
 
 ## Milestones
 
+> **Historical sections:** Milestones 1–11 below document earlier iterations and are retained for project history. Their weekly/buffer/payday-allocation assumptions are not active requirements. The current product state and authoritative rules are recorded in the pay-period forecast section at the end of this document.
+
+
 ### Milestone 1 — Core allocation engine
 **Goal:** Keep the financial rules deterministic, testable, and independent of HTTP/UI code.
 
