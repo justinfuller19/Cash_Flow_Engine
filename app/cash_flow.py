@@ -1,4 +1,4 @@
-"""Weekly household cash-flow forecast from saved schedules and transactions."""
+"""Legacy weekly calculation retained for internal checklist/reminder compatibility."""
 from calendar import monthrange
 from datetime import date, timedelta
 
