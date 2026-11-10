@@ -1,3 +1,5 @@
+> **Historical design note:** This document describes the retired weekly forecast and buffer-era implementation. It is retained for project history only. The active rules are in [PAY_PERIOD_FORECAST_SPEC.md](PAY_PERIOD_FORECAST_SPEC.md); do not implement new work from this document.
+
 # Daily Cash-Flow Forecast and Pagination Requirements
 
 This document records the daily cash-flow forecast and pagination behavior. The API calculates a default 13-week horizon (configurable from 1 to 52 weeks), carries each week's ending balance forward, and limits current safe-to-spend to the lowest projected daily cash balance across the horizon.
