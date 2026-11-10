@@ -24,6 +24,8 @@ Cash Flow Engine remains a planning and tracking tool. It does not execute trans
 - [ ] Preserve one household-wide buffer across calculation paths.
 - [ ] Do not add automatic transfers or bill payments as part of this upgrade.
 
+> **Historical implementation log:** Earlier weekly and buffer phases below are retained for context only. The active financial rules are in [PAY_PERIOD_FORECAST_SPEC.md](PAY_PERIOD_FORECAST_SPEC.md), and the current post-merge status is recorded at the end of this file.
+
 # Milestone A — Trustworthy Weekly Cash Flow
 
 ## Phase 1 — Starting cash snapshots
