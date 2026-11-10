@@ -53,7 +53,7 @@ CASHFLOW_ALLOW_LAN=1
 # CASHFLOW_USERNAME=household
 # CASHFLOW_PASSWORD=replace-with-a-long-random-secret
 #
-# Optional SMTP email reports/reminders. Set the three required values together.
+# Optional SMTP email reminders. Set the three required values together.
 # CASHFLOW_SMTP_HOST=smtp.example.com
 # CASHFLOW_SMTP_PORT=587
 # CASHFLOW_SMTP_USERNAME=your-smtp-username
@@ -78,14 +78,11 @@ sudo cp /opt/cashflow-engine/deploy/cashflow-engine-backup.service /etc/systemd/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-backup.timer /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-email-reminders.service /etc/systemd/system/
 sudo cp /opt/cashflow-engine/deploy/cashflow-engine-email-reminders.timer /etc/systemd/system/
-sudo cp /opt/cashflow-engine/deploy/cashflow-engine-weekly-report.service /etc/systemd/system/
-sudo cp /opt/cashflow-engine/deploy/cashflow-engine-weekly-report.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now avahi-daemon
 sudo systemctl enable --now cashflow-engine.service
 sudo systemctl enable --now cashflow-engine-backup.timer
 sudo systemctl enable --now cashflow-engine-email-reminders.timer
-sudo systemctl enable --now cashflow-engine-weekly-report.timer
 ```
 
 Check status and logs:
@@ -105,13 +102,13 @@ Email is disabled unless SMTP settings and at least one recipient are configured
 
 Set `CASHFLOW_SMTP_HOST`, `CASHFLOW_SMTP_FROM`, and `CASHFLOW_EMAIL_TO`; optionally set `CASHFLOW_SMTP_PORT` (default 587), both `CASHFLOW_SMTP_USERNAME` and `CASHFLOW_SMTP_PASSWORD`, and `CASHFLOW_REMINDER_DAYS` (1–6, default 3).
 
-The daily timer runs at 08:00 local server time and sends due-date reminders and shortfall/buffer alerts when needed. A bill/debt reminder is sent once per scheduled item and due date unless its details change. A shortfall alert is sent when the state changes, with a repeat at most once every seven days while the same warning persists. The weekly timer runs Sunday at 19:00 local server time and emails the coming Monday–Sunday forecast once per week.
+The daily timer runs at 08:00 local server time and sends due-date reminders and projected shortfall alerts when needed. A bill/debt reminder is sent once per scheduled item and due date unless its details change. A shortfall alert is sent when the state changes, with a repeat at most once every seven days while the same warning persists. Email reminders point users to the current three-month pay-period forecast.
 
 Check the configured server timezone before enabling the timers. Test the runner without sending mail:
 
 ```bash
 sudo -u cashflow env CASHFLOW_DB_PATH=/var/lib/cashflow-engine/cashflow.db CASHFLOW_BACKUP_DIR=/var/backups/cashflow-engine /opt/cashflow-engine/.venv/bin/python /opt/cashflow-engine/scripts/send_email_reports.py --mode daily --dry-run
-sudo systemctl status cashflow-engine-email-reminders.timer cashflow-engine-weekly-report.timer
+sudo systemctl status cashflow-engine-email-reminders.timer
 sudo journalctl -u cashflow-engine-email-reminders.service -n 50 --no-pager
 ```
 
