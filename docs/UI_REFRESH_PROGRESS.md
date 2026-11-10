@@ -12,7 +12,7 @@ Deliver one cohesive pull request that makes daily household money management ea
 - Collapse secondary dashboard metrics under “At a glance.”
 - Explain the existing forecast and household buffer in plain language; the buffer is a forecast-protection rule, not an extra deduction to apply again.
 - Retain existing routes, detailed reports, management controls, account settings, and API documentation.
-- Respect reduced-motion preferences, visible keyboard focus, and light/dark system preferences.
+- Respect reduced-motion preferences and visible keyboard focus; keep the app on a bright, consistent light theme regardless of device dark-mode preference.
 
 ## Implementation checklist
 - [x] Shared responsive design tokens and common component styling.
