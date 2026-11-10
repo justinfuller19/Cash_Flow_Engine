@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Send optional CashFlow Engine weekly reports, due reminders, and shortfall alerts."""
+"""Send optional CashFlow Engine due-date reminders and shortfall alerts."""
 from __future__ import annotations
 
 import argparse
