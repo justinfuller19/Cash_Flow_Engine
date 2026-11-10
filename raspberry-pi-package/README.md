@@ -51,7 +51,7 @@ The installer creates `/etc/cashflow-engine.env` with persistent database and ba
 ```bash
 sudo nano /etc/cashflow-engine.env
 sudo systemctl restart cashflow-engine
-sudo systemctl restart cashflow-engine-email-reminders.timer cashflow-engine-weekly-report.timer
+sudo systemctl restart cashflow-engine-email-reminders.timer
 ```
 
 If you enable email, set the SMTP host and sender, credentials if required, and a recipient (or configure the household recipient in Account settings). Never share or commit this file.
