@@ -474,13 +474,11 @@ def test_bill_payment_suggestions_ignore_unrelated_and_already_covered_expenses(
     assert client.get("/api/bill-payment-suggestions").json() == []
 
 
-def test_weekly_report_includes_possible_unmatched_payment_review(tmp_path, monkeypatch):
+def test_legacy_weekly_report_redirects_to_pay_period_forecast(tmp_path, monkeypatch):
     client = client_for(tmp_path, monkeypatch)
-    page = client.get("/weekly")
-    assert page.status_code == 200
-    assert "Possible unmatched payments" in page.text
-    assert "/api/bill-payment-suggestions" in page.text
-    assert "/api/debt-payment-suggestions" in page.text
+    page = client.get("/weekly", follow_redirects=False)
+    assert page.status_code == 307
+    assert page.headers["location"] == "/pay-periods"
 
 
 def test_v20_migration_adds_bill_match_queue_without_changing_transactions(
