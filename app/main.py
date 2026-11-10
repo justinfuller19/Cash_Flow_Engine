@@ -6,16 +6,11 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, Response
 
 from . import database
-from .engine import (
-    Bill, BufferReservation, CreditCard, Income, PaydayRequest, SavingsGoal,
-    generate_payday_plan,
-)
 from .household_schemas import (
     IncomeAmountOverrideCreate, IncomeAmountOverrideOut,
     IncomeSourceCreate, IncomeSourceOut, IncomeSourceUpdate,
     PersonCreate, PersonOut, PersonUpdate,
 )
-from .schemas import PaydayPlanOut, PaydayPreviewRequest
 from .obligations import router as obligations_router
 from .savings import router as savings_router
 from .planning import router as planning_router
@@ -862,37 +857,10 @@ def delete_income_source(income_id: int):
     return {"deleted": True, "id": income_id}
 
 
-@app.post("/api/plan/preview", response_model=PaydayPlanOut)
-def preview_plan(body: PaydayPreviewRequest):
-    try:
-        request = PaydayRequest(
-            plan_date=body.plan_date,
-            period_start=body.period_start,
-            period_end=body.period_end,
-            starting_cash_cents=body.starting_cash_cents,
-            incomes=[Income(**item.model_dump()) for item in body.incomes],
-            buffers=[BufferReservation(**item.model_dump()) for item in body.buffers],
-            bills=[Bill(**item.model_dump()) for item in body.bills],
-            credit_cards=[CreditCard(**item.model_dump()) for item in body.credit_cards],
-            savings_goals=[SavingsGoal(**item.model_dump()) for item in body.savings_goals],
-            debt_strategy=body.debt_strategy,
-        )
-        plan = generate_payday_plan(request)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    return PaydayPlanOut(
-        plan_date=plan.plan_date,
-        period_start=plan.period_start,
-        period_end=plan.period_end,
-        starting_cash_cents=plan.starting_cash_cents,
-        income_cents=plan.income_cents,
-        total_available_cents=plan.total_available_cents,
-        items=[item.__dict__ for item in plan.items],
-        allocated_cents=plan.allocated_cents,
-        unallocated_cents=plan.unallocated_cents,
-        unfunded_cents=plan.unfunded_cents,
-        target_card=plan.target_card,
-        debt_strategy=plan.debt_strategy,
-        is_fully_funded=plan.is_fully_funded,
+@app.post("/api/plan/preview")
+def retired_plan_preview():
+    """Reject previews from the retired single-payday allocation engine."""
+    raise HTTPException(
+        status_code=410,
+        detail="Single-payday allocation previews were retired. Use the rolling three-month pay-period forecast.",
     )
