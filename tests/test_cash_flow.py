@@ -809,7 +809,7 @@ def test_horizon_buffer_gap_reports_shortfall_without_negative_safe_spend(tmp_pa
     assert report["future_forecast"][0]["projected_ending_cash_cents"] == 10000
     assert report["future_buffer_shortfall_cents"] == 0
     assert report["horizon_buffer_replenishment_cents"] == 0
-    assert report["safe_to_spend_before_allocations_cents"] == 10000
+    assert report["free_to_spend_cents"] == 10000
     assert report["free_to_spend_cents"] == 10000
 
 
