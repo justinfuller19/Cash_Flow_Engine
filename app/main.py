@@ -210,7 +210,7 @@ nav a[aria-current="page"]{background:#cffafe;color:#164e63}
 <p id="dashboard-cash-snapshot-status" class="muted" role="status">Loading cash confirmation…</p>
 </div>
 <div class="grid">
-<section class="card"><h2>Three-month pay-period forecast</h2><div id="pay-period-summary" class="muted">Loading forecast…</div><h3>Recorded spending by category</h3><ul id="weekly-category-spending" class="list"><li class="muted">Loading…</li></ul><p><a href="/pay-periods">Review all upcoming pay periods and print the forecast →</a></p></section>
+<section class="card"><h2>Three-month pay-period forecast</h2><div id="pay-period-summary" class="muted">Loading forecast…</div><p><a href="/pay-periods">Review all upcoming pay periods and print the forecast →</a></p></section>
 <section class="card"><h2>Next paydays</h2><ul id="paydays" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Upcoming bills · 30 days</h2><ul id="bills" class="list"><li class="muted">Loading…</li></ul></section>
 <section class="card"><h2>Debt payments · 30 days</h2><ul id="debts" class="list"><li class="muted">Loading…</li></ul></section>
@@ -252,12 +252,6 @@ const next=payPeriodForecast.periods.find(p=>!p.is_current_period);
 if(next)root.appendChild(el("div","detail","Next pay period starts "+next.start_date+" · income "+dollars(next.income_cents)+" · bills "+dollars(next.bills_cents)+" · savings "+dollars(next.savings_cents)+" · debt "+dollars(next.debt_payments_cents)));
 if(payPeriodForecast.warnings.length)root.appendChild(el("div","detail",payPeriodForecast.warnings.length+" cash or target warning(s) across the next three months."));
 }else{root.textContent="Pay-period forecast unavailable.";}
-try{
-const weekly=await api("/api/cash-flow/weekly");const categoryRoot=document.getElementById("weekly-category-spending");categoryRoot.replaceChildren();
-const topCategories=weekly.category_spending.slice(0,3);
-if(!topCategories.length)categoryRoot.appendChild(el("li","muted","No recorded expenses this week."));
-else for(const item of topCategories){const li=el("li","");li.appendChild(el("div","item-title",item.category.split(" ").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ")+" · "+dollars(item.amount_cents)));categoryRoot.appendChild(li);}
-}catch(error){document.getElementById("weekly-category-spending").textContent="Category summary unavailable: "+error.message;}
 }
 async function loadCashSnapshotControl(){
   const settings=await api("/api/household/settings");
@@ -338,7 +332,7 @@ button:hover{background:#155e75}button:focus-visible,input:focus-visible,select:
 <form id="settings-form">
 <label for="settings-cash">Cash on hand at week start ($)</label><input id="settings-cash" name="starting_cash" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" required>
 <label for="settings-cash-week">Effective financial week starts</label><input id="settings-cash-week" name="starting_cash_effective_week" type="date" required>
-<p class="muted">Choose the first day of the financial week. Confirmed snapshots are saved with their effective date so older weekly reports can use the matching balance. Confirm again if the balance is more than 10 days old.</p>
+<p class="muted">Choose the first day of the financial week. Confirmed snapshots are saved with their effective date so the forecast can reconcile the correct starting cash balance. Confirm again if the balance is more than 10 days old.</p>
 <button type="submit">Save household settings</button></form>
 </section>
 <section class="card"><h2>Household members</h2><p class="muted">Add the people in your household. Income sources are linked to a member below.</p>
