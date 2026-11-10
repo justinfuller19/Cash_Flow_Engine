@@ -86,32 +86,11 @@ def test_migration_preserves_legacy_buffer_column_from_active_person_buffers(tmp
         assert version == database.SCHEMA_VERSION
 
 
-def test_generated_plan_does_not_reserve_a_household_buffer(tmp_path, monkeypatch):
+def test_legacy_plan_generation_is_retired(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
-    person = client.post("/api/people", json={"name": "Member"}).json()
-    client.post(
-        "/api/income-sources",
-        json={
-            "person_id": person["id"],
-            "name": "Paycheck",
-            "net_amount_cents": 100000,
-            "frequency": "weekly",
-            "next_payday": "2026-11-21",
-        },
-    )
-    plan = client.post(
-        "/api/plans/generate",
-        json={
-            "plan_date": "2026-11-21",
-            "period_start": "2026-11-21",
-            "period_end": "2026-11-27",
-            "starting_cash_cents": 50000,
-            "debt_strategy": "avalanche",
-        },
-    ).json()
-
-    assert all(item["category"] != "buffer" for item in plan["items"])
-    assert plan["unallocated_cents"] == 150000
+    response = client.post("/api/plans/generate", json={})
+    assert response.status_code == 410
+    assert "Single-payday allocation plans were retired" in response.text
 
 
 def test_dashboard_reports_daily_cash_forecast(tmp_path, monkeypatch):
