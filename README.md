@@ -14,7 +14,6 @@ A lightweight, self-hosted household cash-flow manager designed to run on Raspbe
 - Browser-based Savings Goals page with fixed per-pay-period contributions, optional deadlines, actual contribution recording, and a rolling forecast that recalculates deadline contributions across remaining pay periods.
 - Action checklist for reviewing upcoming obligations and recording actual amounts and dates. The old planner URL redirects to the checklist; historical payday plans remain available read-only through the API.
 - Live dashboard for current cash, reserved cash, maximum spendable, pay-period warnings, upcoming paydays, bills, debt minimums, and savings progress.
-- Payday checklist for marking actions complete, skipped, or needing attention and recording actual amounts/dates.
 - Manual transaction ledger with typed income, expense, and transfer entries, user-managed categories, safe category renaming/deletion, and optional links to scheduled income, bills, and debt payments for reconciliation.
 - Dedicated `/pay-periods` report for the rolling three-month forecast, including pay-period income, bills, savings, debt payments, projected ending cash, carry-over, warnings, and a printable PDF layout. The former `/weekly` page redirects here.
 - No separate safe-surplus allocation workflow: the forecast calculates spendable cash directly, and actual expenses, debt payments, and savings contributions are recorded in their respective workflows.
@@ -23,8 +22,8 @@ A lightweight, self-hosted household cash-flow manager designed to run on Raspbe
 - Optional SMTP email delivery for upcoming bill/debt reminders and projected cash shortfall alerts.
 - Shared household login accounts with scrypt password hashes, expiring opaque sessions, and a separate SQLite database file per household.
 - Persistent household-member and income-source APIs.
-- Initial schema for recurring bills, credit cards, savings accounts and goals, transactions, payday plans, and checklist items.
-- Unit tests for allocation behavior, setup APIs, and invalid input.
+- Historical payday-plan records remain in SQLite for compatibility and reference; the active forecast is not generated from the retired plan tables.
+- Regression tests for pay-period calculations, cash reconciliation, transaction workflows, setup APIs, and invalid input.
 
 ## Requirements
 
