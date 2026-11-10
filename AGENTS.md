@@ -7,7 +7,7 @@ Before planning or implementing a feature in this repository, read **[docs/PROJE
 1. Check the current branch, open pull requests, and existing implementation before assuming a roadmap item is complete. A feature in an open PR is not necessarily present on `main`.
 2. Work on the next incomplete milestone or the specific milestone the user requests. Do not jump ahead to optional enhancements unless asked.
 3. Treat the roadmaps as living plans, not proof of current implementation. Update milestone checkboxes/status only when supported by the actual code and tests. Mark a task complete only when the relevant implementation and tests are present in the PR branch; distinguish merged work from open PR work.
-4. Keep the allocation engine pure and deterministic. Keep HTTP/UI, persistence, and forecasting concerns outside the core allocation rules.
+4. Keep pay-period financial calculations deterministic and testable. Keep HTTP/UI and persistence concerns outside the core forecast calculations.
 5. Represent money as integer cents. Do not use floating-point arithmetic for financial calculations.
 6. Follow the current owner-approved financial specification. The former mandatory household buffer is retired; do not restore it. The new end-of-pay-period target is a soft goal, is not reserved, and remains spendable. Reserve bills, savings, and planned debt payments exactly once; use the backward carry-over calculation in docs/PAY_PERIOD_FORECAST_SPEC.md to account for later shortfalls. If older code/docs conflict with that specification, the current specification takes precedence.
 7. Make shortfalls and assumptions visible. Do not silently over-allocate cash or imply forecasts are guaranteed.
