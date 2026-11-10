@@ -157,12 +157,12 @@ def home():
 body{margin:0;padding:24px 14px 48px}main{max-width:1100px;margin:auto}
 h1{margin:0 0 8px;color:#155e75}h2{font-size:1.12rem;margin:0 0 12px}
 p{line-height:1.5}.muted{color:#5b6678}a{color:#0e7490;font-weight:650;text-decoration:none}
-.app-header{background:#0f3d4a;color:#f8fafc;padding:22px max(18px,calc((100% - 1100px)/2));margin:-24px -14px 28px;box-shadow:0 8px 24px #0f3d4a20}
+.app-header{background:linear-gradient(135deg,#e8f6f3,#f7fbfa);color:#173642;padding:22px max(18px,calc((100% - 1100px)/2));margin:-24px -14px 28px;box-shadow:0 8px 24px #173d440d;border-bottom:1px solid #dcebe8}
 .brand-row{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
-.brand{margin:0;color:#fff;font-size:1.55rem;letter-spacing:-.035em}
-.brand-subtitle{margin:5px 0 0;color:#c5dce2;font-size:.94rem}
+.brand{margin:0;color:#173f48;font-size:1.55rem;letter-spacing:-.035em}
+.brand-subtitle{margin:5px 0 0;color:#5b747a;font-size:.94rem}
 .account-links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.account-links a{color:#f8fafc;padding:8px 11px;border:1px solid #5b8791;border-radius:8px;font-size:.9rem}
+.account-links a{color:#205d63;padding:8px 11px;border:1px solid #b5d4d1;border-radius:8px;font-size:.9rem}
 nav{max-width:1100px;margin:22px auto 0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .nav-group{min-width:0;padding:12px;background:#174b59;border:1px solid #316775;border-radius:12px}
 .nav-label{display:block;color:#b7d3da;font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.09em;margin:0 0 8px}
