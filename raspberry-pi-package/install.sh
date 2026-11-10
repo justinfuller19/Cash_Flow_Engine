@@ -85,7 +85,7 @@ CASHFLOW_BACKUP_RETENTION_DAYS=30
 # CASHFLOW_USERNAME=household
 # CASHFLOW_PASSWORD=replace-with-a-long-random-secret
 
-# Optional email reminders and weekly reports. To enable SMTP, set host, sender,
+# Optional email reminders. To enable SMTP, set host, sender,
 # and a recipient or configure a recipient under the app's Account settings.
 # CASHFLOW_SMTP_HOST=smtp.example.com
 # CASHFLOW_SMTP_PORT=587
@@ -110,8 +110,7 @@ for unit in \
   cashflow-engine-backup.timer \
   cashflow-engine-email-reminders.service \
   cashflow-engine-email-reminders.timer \
-  cashflow-engine-weekly-report.service \
-  cashflow-engine-weekly-report.timer; do
+  cashflow-engine-email-reminders.timer; do
   [[ -f "$INSTALL_DIR/deploy/$unit" ]] || die "Required service file is missing: deploy/$unit"
   install -o root -g root -m 644 "$INSTALL_DIR/deploy/$unit" "/etc/systemd/system/$unit"
 done
@@ -122,7 +121,6 @@ systemctl daemon-reload
 systemctl enable --now cashflow-engine.service
 systemctl enable --now cashflow-engine-backup.timer
 systemctl enable --now cashflow-engine-email-reminders.timer
-systemctl enable --now cashflow-engine-weekly-report.timer
 
 log "Waiting briefly for the local health endpoint..."
 for attempt in {1..20}; do
