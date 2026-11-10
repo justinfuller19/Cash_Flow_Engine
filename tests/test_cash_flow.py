@@ -399,16 +399,11 @@ def test_dated_savings_goal_uses_weekly_target_and_carries_shortfall(tmp_path, m
     assert first["planned_savings_cents"] == 10000
     assert first["savings_plan"][0]["arrears_cents"] == 0
 
-    allocation = client.post(
-        "/api/surplus-allocations",
-        json={"allocation_type": "savings", "amount_cents": 4000, "savings_goal_id": goal["id"]},
-    )
-    assert allocation.status_code == 201, allocation.text
     recorded = client.post(
-        f"/api/surplus-allocations/{allocation.json()['id']}/record-savings-contribution",
-        json={"actual_amount_cents": 4000},
+        f"/api/savings-goals/{goal['id']}/contributions",
+        json={"amount_cents": 4000},
     )
-    assert recorded.status_code == 200, recorded.text
+    assert recorded.status_code == 201, recorded.text
 
     second_start = start + timedelta(days=7)
     second = client.get(
@@ -481,21 +476,11 @@ def test_recorded_savings_contribution_reduces_arrears_once(tmp_path, monkeypatc
             db, "Emergency fund", start - timedelta(days=14)
         )
 
-    allocation = client.post(
-        "/api/surplus-allocations",
-        json={
-            "allocation_type": "savings",
-            "amount_cents": 5000,
-            "savings_goal_id": goal_id,
-            "description": "Catch up savings",
-        },
-    )
-    assert allocation.status_code == 201, allocation.text
     recorded = client.post(
-        f"/api/surplus-allocations/{allocation.json()['id']}/record-savings-contribution",
-        json={"actual_amount_cents": 5000, "transaction_date": today.isoformat()},
+        f"/api/savings-goals/{goal_id}/contributions",
+        json={"amount_cents": 5000, "contribution_date": today.isoformat()},
     )
-    assert recorded.status_code == 200, recorded.text
+    assert recorded.status_code == 201, recorded.text
 
     report = client.get(
         "/api/cash-flow/weekly",
@@ -800,7 +785,7 @@ def test_horizon_buffer_replenishment_uses_lowest_projected_week(tmp_path, monke
     assert report["buffer_replenishment_cents"] == 0
     assert report["future_forecast"][0]["projected_ending_cash_cents"] == 60000
     assert report["horizon_buffer_replenishment_cents"] == 0
-    assert report["safe_to_spend_before_allocations_cents"] == 60000
+    assert report["free_to_spend_cents"] == 60000
     assert report["free_to_spend_cents"] == 60000
 
 
