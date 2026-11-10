@@ -291,7 +291,7 @@ The API-only simulation findings did not establish a browser-rendering regressio
 
 ## Current implementation progress — pay-period forecast
 
-PR #54 on `feature/pay-period-calendar-foundation` contains the completed integrated pay-period forecast implementation. These checkboxes describe the current PR branch; they do not imply that the changes have been merged to `main`.
+PR #54 on `feature/pay-period-calendar-foundation` contains the integrated pay-period forecast implementation and has been merged to `main`.
 
 - [x] Phase 1: fixed-anchor paycheck grouping and configurable 0–14 day window (default 2), validated settings API, Settings page, and boundary tests.
 - [x] Phase 2: rolling three-month pay-period calendar connected to saved paycheck schedules and recurring bill assignment.
@@ -299,13 +299,23 @@ PR #54 on `feature/pay-period-calendar-foundation` contains the completed integr
 - [x] Phase 4: deadline and ongoing savings planning, actual contribution reconciliation, and chronological debt interest/payment projection.
 - [x] Phase 5: idempotent editable internal ledger posting, transaction safeguards, and cash/debt reconciliation.
 - [x] Phase 6: pay-period dashboard summary, printable report, regression coverage, and documentation alignment.
-- [ ] Verify Raspberry Pi deployment compatibility, resource use, existing-database migrations, and the updater path.
-- [ ] Complete owner-side review of the forecast and printable report before merge/deployment.
+- [x] Complete owner review and merge the pay-period forecast.
+- [ ] Verify Raspberry Pi deployment compatibility, resource use, existing-database migrations, and the updater path before deployment.
 
 The review feedback on PR #54 was checked against the latest branch:
 - The $150 max-spendable boundary case now has a dedicated live API regression and is expected to require confirmation while identifying the affected bill/date.
 - The orphaned `app/buffer.py` helper is deleted on the current branch.
-- The legacy `/api/plan/preview` schema rejects non-empty retired `buffers` with HTTP 422; a regression test covers this compatibility guard.
+- The legacy `/api/plan/preview` and `/api/plans/generate` endpoints now return HTTP 410; historical plan records remain readable.
 - The authoritative `docs/PAY_PERIOD_FORECAST_SPEC.md` implementation-status section now agrees with its completed checklists.
 
-Historical weekly/buffer phases above remain for project history only. The pay-period specification is authoritative. PR #54 remains a draft pending the two verification items above; do not merge or deploy without explicit owner approval.
+Historical weekly/buffer phases above remain for project history only. The pay-period specification is authoritative. PR #54 has been merged; no Raspberry Pi deployment has been performed. Deployment still requires Pi compatibility, migration, updater, and resource verification plus explicit owner approval.
+
+## Post-merge legacy workflow cleanup
+
+- [x] Redirect the old `/weekly` report to the rolling three-month `/pay-periods` report.
+- [x] Retire safe-surplus allocation endpoints with HTTP 410; historical rows no longer reserve cash.
+- [x] Retire the single-payday preview and generation endpoints with HTTP 410 while preserving read-only access to saved plan history.
+- [x] Remove the unused pure payday allocation engine and its tests.
+- [x] Remove the Sunday weekly email report and systemd units; disable/remove those units during the next application update on existing Pi installations.
+- [x] Keep weekly calculations only where existing internal checklist/reminder workflows still depend on them.
+- [x] Remove automatic dark-mode styling and brighten the light theme.
