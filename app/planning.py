@@ -1,4 +1,4 @@
-"""Persisted payday planning from the saved household setup."""
+"""Read-only access to historical payday plans and legacy-route retirement."""
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 
